@@ -1,0 +1,49 @@
+project: fea_surrogate_mesh
+
+data:
+  train_manifest: data/fea_ml/train.jsonl
+  val_manifest: data/fea_ml/val.jsonl
+  test_manifest: data/fea_ml/test.jsonl
+  num_points: 2048
+  normalize_points: true
+
+targets:
+  - max_von_mises
+  - max_displacement
+  - min_safety_factor
+  - compliance
+
+materials:
+  - concrete
+  - mortar
+
+load_cases:
+  - case_a
+  - case_b
+
+constraints:
+  min_safety_factor: 1.5
+  max_displacement: 1.0
+
+model:
+  dropout: 0.2
+
+training:
+  batch_size: 8
+  epochs: 50
+  lr: 0.0005
+  seed: 42
+  deterministic: false
+
+optimization:
+  parameterization:
+    scale_min: 0.7
+    scale_max: 1.0
+  search:
+    iterations: 40
+    population_size: 12
+    safety_factor_threshold: 1.5
+    max_displacement_threshold: 1.0
+    volume_weight: 1.0
+    penalty_weight: 10.0
+    mc_samples: 16

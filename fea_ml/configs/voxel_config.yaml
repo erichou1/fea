@@ -1,0 +1,101 @@
+# FEA Voxel Surrogate Configuration  (v2 – improved training)
+
+project: fea_voxel_surrogate_v2
+
+data:
+  runs_dir: data/runs_real_128  # 128³ dataset (GB200)
+  resolution: 128
+  use_sdf: false
+  length_unit: meters
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  split_by_design_family: true
+
+parts:
+  exterior_wall:
+    editable: thickness_only
+    shell_thickness_voxels: 3
+  interior_wall:
+    editable: full
+    min_thickness: 0.02
+  roof:
+    editable: full
+    min_thickness: 0.015
+  floor:
+    editable: limited
+    protected_zones: true
+
+targets:
+  - max_von_mises
+  - max_displacement
+  - min_safety_factor
+  - compliance
+
+materials:
+  - concrete
+  - mortar
+  - polymer
+
+load_cases:
+  - gravity
+  - wind
+  - combined
+
+constraints:
+  min_safety_factor: 1.5
+  max_displacement: 1.0
+  max_compliance_ratio: 1.05
+
+model:
+  type: ensemble
+  n_models: 5
+  backbone: resnet3d          # resnet3d for 128³
+  dropout: 0.15               # slightly lower – EMA/drop_path handle regularisation
+  drop_path: 0.1              # stochastic depth
+  base_channels: 64           # GB200 memory allows bigger model
+
+training:
+  batch_size: 32
+  epochs: 200                 # train longer; early stopping will cut short if needed
+  lr: 0.0005                  # lower peak LR for stability with log-targets
+  weight_decay: 0.0001
+  seed: 42
+  mixed_precision: true
+  grad_clip: 1.0              # NEW: prevent exploding gradients
+  patience: 30                # NEW: early stopping patience (epochs)
+  use_ema: true               # NEW: Exponential Moving Average
+  ema_decay: 0.999
+  compile: false              # set true on GB200 if PyTorch 2.x
+
+loss:
+  type: huber
+  # log_transform: null means ALL targets (recommended when FEA spans orders of magnitude)
+  log_transform: null
+  winsorize_pct: 2.0          # clip 2nd/98th percentile in log space
+  target_weights:
+    max_von_mises: 1.0
+    max_displacement: 1.0
+    min_safety_factor: 1.5    # weight SF higher – safety-critical
+    compliance: 0.5
+
+optimization:
+  parameterization:
+    erosion_min: 0.0
+    erosion_max: 0.3
+    smooth_min: 0.0
+    smooth_max: 0.2
+  search:
+    iterations: 100           # more iterations for better solutions
+    population_size: 32       # larger pop for better CMA-ES coverage
+    sigma0: 0.3
+    surface_area_weight: 0.01
+    thin_feature_weight: 0.1
+    constraint_penalty: 100.0
+    uncertainty_k: 2.0
+    mc_samples: 16
+
+validation:
+  min_thickness_voxels: 2.0
+  max_components: 1
+  thin_threshold_voxels: 1.5
