@@ -10,38 +10,39 @@ import Part
 
 ROOT = Path(__file__).resolve().parent.parent
 PARTS_DIR = ROOT / "data" / "3dwire_parts_combined"
-OUT_STEP = Path(__file__).resolve().parent / "fea_out" / "00000_parts.step"
-
-PREFIX = "00000"
-
-# ---- Include attic floor explicitly (your previous script did not) ----
-PARTS = [
-    f"{PREFIX}_exterior_walls.stl",
-    f"{PREFIX}_interior_rooms.stl",
-    f"{PREFIX}_floor.stl",
-    f"{PREFIX}_attic_floor.stl",
-    f"{PREFIX}_roof.stl",
-]
-
-# removeSplitter can help sometimes, but may break some meshes.
-REFINE_BY_FILE = {
-    f"{PREFIX}_exterior_walls.stl": True,
-    f"{PREFIX}_interior_rooms.stl": False,
-    f"{PREFIX}_floor.stl": True,
-    f"{PREFIX}_attic_floor.stl": True,
-    f"{PREFIX}_roof.stl": True,
-}
-
-# Optional per-file sewing tolerance override (else: auto from bbox)
-SEW_TOL_BY_FILE = {
-    # f"{PREFIX}_roof.stl": 0.002,
-    # f"{PREFIX}_attic_floor.stl": 0.002,
-}
+OUT_DIR = Path(__file__).resolve().parent / "fea_out"
 
 # Auto tolerance: small fraction of bbox diagonal, clamped.
 AUTO_TOL_FRAC_OF_DIAG = 1.0e-4
 AUTO_TOL_MIN = 1.0e-6
 AUTO_TOL_MAX = 5.0e-3  # critical for thin roof/attic (avoid "over-sew") [web:884]
+
+
+def build_parts(prefix: str):
+    return [
+        f"{prefix}_exterior_walls.stl",
+        f"{prefix}_interior_rooms.stl",
+        f"{prefix}_floor.stl",
+        f"{prefix}_attic_floor.stl",
+        f"{prefix}_roof.stl",
+    ]
+
+
+def build_refine_by_file(prefix: str):
+    return {
+        f"{prefix}_exterior_walls.stl": True,
+        f"{prefix}_interior_rooms.stl": False,
+        f"{prefix}_floor.stl": True,
+        f"{prefix}_attic_floor.stl": True,
+        f"{prefix}_roof.stl": True,
+    }
+
+
+def build_sew_tol_by_file(prefix: str):
+    return {
+        # f"{prefix}_roof.stl": 0.002,
+        # f"{prefix}_attic_floor.stl": 0.002,
+    }
 
 
 def log(msg: str):
@@ -151,13 +152,13 @@ def shape_to_solids(shape, tag: str):
     return out
 
 
-def stl_to_solids(stl_path: Path, do_refine: bool):
+def stl_to_solids(stl_path: Path, do_refine: bool, sew_tol_by_file: dict):
     log(f"[stl] Loading: {stl_path}")
     mesh = Mesh.Mesh(str(stl_path))
 
     try_mesh_cleanup(mesh, stl_path.name)
 
-    tol = float(SEW_TOL_BY_FILE.get(stl_path.name, auto_sew_tol(mesh)))
+    tol = float(sew_tol_by_file.get(stl_path.name, auto_sew_tol(mesh)))
     log(f"[stl] {stl_path.name}: sew_tol={tol:g}")
 
     shape = Part.Shape()
@@ -182,24 +183,26 @@ def stl_to_solids(stl_path: Path, do_refine: bool):
     return solids
 
 
-def main():
-    log(f"START FreeCAD STL->STEP (pid={os.getpid()})")
-    log(f"PARTS_DIR={PARTS_DIR}")
-    log(f"OUT_STEP={OUT_STEP}")
+def process_prefix(prefix: str):
+    log(f"\n=== Processing {prefix} ===")
+    parts = build_parts(prefix)
+    refine_by_file = build_refine_by_file(prefix)
+    sew_tol_by_file = build_sew_tol_by_file(prefix)
+    out_step = OUT_DIR / f"{prefix}_parts.step"
 
-    paths = [PARTS_DIR / n for n in PARTS]
+    paths = [PARTS_DIR / n for n in parts]
     for p in paths:
         if not p.exists():
             raise FileNotFoundError(f"Missing input STL: {p}")
 
-    doc = App.newDocument(f"{PREFIX}_parts")
+    doc = App.newDocument(f"{prefix}_parts")
     export_objs = []
 
     for p in paths:
-        do_refine = REFINE_BY_FILE.get(p.name, True)
+        do_refine = refine_by_file.get(p.name, True)
         log(f"\nConverting: {p.name} (refine={do_refine})")
 
-        solids = stl_to_solids(p, do_refine=do_refine)
+        solids = stl_to_solids(p, do_refine=do_refine, sew_tol_by_file=sew_tol_by_file)
 
         # Export each solid as its own object (avoid exporting Compounds) [web:948]
         if len(solids) == 1:
@@ -214,9 +217,26 @@ def main():
 
     doc.recompute()
 
-    OUT_STEP.parent.mkdir(parents=True, exist_ok=True)
-    Part.export(export_objs, str(OUT_STEP))  # STEP export behavior depends on prefs [web:960]
-    log(f"Wrote: {OUT_STEP}")
+    out_step.parent.mkdir(parents=True, exist_ok=True)
+    Part.export(export_objs, str(out_step))  # STEP export behavior depends on prefs [web:960]
+    log(f"Wrote: {out_step}")
+
+
+def main():
+    log(f"START FreeCAD STL->STEP (pid={os.getpid()})")
+    log(f"PARTS_DIR={PARTS_DIR}")
+    log(f"OUT_DIR={OUT_DIR}")
+
+    prefixes = sorted(p.name.split("_")[0] for p in PARTS_DIR.glob("*_exterior_walls.stl"))
+    if not prefixes:
+        raise FileNotFoundError(f"No *_exterior_walls.stl found in {PARTS_DIR}")
+
+    for prefix in prefixes:
+        try:
+            process_prefix(prefix)
+        except Exception as e:
+            log(f"[FAILED] {prefix}: {type(e).__name__}: {e}")
+            log(traceback.format_exc())
 
 
 # IMPORTANT for FreeCADCmd: run unconditionally

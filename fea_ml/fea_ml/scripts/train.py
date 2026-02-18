@@ -19,7 +19,9 @@ import argparse
 import json
 import logging
 import platform
+import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -46,7 +48,8 @@ def _num_workers() -> int:
     if platform.system() == "Windows":
         return 0  # Windows multiprocessing can hang
     import os
-    return min(os.cpu_count() or 4, 8)
+    # Cap at 4 to avoid fork/memory issues on large machines
+    return min(os.cpu_count() or 4, 4)
 
 
 def setup_logging(output_dir: Path) -> logging.Logger:
@@ -61,11 +64,16 @@ def setup_logging(output_dir: Path) -> logging.Logger:
     ch.setFormatter(formatter)
     logger.addHandler(ch)
     
-    # File handler
+    # File handler — flush after every line so crashes don't lose messages
     fh = logging.FileHandler(output_dir / "train.log")
-    fh.setLevel(logging.INFO)
+    fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
+    
+    # Also redirect stderr to the log file so crashes are captured
+    import sys
+    log_file = open(output_dir / "train_stderr.log", "w")
+    sys.stderr = log_file
     
     return logger
 
@@ -371,7 +379,15 @@ def main():
         device = torch.device(args.device)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
+
+    # Log GPU info for debugging
+    if device.type == "cuda":
+        n_gpus = torch.cuda.device_count()
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem = torch.cuda.get_device_properties(0).total_mem / 1e9
+        logger.info(f"Using device: {device}  ({n_gpus} GPUs: {gpu_name}, {gpu_mem:.1f}GB each)")
+    else:
+        logger.info(f"Using device: {device}")
     
     # Create data splits
     runs_dir = Path(config["data"]["runs_dir"])
@@ -384,7 +400,17 @@ def main():
         split_by_family=config["data"].get("split_by_design_family", True),
     )
     
-    logger.info(f"Data splits: train={len(train_dirs)}, val={len(val_dirs)}, test={len(test_dirs)}")
+    total_samples = len(train_dirs) + len(val_dirs) + len(test_dirs)
+    logger.info(f"Data splits: train={len(train_dirs)}, val={len(val_dirs)}, test={len(test_dirs)} (total={total_samples})")
+    
+    if total_samples < 100:
+        logger.warning(f"*** VERY FEW SAMPLES ({total_samples}). "
+                       f"Expected ~14000. Check runs_dir: {runs_dir.resolve()} ***")
+        logger.warning("Training may fail or produce poor results with < 100 samples.")
+    if len(train_dirs) == 0:
+        raise ValueError(f"No training samples found in {runs_dir}. Is the dataset generated?")
+    if len(val_dirs) == 0:
+        raise ValueError(f"No validation samples found. Need more data in {runs_dir}.")
     
     # Save splits
     with open(output_dir / "splits.json", "w") as f:
@@ -503,30 +529,36 @@ def main():
         n_models = config["model"].get("n_models", 5)
         logger.info(f"Training ensemble with {n_models} models")
         
-        from fea_ml.models.ensemble import train_deep_ensemble
-        ensemble = train_deep_ensemble(
-            model_factory=model_factory,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            n_models=n_models,
-            epochs=config["training"]["epochs"],
-            lr=config["training"]["lr"],
-            weight_decay=config["training"].get("weight_decay", 1e-4),
-            device=device,
-            output_dir=output_dir / "ensemble",
-            base_seed=seed,
-            grad_clip=config["training"].get("grad_clip", 1.0),
-            patience=config["training"].get("patience", 20),
-            use_ema=config["training"].get("use_ema", True),
-            ema_decay=config["training"].get("ema_decay", 0.999),
-        )
-        
-        # Save ensemble paths
-        checkpoint_paths = ensemble.save_checkpoints(output_dir / "ensemble")
-        with open(output_dir / "ensemble_paths.json", "w") as f:
-            json.dump([str(p) for p in checkpoint_paths], f, indent=2)
-        
-        logger.info("Ensemble training complete")
+        try:
+            from fea_ml.models.ensemble import train_deep_ensemble
+            ensemble = train_deep_ensemble(
+                model_factory=model_factory,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                n_models=n_models,
+                epochs=config["training"]["epochs"],
+                lr=config["training"]["lr"],
+                weight_decay=config["training"].get("weight_decay", 1e-4),
+                device=device,
+                output_dir=output_dir / "ensemble",
+                base_seed=seed,
+                grad_clip=config["training"].get("grad_clip", 1.0),
+                patience=config["training"].get("patience", 20),
+                use_ema=config["training"].get("use_ema", True),
+                ema_decay=config["training"].get("ema_decay", 0.999),
+            )
+            
+            # Save ensemble paths
+            checkpoint_paths = ensemble.save_checkpoints(output_dir / "ensemble")
+            with open(output_dir / "ensemble_paths.json", "w") as f:
+                json.dump([str(p) for p in checkpoint_paths], f, indent=2)
+            
+            logger.info("Ensemble training complete")
+        except Exception as e:
+            import traceback
+            logger.error(f"Ensemble training FAILED: {e}")
+            logger.error(traceback.format_exc())
+            raise
         
     else:
         model = model_factory().to(device)
@@ -541,18 +573,31 @@ def main():
         
         logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         
-        model = train_single_model(
-            config=config,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            model=model,
-            output_dir=output_dir,
-            device=device,
-            logger=logger,
-        )
-        
-        logger.info("Training complete")
+        try:
+            model = train_single_model(
+                config=config,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                model=model,
+                output_dir=output_dir,
+                device=device,
+                logger=logger,
+            )
+            logger.info("Training complete")
+        except Exception as e:
+            import traceback
+            logger.error(f"Training FAILED: {e}")
+            logger.error(traceback.format_exc())
+            raise
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Last-resort crash capture — writes to stdout even if logger is broken
+        print(f"\n{'='*60}", flush=True)
+        print(f"FATAL ERROR: {e}", flush=True)
+        traceback.print_exc()
+        print(f"{'='*60}", flush=True)
+        sys.exit(1)

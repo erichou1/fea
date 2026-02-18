@@ -1,0 +1,159 @@
+{
+  "id": "61659ut_floorplan_2",
+  "rooms": [
+    {
+      "id": "room_0",
+      "type": "room",
+      "vertices": [
+        [
+          39,
+          98
+        ],
+        [
+          39,
+          470
+        ],
+        [
+          129,
+          470
+        ],
+        [
+          129,
+          98
+        ]
+      ],
+      "area": 33943.0,
+      "area_percentage": 3.75,
+      "detected_text": []
+    },
+    {
+      "id": "room_1",
+      "type": "room",
+      "vertices": [
+        [
+          385,
+          98
+        ],
+        [
+          385,
+          399
+        ],
+        [
+          484,
+          399
+        ],
+        [
+          484,
+          98
+        ]
+      ],
+      "area": 30200.0,
+      "area_percentage": 3.33,
+      "detected_text": []
+    }
+  ],
+  "walls": [
+    {
+      "id": "wall_0",
+      "start": [
+        39,
+        98
+      ],
+      "end": [
+        39,
+        470
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_1",
+      "start": [
+        39,
+        470
+      ],
+      "end": [
+        129,
+        470
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_2",
+      "start": [
+        129,
+        470
+      ],
+      "end": [
+        129,
+        98
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_3",
+      "start": [
+        129,
+        98
+      ],
+      "end": [
+        39,
+        98
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_4",
+      "start": [
+        385,
+        98
+      ],
+      "end": [
+        385,
+        399
+      ],
+      "room_id": "room_1"
+    },
+    {
+      "id": "wall_5",
+      "start": [
+        385,
+        399
+      ],
+      "end": [
+        484,
+        399
+      ],
+      "room_id": "room_1"
+    },
+    {
+      "id": "wall_6",
+      "start": [
+        484,
+        399
+      ],
+      "end": [
+        484,
+        98
+      ],
+      "room_id": "room_1"
+    },
+    {
+      "id": "wall_7",
+      "start": [
+        484,
+        98
+      ],
+      "end": [
+        385,
+        98
+      ],
+      "room_id": "room_1"
+    }
+  ],
+  "metadata": {
+    "width": 1132,
+    "height": 800,
+    "scale": 1.0,
+    "unit": "pixels"
+  }
+}

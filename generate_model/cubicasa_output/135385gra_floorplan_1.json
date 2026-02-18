@@ -1,0 +1,86 @@
+{
+  "id": "135385gra_floorplan_1",
+  "rooms": [
+    {
+      "id": "room_0",
+      "type": "room",
+      "vertices": [
+        [
+          193,
+          35
+        ],
+        [
+          193,
+          182
+        ],
+        [
+          394,
+          182
+        ],
+        [
+          386,
+          31
+        ]
+      ],
+      "area": 24113.0,
+      "area_percentage": 2.54,
+      "detected_text": []
+    }
+  ],
+  "walls": [
+    {
+      "id": "wall_0",
+      "start": [
+        193,
+        35
+      ],
+      "end": [
+        193,
+        182
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_1",
+      "start": [
+        193,
+        182
+      ],
+      "end": [
+        394,
+        182
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_2",
+      "start": [
+        394,
+        182
+      ],
+      "end": [
+        386,
+        31
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_3",
+      "start": [
+        386,
+        31
+      ],
+      "end": [
+        193,
+        35
+      ],
+      "room_id": "room_0"
+    }
+  ],
+  "metadata": {
+    "width": 1200,
+    "height": 791,
+    "scale": 1.0,
+    "unit": "pixels"
+  }
+}

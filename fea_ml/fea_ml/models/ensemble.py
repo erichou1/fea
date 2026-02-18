@@ -398,26 +398,32 @@ def train_deep_ensemble(
             continue
 
         print(f"\nTraining ensemble member {i+1}/{n_models}")
+        import sys, traceback
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
 
-        history = train_ensemble_member(
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            optimizer=optimizer,
-            loss_fn=loss_fn,
-            epochs=epochs,
-            device=device,
-            seed=base_seed + i * 1000,
-            checkpoint_path=checkpoint_path,
-            scheduler=scheduler,
-            grad_clip=grad_clip,
-            patience=patience,
-            use_ema=use_ema,
-            ema_decay=ema_decay,
-        )
+        try:
+            history = train_ensemble_member(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                optimizer=optimizer,
+                loss_fn=loss_fn,
+                epochs=epochs,
+                device=device,
+                seed=base_seed + i * 1000,
+                checkpoint_path=checkpoint_path,
+                scheduler=scheduler,
+                grad_clip=grad_clip,
+                patience=patience,
+                use_ema=use_ema,
+                ema_decay=ema_decay,
+            )
+        except Exception as e:
+            print(f"\n*** ENSEMBLE MEMBER {i+1} CRASHED: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc()
+            raise
 
         # Load best checkpoint
         if checkpoint_path and checkpoint_path.exists():

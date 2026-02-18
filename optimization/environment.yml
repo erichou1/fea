@@ -1,0 +1,49 @@
+name: structural_optimizer
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Core
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+
+  # PyTorch + CUDA (adjust cudatoolkit if your GPU is different)
+  - pytorch=2.1.0
+  - pytorch-cuda=11.8
+  - torchvision
+
+  # Geometry / mesh
+  - trimesh
+  - meshio
+  - shapely
+  - pyvista
+  - rtree
+
+  # HDF5
+  - h5py
+
+  # Web
+  - fastapi
+  - uvicorn
+  - python-multipart
+  - jinja2
+
+  # Dev / utils
+  - tqdm
+  - requests
+  - pillow
+  - pip:
+      # PyTorch Geometric (via pip wheel)
+      - torch-geometric==2.4.0
+      # If PyG extras are needed you can add:
+      # - torch-scatter
+      # - torch-sparse
+      # - torch-cluster
+      # - torch-spline-conv

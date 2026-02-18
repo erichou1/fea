@@ -1,0 +1,86 @@
+{
+  "id": "300137fnk_floorplan_2",
+  "rooms": [
+    {
+      "id": "room_0",
+      "type": "room",
+      "vertices": [
+        [
+          626,
+          315
+        ],
+        [
+          626,
+          508
+        ],
+        [
+          811,
+          508
+        ],
+        [
+          811,
+          315
+        ]
+      ],
+      "area": 31370.0,
+      "area_percentage": 4.16,
+      "detected_text": []
+    }
+  ],
+  "walls": [
+    {
+      "id": "wall_0",
+      "start": [
+        626,
+        315
+      ],
+      "end": [
+        626,
+        508
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_1",
+      "start": [
+        626,
+        508
+      ],
+      "end": [
+        811,
+        508
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_2",
+      "start": [
+        811,
+        508
+      ],
+      "end": [
+        811,
+        315
+      ],
+      "room_id": "room_0"
+    },
+    {
+      "id": "wall_3",
+      "start": [
+        811,
+        315
+      ],
+      "end": [
+        626,
+        315
+      ],
+      "room_id": "room_0"
+    }
+  ],
+  "metadata": {
+    "width": 943,
+    "height": 800,
+    "scale": 1.0,
+    "unit": "pixels"
+  }
+}
