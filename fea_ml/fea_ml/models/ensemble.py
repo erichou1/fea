@@ -212,6 +212,63 @@ class DeepEnsemble(nn.Module):
         return paths
 
 
+def _weighted_loss(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    base_loss_fn: nn.Module,
+    target_weights: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Compute loss with optional per-target weighting.
+
+    When *target_weights* is not None the loss is:
+        sum_i  w_i * SmoothL1Loss(pred_i, tgt_i)
+    so that safety-critical targets can be emphasised.
+    """
+    if target_weights is None:
+        return base_loss_fn(predictions, targets)
+
+    # Per-target loss (reduce over batch, keep target dim)
+    per_target = torch.stack([
+        base_loss_fn(predictions[:, i], targets[:, i])
+        for i in range(predictions.shape[1])
+    ])
+    return (per_target * target_weights).sum()
+
+
+def _compute_val_r2(
+    model: nn.Module,
+    val_loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    n_targets: int,
+) -> np.ndarray:
+    """Compute per-target R² on validation set (in normalised space).
+
+    Returns an array of shape ``(n_targets,)`` with one R² value each.
+    """
+    all_preds: List[np.ndarray] = []
+    all_tgts: List[np.ndarray] = []
+
+    model.eval()
+    with torch.no_grad():
+        for batch in val_loader:
+            voxel = batch["voxel"].to(device)
+            features = batch["features"].to(device)
+            targets = batch["targets"]
+            preds = model(voxel, features).cpu().numpy()
+            all_preds.append(preds)
+            all_tgts.append(targets.numpy())
+
+    preds = np.concatenate(all_preds, axis=0)
+    tgts = np.concatenate(all_tgts, axis=0)
+
+    r2 = np.zeros(n_targets)
+    for i in range(n_targets):
+        ss_res = ((tgts[:, i] - preds[:, i]) ** 2).sum()
+        ss_tot = ((tgts[:, i] - tgts[:, i].mean()) ** 2).sum()
+        r2[i] = 1.0 - ss_res / (ss_tot + 1e-8)
+    return r2
+
+
 def train_ensemble_member(
     model: nn.Module,
     train_loader: torch.utils.data.DataLoader,
@@ -227,7 +284,9 @@ def train_ensemble_member(
     patience: int = 20,
     use_ema: bool = True,
     ema_decay: float = 0.999,
-) -> Dict[str, List[float]]:
+    target_weights: Optional[torch.Tensor] = None,
+    target_names: Optional[List[str]] = None,
+) -> Dict[str, List]:
     """
     Train a single ensemble member with all modern best-practices.
 
@@ -236,6 +295,8 @@ def train_ensemble_member(
       - Gradient clipping
       - Early stopping with patience
       - Exponential Moving Average (EMA) of weights
+      - Per-target loss weighting via *target_weights*
+      - Per-target R² monitoring every epoch (logged for training validation)
     """
     import random
     from tqdm import tqdm
@@ -245,9 +306,21 @@ def train_ensemble_member(
     random.seed(seed)
 
     model = model.to(device)
-    history = {"train_loss": [], "val_loss": []}
+    n_targets = len(target_names) if target_names else 4
+    history: Dict[str, List] = {
+        "train_loss": [],
+        "val_loss": [],
+        "val_r2": [],           # list of arrays, one per epoch
+    }
     best_val_loss = float("inf")
     wait = 0  # patience counter
+
+    # Move target_weights to device if provided
+    if target_weights is not None:
+        target_weights = target_weights.to(device)
+
+    # Use per-target reduction when weights are provided
+    base_loss_fn = nn.SmoothL1Loss(reduction="none" if target_weights is not None else "mean")
 
     # EMA model
     ema_state = None
@@ -267,7 +340,7 @@ def train_ensemble_member(
 
             optimizer.zero_grad(set_to_none=True)
             predictions = model(voxel, features)
-            loss = loss_fn(predictions, targets)
+            loss = _weighted_loss(predictions, targets, loss_fn, target_weights)
             loss.backward()
 
             # Gradient clipping
@@ -305,19 +378,38 @@ def train_ensemble_member(
                 features = batch["features"].to(device)
                 targets = batch["targets"].to(device)
                 predictions = model(voxel, features)
-                loss = loss_fn(predictions, targets)
+                loss = _weighted_loss(predictions, targets, loss_fn, target_weights)
                 val_losses.append(loss.item())
+
+        # Per-target R² (on EMA model)
+        val_r2 = _compute_val_r2(model, val_loader, device, n_targets)
 
         train_loss = np.mean(train_losses)
         val_loss = np.mean(val_losses)
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
+        history["val_r2"].append(val_r2.tolist())
 
         lr_str = ""
         if scheduler is not None:
             lr_str = f", lr: {scheduler.get_last_lr()[0]:.2e}"
+
+        # Format R² per target
+        if target_names:
+            r2_parts = [f"{name}={r:.3f}" for name, r in zip(target_names, val_r2)]
+        else:
+            r2_parts = [f"t{i}={r:.3f}" for i, r in enumerate(val_r2)]
+        r2_str = ", ".join(r2_parts)
+
         print(f"  Epoch {epoch+1}/{epochs} - train: {train_loss:.4f}, val: {val_loss:.4f}{lr_str}")
+        print(f"    R²: [{r2_str}]")
+
+        # Early warning: if R² is still all-negative after 10 epochs, something is wrong
+        if epoch == 9:
+            if all(r < 0 for r in val_r2):
+                print(f"  WARNING: All R^2 values negative after 10 epochs! "
+                      f"Model may not be learning -- check data quality / features.")
 
         # Save best (EMA) model
         if val_loss < best_val_loss and checkpoint_path:
@@ -326,6 +418,7 @@ def train_ensemble_member(
                 "model_state_dict": ema_state if ema_state is not None else model.state_dict(),
                 "epoch": epoch,
                 "val_loss": val_loss,
+                "val_r2": val_r2.tolist(),
             }, checkpoint_path)
             wait = 0
         else:
@@ -359,6 +452,8 @@ def train_deep_ensemble(
     patience: int = 20,
     use_ema: bool = True,
     ema_decay: float = 0.999,
+    target_weights: Optional[torch.Tensor] = None,
+    target_names: Optional[List[str]] = None,
 ) -> DeepEnsemble:
     """
     Train a deep ensemble with all modern best-practices.
@@ -369,6 +464,8 @@ def train_deep_ensemble(
       - Gradient clipping
       - Early stopping
       - EMA weight averaging
+      - Per-target loss weighting (if target_weights provided)
+      - Per-target R² monitoring every epoch
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -379,6 +476,7 @@ def train_deep_ensemble(
 
     loss_fn = nn.SmoothL1Loss()  # Huber loss (robust to residual outliers)
     models = []
+    all_histories = []
 
     for i in range(n_models):
         model = model_factory()
@@ -392,8 +490,15 @@ def train_deep_ensemble(
             state = torch.load(checkpoint_path, map_location=device, weights_only=False)
             model.load_state_dict(state["model_state_dict"])
             model = model.to(device)
+            r2_info = ""
+            if "val_r2" in state:
+                r2_vals = state["val_r2"]
+                if target_names and len(r2_vals) == len(target_names):
+                    r2_info = " | R²: " + ", ".join(f"{n}={v:.3f}" for n, v in zip(target_names, r2_vals))
+                else:
+                    r2_info = f" | R²: {r2_vals}"
             print(f"\nEnsemble member {i+1}/{n_models} - LOADED from checkpoint "
-                  f"(val_loss: {state['val_loss']:.4f} @ epoch {state['epoch']})")
+                  f"(val_loss: {state.get('val_loss', '?'):.4f} @ epoch {state.get('epoch', '?')}{r2_info})")
             models.append(model)
             continue
 
@@ -419,7 +524,10 @@ def train_deep_ensemble(
                 patience=patience,
                 use_ema=use_ema,
                 ema_decay=ema_decay,
+                target_weights=target_weights,
+                target_names=target_names,
             )
+            all_histories.append(history)
         except Exception as e:
             print(f"\n*** ENSEMBLE MEMBER {i+1} CRASHED: {e}", file=sys.stderr, flush=True)
             traceback.print_exc()
@@ -429,8 +537,19 @@ def train_deep_ensemble(
         if checkpoint_path and checkpoint_path.exists():
             state = torch.load(checkpoint_path, map_location=device, weights_only=False)
             model.load_state_dict(state["model_state_dict"])
-            print(f"  Best val_loss: {state['val_loss']:.4f} @ epoch {state['epoch']}")
+            r2_info = ""
+            if "val_r2" in state:
+                r2_vals = state["val_r2"]
+                if target_names and len(r2_vals) == len(target_names):
+                    r2_info = " | R²: " + ", ".join(f"{n}={v:.3f}" for n, v in zip(target_names, r2_vals))
+            print(f"  Best val_loss: {state['val_loss']:.4f} @ epoch {state['epoch']}{r2_info}")
 
         models.append(model)
+
+    # Save training histories
+    if output_dir and all_histories:
+        import json
+        with open(output_dir / "training_histories.json", "w") as f:
+            json.dump(all_histories, f, indent=2)
 
     return DeepEnsemble(models, device=device)

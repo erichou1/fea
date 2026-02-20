@@ -352,6 +352,8 @@ def main():
     parser.add_argument("--output", type=str, required=True, help="Output directory")
     parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint")
     parser.add_argument("--device", type=str, default=None, help="Device (cuda/cpu)")
+    parser.add_argument("--manifest", type=str, default=None,
+                        help="Path to clean_manifest.json — only train on listed sample IDs")
     args = parser.parse_args()
     
     # Load config
@@ -399,6 +401,26 @@ def main():
         seed=seed,
         split_by_family=config["data"].get("split_by_design_family", True),
     )
+
+    # --- Filter by clean manifest if provided ---
+    if args.manifest:
+        manifest_path = Path(args.manifest)
+        with open(manifest_path, "r") as f:
+            manifest = json.load(f)
+        clean_ids = set(manifest.get("clean_sample_ids", manifest if isinstance(manifest, list) else []))
+        logger.info(f"Loaded manifest with {len(clean_ids)} clean sample IDs from {manifest_path}")
+
+        def _filter(dirs):
+            return [d for d in dirs if d.name in clean_ids]
+
+        before = (len(train_dirs), len(val_dirs), len(test_dirs))
+        train_dirs = _filter(train_dirs)
+        val_dirs = _filter(val_dirs)
+        test_dirs = _filter(test_dirs)
+        after = (len(train_dirs), len(val_dirs), len(test_dirs))
+        logger.info(f"Manifest filtering: train {before[0]}→{after[0]}, "
+                     f"val {before[1]}→{after[1]}, test {before[2]}→{after[2]}")
+    
     
     total_samples = len(train_dirs) + len(val_dirs) + len(test_dirs)
     logger.info(f"Data splits: train={len(train_dirs)}, val={len(val_dirs)}, test={len(test_dirs)} (total={total_samples})")
@@ -529,6 +551,14 @@ def main():
         n_models = config["model"].get("n_models", 5)
         logger.info(f"Training ensemble with {n_models} models")
         
+        # Build target_weights tensor for ensemble training
+        target_weights_tensor = None
+        if "target_weights" in config.get("loss", {}):
+            weights = config["loss"]["target_weights"]
+            weight_list = [weights.get(t, 1.0) for t in config["targets"]]
+            target_weights_tensor = torch.tensor(weight_list, dtype=torch.float32)
+            logger.info(f"Target weights: {dict(zip(config['targets'], weight_list))}")
+
         try:
             from fea_ml.models.ensemble import train_deep_ensemble
             ensemble = train_deep_ensemble(
@@ -546,10 +576,13 @@ def main():
                 patience=config["training"].get("patience", 20),
                 use_ema=config["training"].get("use_ema", True),
                 ema_decay=config["training"].get("ema_decay", 0.999),
+                target_weights=target_weights_tensor,
+                target_names=list(config["targets"]),
             )
             
-            # Save ensemble paths
-            checkpoint_paths = ensemble.save_checkpoints(output_dir / "ensemble")
+            # Save ensemble checkpoint paths (best checkpoints already saved during training)
+            ensemble_dir = output_dir / "ensemble"
+            checkpoint_paths = sorted(ensemble_dir.glob("ensemble_member_*.pt"))
             with open(output_dir / "ensemble_paths.json", "w") as f:
                 json.dump([str(p) for p in checkpoint_paths], f, indent=2)
             
