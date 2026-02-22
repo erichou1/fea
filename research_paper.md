@@ -98,6 +98,112 @@ Robust topology optimization under uncertain loads and material properties has b
 
 ## 4. Methods
 
+The overall SASTO pipeline is illustrated in Figure 1 and the CNN architecture in Figure 2.
+
+### Figure 1: SASTO Pipeline Overview
+
+```mermaid
+flowchart TB
+    subgraph INPUT["Input"]
+        A["3DWire Wireframe\n(vertices + edges)"] --> B["Volumetric Generation\n(exterior/interior/roof/floor)"]
+        B --> C["128³ Voxel Grid\n+ Part Labels (0-4)"]
+    end
+
+    subgraph TRAINING["Surrogate Training (Offline)"]
+        D["14,293 House Geometries"] --> E["FEA Pipeline\n(SfePy + Gmsh + ASCE 7-22)"]
+        E --> F["11,178 Filtered\nSimulation Results"]
+        F --> G["5-Member Deep Ensemble\n(Surrogate3DResNet × 5)\n43.8M params total"]
+    end
+
+    subgraph SASTO["SASTO Optimization (Online, 159.5s)"]
+        direction TB
+        H["Phase 1: Sensitivity-Guided Erosion"] --> I["Phase 2: Fine-Grained Endgame"]
+        I --> J["Phase 3: Swap Moves"]
+        
+        subgraph PH1["Phase 1 Detail"]
+            H1["Compute df/dρ via Backprop"] --> H2["Sort by Sensitivity\n(safest-to-remove first)"]
+            H2 --> H3["Filter: 6-Simple-Point\n+ Thickness >= t_min(part)"]
+            H3 --> H4["Remove Batch\n(200 to 10 adaptive)"]
+            H4 --> H5{"μ + kσ <= g_allow?"}
+            H5 -->|Accept| H6["Commit Removal"]
+            H5 -->|Reject| H7["Undo + Halve Batch"]
+            H6 --> H1
+            H7 --> H4
+        end
+    end
+
+    subgraph OUTPUT["Output"]
+        K["Post-Processing\n(fill holes, remove shards)"]
+        K --> L["SDF → Marching Cubes\n→ Laplacian Smooth → STL"]
+        L --> M["Watertight Single-Component\n3D-Printable Mesh"]
+    end
+
+    C --> SASTO
+    G --> SASTO
+    J --> K
+```
+
+### Figure 2: Surrogate3DResNet Architecture (Single Ensemble Member, ~8.76M params)
+
+```mermaid
+flowchart LR
+    subgraph VOXEL["3D CNN Encoder"]
+        V1["Input\n7×128³"] --> V2["Conv+Pool\n32×64³"]
+        V2 --> V3["Conv+Pool\n64×32³"]
+        V3 --> V4["Conv+Pool\n128×16³"]
+        V4 --> V5["Conv+Pool\n256×8³"]
+        V5 --> V6["SE-ResBlock ×3\n256×8³"]
+    end
+
+    subgraph POOL["Multi-Scale Pool"]
+        V6 --> P1["AdaptiveAvgPool3d\n256×1"]
+        V6 --> P2["AdaptiveMaxPool3d\n256×1"]
+        P1 --> P3["Concat\n512"]
+        P2 --> P3
+    end
+
+    subgraph FEAT["Feature MLP"]
+        F1["10-dim features"] --> F2["Linear(128)\n+ GELU"]
+        F2 --> F3["Linear(128)\n+ LayerNorm"]
+    end
+
+    subgraph HEAD["Prediction Head"]
+        P3 --> H1["Concat\n640"]
+        F3 --> H1
+        H1 --> H2["Linear(512)\n+ LayerNorm + GELU"]
+        H2 --> H3["Linear(256)\n+ LayerNorm + GELU"]
+        H1 -->|"Skip"| H4["Linear(256)"]
+        H3 --> H5["+ (residual)"]
+        H4 --> H5
+        H5 --> H6["Linear(3)\n→ σ_VM, u_max, C"]
+    end
+```
+
+### Figure 3: 6-Connectivity vs 26-Connectivity for Marching Cubes
+
+```mermaid
+flowchart TB
+    subgraph CONN6["6-Connectivity (Ours)"]
+        direction TB
+        A1["Voxel A"] ---|"Shared Face"| A2["Voxel B"]
+        A3["MC surface patches\nconnected across face"]
+        A2 --> A3
+        A4["Result: 1 connected\nmesh component"]
+        A3 --> A4
+    end
+
+    subgraph CONN26["26-Connectivity (Baseline)"]
+        direction TB
+        B1["Voxel A"] -.-|"Corner Only"| B2["Voxel B"]
+        B3["MC surface patches\ndisjoint at corner"]
+        B2 --> B3
+        B4["Result: Multiple floating\nmesh fragments"]
+        B3 --> B4
+    end
+```
+
+*Figure 3 illustrates why 26-connectivity permits floating mesh fragments: when two voxels share only a corner vertex and all surrounding voxels are empty, marching cubes generates disjoint surface patches on opposite sides of the void. 6-connectivity requires shared faces, ensuring continuous surface coverage.*
+
 ### 4.1 Physical Problem Definition
 
 The design domain $\Omega \subset \mathbb{R}^3$ is a single-story residential structure discretized on a regular $128^3$ voxel grid. Each voxel is classified as one of five structural types:
@@ -470,7 +576,7 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 
 ### 6.2 [Simulated] Primary Optimization Results
 
-**Test geometry:** Sample 00472, single-story house, 128³ resolution.
+**Test geometry:** Sample 00472, single-story house, 128³ resolution. The optimization convergence is shown in Figure 4.
 
 | Metric | B0 (Baseline) | V12 (Uniform) | V11 (Part-Aware) |
 |--------|---------------|---------------|------------------|
@@ -487,6 +593,8 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 
 ### 6.3 [Simulated] Efficiency-Integrity Index
 
+The comparative efficiency is visualized in Figure 6.
+
 $$\mathcal{I}_\text{EI}(\text{V11}) = \frac{0.450}{(3.08 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.146 / 0.140)} = \frac{0.450}{0.616 \times 2.043} = \frac{0.450}{1.258} = 0.358 \tag{37}$$
 
 $$\mathcal{I}_\text{EI}(\text{V12}) = \frac{0.343}{(3.57 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.138 / 0.140)} = \frac{0.343}{0.714 \times 1.986} = \frac{0.343}{1.418} = 0.242 \tag{38}$$
@@ -494,6 +602,8 @@ $$\mathcal{I}_\text{EI}(\text{V12}) = \frac{0.343}{(3.57 \times 10^6 / 5.0 \time
 V11 achieves 48% higher efficiency-integrity index than V12, indicating superior material utilization per unit structural demand.
 
 ### 6.4 [Simulated] Per-Part Breakdown (V11)
+
+The per-part material retention is visualized in Figure 5.
 
 | Part | Original | Optimized | Kept (%) |
 |------|----------|-----------|----------|
@@ -506,7 +616,7 @@ The majority of material removal comes from interior partition walls, consistent
 
 ### 6.5 [Simulated] Optimization Convergence
 
-The optimization proceeded in three phases:
+The optimization proceeded in three phases. The batch-by-batch adaptation is shown in Figure 8.
 
 | Phase | Batches | Voxels Removed | Final Volume | Time (s) |
 |-------|---------|----------------|--------------|----------|
@@ -550,6 +660,8 @@ Switching from (26, 6) to (6, 26) pairing eliminated all floating mesh fragments
 The heterogeneous thickness formulation provides a 10.7 percentage point improvement in material reduction by allowing thinner interior walls.
 
 ### 7.3 [Simulated] Sensitivity to Uncertainty Factor $k$
+
+The sensitivity to $k$ is visualized in Figure 10.
 
 | $k$ | Volume Reduction | Behavior |
 |-----|------------------|----------|
@@ -609,6 +721,8 @@ The 45% material reduction is achieved primarily through removal of interior par
 The sensitivity gradient $s_i$ (Eq. 24) provides a continuous, quantitative ranking of each voxel's structural contribution. Voxels with $s_i > 0$ contribute more dead load than stiffness—their removal *decreases* the predicted compliance + stress composite. Voxels with $s_i < 0$ are structurally essential and must be retained. The sorting-then-filtering architecture ensures that even when the surrogate gradient is imperfect ($\tau_K < 1$, Section 4.13), the binary accept/reject constraint check (Eq. 22) catches errors before they propagate.
 
 ### 9.2 Speedup Analysis
+
+The runtime comparison is visualized in Figure 11.
 
 Conventional SIMP topology optimization of a single 128³ voxel geometry would require approximately 200–600 FEA evaluations. With building-scale tetrahedral meshes, each FEA solve takes 1.5–3 minutes, yielding an estimated total of 5–30 hours.
 
@@ -704,6 +818,8 @@ The following limitations are organized by severity, from those most likely to a
 | Trained model weights | Available | `checkpoints/final_model.pth` |
 | Test geometry input | Available | `fea_ml/data/runs_real_128/00472/` |
 | Optimization output | Available | `fea_ml/runs/v3/optimization_128/` |
+| Figure generation script | Available | `generate_figures.py` |
+| Generated figures (PNG/PDF) | Available | `figures/` |
 
 ---
 
@@ -739,6 +855,26 @@ This work presented three technical contributions to topology optimization for a
 | Mesh convergence on optimized design | < 2% change in peak stress with 2× refinement |
 | Physical coupon test (scaled model) | Load capacity within 20% of simulation |
 | Multi-geometry generalization | > 35% reduction on ≥ 10 different floor plans |
+
+---
+
+## List of Figures
+
+| Figure | Description | Source |
+|--------|-------------|--------|
+| **Figure 1** | SASTO pipeline overview (3-phase flow from input to STL export) | Mermaid diagram (Section 4) |
+| **Figure 2** | Surrogate3DResNet architecture (single ensemble member, ~8.76M params) | Mermaid diagram (Section 4) |
+| **Figure 3** | 6-connectivity vs 26-connectivity for marching cubes compatibility | Mermaid diagram (Section 4) |
+| **Figure 4** | Optimization convergence: volume reduction, VM stress, and compliance vs. batch number (V11 vs V12) | `figures/fig4_convergence.png` |
+| **Figure 5** | Per-part volume breakdown: voxel count and material retention by structural role | `figures/fig5_per_part.png` |
+| **Figure 6** | Efficiency-Integrity Index comparison across B0, V12, V11 | `figures/fig6_efficiency.png` |
+| **Figure 7** | Response evolution during optimization: normalized stress, compliance, and displacement vs. volume fraction | `figures/fig7_uncertainty.png` |
+| **Figure 8** | Adaptive batch size during V11 optimization (trust region analogy) | `figures/fig8_batch_adaptation.png` |
+| **Figure 9** | Ablation summary: connectivity + thickness formulation comparison | `figures/fig9_ablation.png` |
+| **Figure 10** | Sensitivity to uncertainty margin factor $k$ | `figures/fig10_k_sensitivity.png` |
+| **Figure 11** | Runtime comparison: SIMP vs SASTO (log scale) | `figures/fig11_speedup.png` |
+
+*All quantitative figures (4–11) generated from actual optimization data via `generate_figures.py`. Source data: `fea_ml/runs/v3/optimization_128/optimization_summary_v11.json`.*
 
 ---
 
