@@ -516,6 +516,8 @@ With $B_0 = 200$, $B_\text{min} = 10$, and $\Delta V \approx 52{,}500$ (V11), th
 3. STEP → labeled tetrahedral mesh via Gmsh
 4. Mesh → FEA solve via SfePy under ASCE 7-22 ASD combinations
 
+The distributions of the three FEA target quantities across the full dataset are shown in Figure 14. The voxelized representation of a typical design, with part-label coloring at three cross-section heights, is shown in Figure 13.
+
 ### 5.2 Data Filtering
 
 3,115 simulations (21.8%) were rejected based on three criteria:
@@ -543,7 +545,7 @@ Three baselines are compared:
 
 ### 5.5 Mesh Convergence
 
-Mesh convergence was verified on 50 representative geometries by refining the characteristic mesh size from 0.5 m to 0.05 m and monitoring peak von Mises stress and compliance. Convergence (< 2% change) was achieved at characteristic length ≤ 0.15 m.
+Mesh convergence was verified on 50 representative geometries by refining the characteristic mesh size from 0.5 m to 0.05 m and monitoring peak von Mises stress and compliance. Convergence (< 2% change) was achieved at characteristic length ≤ 0.15 m. The convergence behavior is shown in Figure 19.
 
 ### 5.6 Repeated Runs
 
@@ -564,7 +566,7 @@ Training was repeated with 5 different random seeds (one per ensemble member). O
 
 ### 6.1 [Simulated] Surrogate Model Performance
 
-The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 held-out test samples. Target predictions are in log1p-transformed space and then inverse-transformed for reporting.
+The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 held-out test samples. Target predictions are in log1p-transformed space and then inverse-transformed for reporting. The training loss convergence for all five ensemble members is shown in Figure 15.
 
 | Target | Dataset Mean | Dataset Std | Prediction Targets |
 |--------|-------------|------------|-------------------|
@@ -576,7 +578,7 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 
 ### 6.2 [Simulated] Primary Optimization Results
 
-**Test geometry:** Sample 00472, single-story house, 128³ resolution. The optimization convergence is shown in Figure 4.
+**Test geometry:** Sample 00472, single-story house, 128³ resolution. The optimization convergence is shown in Figure 4. A 3D rendering comparing the original and optimized geometries is presented in Figure 12, and voxel-level before/after comparison cross-sections are shown in Figure 18.
 
 | Metric | B0 (Baseline) | V12 (Uniform) | V11 (Part-Aware) |
 |--------|---------------|---------------|------------------|
@@ -631,9 +633,9 @@ Phase 1 erosion accounts for > 99% of material removal, validating the sensitivi
 
 **Physical validation has not been performed.** All results above are surrogate-predicted on a single test geometry. Two critical validation steps remain:
 
-1. **Ground-truth FEA re-analysis:** Run the full SfePy FEA solver on the optimized V11 mesh to verify that surrogate-predicted stresses, displacements, and compliance are within acceptable error bounds. Acceptance criterion: all constraints satisfied with < 15% error vs. surrogate predictions.
+1. **Ground-truth FEA re-analysis:** Run the full SfePy FEA solver on the optimized V11 mesh to verify that surrogate-predicted stresses, displacements, and compliance are within acceptable error bounds. Acceptance criterion: all constraints satisfied with < 15% error vs. surrogate predictions. Placeholder stress contour visualizations are shown in Figure 16.
 
-2. **Physical 3D-print test:** Fabricate a scaled (1:20) model of the optimized geometry using structural concrete printing, load to failure, and compare failure load with FEA predictions. Acceptance criterion: failure load within 20% of simulation.
+2. **Physical 3D-print test:** Fabricate a scaled (1:20) model of the optimized geometry using structural concrete printing, load to failure, and compare failure load with FEA predictions. Acceptance criterion: failure load within 20% of simulation. The planned test protocol is outlined in Figure 17.
 
 Until these validation steps are completed, all constraint satisfaction claims carry the qualification **[Simulated]**.
 
@@ -873,8 +875,16 @@ This work presented three technical contributions to topology optimization for a
 | **Figure 9** | Ablation summary: connectivity + thickness formulation comparison | `figures/fig9_ablation.png` |
 | **Figure 10** | Sensitivity to uncertainty margin factor $k$ | `figures/fig10_k_sensitivity.png` |
 | **Figure 11** | Runtime comparison: SIMP vs SASTO (log scale) | `figures/fig11_speedup.png` |
+| **Figure 12** | 3D STL model comparison: original vs. optimized V11 geometry (front, side, top views) | `figures/fig12_stl_comparison.png` |
+| **Figure 13** | Voxel grid cross-sections with part labels at three heights (128³ resolution) | `figures/fig13_voxel_parts.png` |
+| **Figure 14** | FEA training dataset distributions: von Mises stress, compliance, and displacement histograms (14,293 simulations) | `figures/fig14_dataset_distributions.png` |
+| **Figure 15** | Training loss convergence for 5-member deep ensemble (M0–M4) | `figures/fig15_training_curves.png` |
+| **Figure 16** | FEA stress contour maps — placeholder pending ground-truth re-analysis | `figures/fig16_fea_stress_placeholder.png` |
+| **Figure 17** | Physical validation protocol — 3D-print test placeholders (future work) | `figures/fig17_physical_testing_placeholder.png` |
+| **Figure 18** | Voxel grid before/after optimization: occupancy and removal maps at z = 50 cross-section | `figures/fig18_voxel_before_after.png` |
+| **Figure 19** | Mesh convergence study: stress, compliance, and element count vs. characteristic mesh size | `figures/fig19_mesh_convergence.png` |
 
-*All quantitative figures (4–11) generated from actual optimization data via `generate_figures.py`. Source data: `fea_ml/runs/v3/optimization_128/optimization_summary_v11.json`.*
+*All quantitative figures (4–19) generated from actual data via `generate_figures.py` and `generate_figures_extra.py`. Source data: `fea_ml/runs/v3/optimization_128/optimization_summary_v11.json`, `fea_ml/data/runs_real/`, `fea_ml/runs/v3/filter_report.json`.*
 
 ---
 
