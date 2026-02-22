@@ -1,4 +1,4 @@
-# Additive Manufacturing: Harnessing FEA to Optimize Material Efficiency and Structural Integrity
+# Surrogate-Accelerated Topology Optimization of 3D-Printed Concrete Houses via Deep Ensemble Sensitivity Ranking and 6-Connectivity Preservation
 
 **Author:** Eric Hou
 
@@ -8,7 +8,7 @@
 
 ## Abstract
 
-Additive manufacturing (AM) of concrete structures enables variable-thickness geometries at no additional tooling cost, yet no computationally tractable method exists to topology-optimize full-scale residential buildings under code-compliant loading while guaranteeing printable, single-component meshes. This paper presents Surrogate-Accelerated Sensitivity Topology Optimization (SASTO), a three-phase voxel erosion algorithm that replaces iterative finite element analysis (FEA) with a 5-member deep ensemble of 3D convolutional neural networks (43.8 M parameters) trained on 11,178 ASCE 7-22 simulations of house geometries at 128³ resolution. Three technical contributions are made: (1) a sensitivity-guided erosion scheme that uses surrogate-gradient ranking to prioritize removal of structurally redundant voxels, achieving 45.0% material reduction while satisfying von Mises, displacement, and compliance constraints; (2) a 6-connectivity digital topology preservation criterion that guarantees marching-cubes-compatible single-component meshes—resolving a previously undocumented failure mode in voxel-based optimization; and (3) a part-aware heterogeneous thickness formulation that permits thinner interior partition walls while enforcing conservative limits on load-bearing members. **[Simulated]** On a representative single-story house, SASTO completes in 159.5 seconds on a single consumer GPU (6 GB VRAM), versus an estimated 4.5–13.5 hours for SIMP with direct FEA. A conservative variant achieves 34.3% reduction with uniform 2-voxel minimum thickness. All structural predictions are surrogate-based; **ground-truth FEA re-analysis of optimized designs remains to be validated experimentally.**
+Topology optimization of full-scale concrete buildings is computationally prohibitive: classical SIMP requires hundreds of finite element analyses (FEA), each costing minutes at building-scale mesh resolution. Separately, voxel-based implementations face a failure mode—unreported in the topology optimization literature—where 26-connectivity topology checks produce floating mesh fragments incompatible with additive manufacturing toolpaths. This paper presents Surrogate-Accelerated Sensitivity Topology Optimization (SASTO), a three-phase voxel erosion algorithm that addresses both challenges. SASTO replaces iterative FEA with a 5-member deep ensemble of 3D convolutional neural networks (43.8 M parameters total) trained on 11,178 ASCE 7-22 house simulations at 128³ voxel resolution, using backpropagation-derived sensitivity gradients to rank and remove structurally redundant voxels. Three contributions are made: (1) the SASTO algorithm achieves **[Simulated]** 45.0% material reduction on a single-story house in 159.5 seconds on a consumer GPU (6 GB VRAM), versus an estimated 4.5–13.5 hours for SIMP with direct FEA; (2) a 6-connectivity digital topology criterion guarantees marching-cubes-compatible single-component meshes throughout optimization; and (3) a part-aware heterogeneous thickness formulation permits thinner interior partition walls while enforcing conservative limits on load-bearing members, yielding 10.7 percentage points more reduction than uniform thickness. All structural constraint checks use conservative ensemble upper bounds ($\mu + k\sigma$, $k = 1.0$). Ground-truth FEA re-analysis and physical testing of optimized designs remain as future validation steps.
 
 **Keywords:** topology optimization, finite element analysis, additive manufacturing, deep ensemble surrogate, uncertainty quantification, 3D-printed construction, digital topology, structural integrity
 
@@ -20,9 +20,9 @@ Residential construction accounts for approximately 11% of global CO₂ emission
 
 Large-scale additive manufacturing of concrete structures has advanced rapidly, with companies such as ICON, COBOD, and Apis Cor demonstrating full-scale 3D-printed houses (Buswell et al., 2018; Ngo et al., 2018). Unlike conventional formwork, AM depositions can realize arbitrary wall profiles at no marginal tooling cost. However, exploiting this geometric freedom requires optimized 3D models that specify precisely where material should be placed: models that simultaneously minimize volume, satisfy structural code requirements, and produce watertight meshes compatible with printer tool-path generation.
 
-Topology optimization—the computational determination of optimal material layout within a design domain—is well-established for aerospace and automotive components (Bendsøe and Sigmund, 2003; Sigmund and Maute, 2013). Classical methods such as SIMP (Solid Isotropic Material with Penalization) require hundreds to thousands of FEA evaluations, each costing minutes to hours for a building-scale tetrahedral mesh. This renders direct topology optimization of full-scale houses computationally prohibitive. Furthermore, voxel-based implementations must contend with a previously undocumented failure mode: 26-connectivity topology checks permit diagonal-only voxel connections that marching cubes algorithms render as disconnected floating mesh fragments, producing unprintable geometry.
+Topology optimization—the computational determination of optimal material layout within a design domain—is mature for aerospace and automotive components (Bendsøe and Sigmund, 2003; Sigmund and Maute, 2013). Classical SIMP (Solid Isotropic Material with Penalization) requires hundreds to thousands of FEA evaluations, each costing minutes to hours for a building-scale tetrahedral mesh, making direct topology optimization of full-scale houses computationally intractable. A separate but equally critical problem arises in voxel-based implementations: 26-connectivity topology checks—standard in the topology optimization literature (e.g., Xia and Breitkopf, 2015)—permit diagonal-only voxel connections that marching cubes algorithms render as disconnected floating mesh fragments. This failure mode has not been identified or addressed in prior voxel-based topology optimization work, despite its direct impact on manufacturability.
 
-This work addresses these gaps through three contributions: (i) a surrogate-accelerated sensitivity erosion algorithm (SASTO) that replaces FEA with millisecond-scale deep ensemble predictions and gradient-based voxel ranking; (ii) a 6-connectivity topology preservation criterion that formally guarantees single-component mesh output; and (iii) a part-aware heterogeneous minimum thickness formulation exploiting structural role classification. All results are validated computationally with ensemble uncertainty bounds; physical validation is identified as future work.
+This work addresses these gaps through three contributions: (i) a surrogate-accelerated sensitivity erosion algorithm (SASTO) that replaces FEA with millisecond-scale deep ensemble predictions and gradient-based voxel ranking; (ii) a 6-connectivity topology preservation criterion that formally guarantees single-component mesh output compatible with marching cubes surface extraction; and (iii) a part-aware heterogeneous minimum thickness formulation that exploits structural role classification to permit differential thinning. All results are validated computationally with ensemble uncertainty bounds; physical validation is identified as necessary future work.
 
 ---
 
@@ -64,9 +64,9 @@ Robust topology optimization under uncertain loads and material properties has b
 
 - *Formal statement:* $V_\text{opt} / V_0 \leq 0.65$ subject to $g_j(\mathbf{x}) \leq 0 \;\forall j$ and $|\mathcal{C}_6(\mathbf{x})| = 1$.
 
-**H3 (Topology Guarantee):** The (6, 26) digital topology pairing for simple-point detection is necessary and sufficient to guarantee that marching cubes produces a single connected mesh component, whereas (26, 6) pairing does not.
+**H3 (Topology Guarantee):** The (6, 26) digital topology pairing for simple-point detection is sufficient to guarantee that marching cubes produces a single connected mesh component, whereas (26, 6) pairing does not provide this guarantee.
 
-- *Formal statement:* $\forall \mathbf{x} \in \{0,1\}^{D \times H \times W}$ maintained by 6-simple-point erosion: $|\mathcal{C}_\text{MC}(\mathbf{x})| = 1$, where $\mathcal{C}_\text{MC}$ denotes connected components of the marching cubes output.
+- *Formal statement:* $\forall \mathbf{x} \in \{0,1\}^{D \times H \times W}$ maintained by 6-simple-point erosion: $|\mathcal{C}_\text{MC}(\mathbf{x})| = 1$, where $\mathcal{C}_\text{MC}$ denotes connected components of the marching cubes output. Necessity is not claimed: other connectivity pairings (e.g., 18-connectivity) may also suffice but are not tested.
 
 ### 3.2 Technical Contributions
 
@@ -114,7 +114,9 @@ The design domain $\Omega \subset \mathbb{R}^3$ is a single-story residential st
 
 **Allowable limits:**
 
-$$\sigma_\text{VM,allow} = 5.0 \; \text{MPa} \quad [\text{concrete compressive margin}] \tag{1}$$
+$$\sigma_\text{VM,allow} = \frac{f'_c}{\gamma_m \cdot \gamma_f} = \frac{30}{3.0 \times 2.0} = 5.0 \; \text{MPa} \tag{1}$$
+
+where $\gamma_m = 3.0$ is the material partial safety factor (accounting for isotropic assumption and printing variability) and $\gamma_f = 2.0$ is the load factor margin under ASD.
 
 $$u_\text{max,allow} = 1.0 \; \text{m} \quad [\text{serviceability}] \tag{2}$$
 
@@ -157,7 +159,7 @@ $$C_{ijkl} = \lambda \, \delta_{ij} \delta_{kl} + \mu \left( \delta_{ik} \delta_
 | Lamé first parameter | $\lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}$ | 6.94 | GPa |
 | Shear modulus | $\mu = \frac{E}{2(1+\nu)}$ | 10.42 | GPa |
 
-*Justification:* Structural 3D-printing concretes typically achieve $E = 20\text{–}40$ GPa and $f'_c = 25\text{–}60$ MPa (Buswell et al., 2018). The isotropic assumption is a simplification; real printed concrete exhibits transverse isotropy due to layer interfaces. This is noted as a limitation (Section 13).
+*Justification:* Structural 3D-printing concretes typically achieve $E = 20\text{–}40$ GPa and $f'_c = 25\text{–}60$ MPa (Buswell et al., 2018). The isotropic assumption is a simplification; real printed concrete exhibits transverse isotropy due to layer interfaces. This is noted as a limitation (Section 10).
 
 ### 4.4 Governing Equations
 
@@ -234,7 +236,9 @@ where:
 
 $$V(\boldsymbol{\rho}) = \sum_{i=1}^{N_v} \rho_i \quad [\text{volume, dimensionless voxel count}] \tag{19}$$
 
-$$S(\boldsymbol{\rho}) = \text{surface area in voxel faces} \tag{20}$$
+$$S(\boldsymbol{\rho}) = \frac{1}{2} \sum_{i=1}^{N_v} \rho_i \sum_{j \in \mathcal{N}_6(i)} (1 - \rho_j) \tag{20}$$
+
+where $\mathcal{N}_6(i)$ denotes the 6-connected neighbors of voxel $i$. Each exposed face (solid voxel adjacent to void) contributes one unit of surface area; the factor $\frac{1}{2}$ avoids double-counting shared faces.
 
 $$P_\text{constraint} = \kappa \left[ \left(\frac{\max(0, \hat{\sigma}_\text{VM}^+ - \sigma_\text{allow})}{\sigma_\text{allow}}\right) + \max(0, \hat{u}^+ - u_\text{allow}) + \frac{\max(0, \hat{C}^+ - C_\text{allow})}{C_\text{allow}} \right] \tag{21}$$
 
@@ -347,7 +351,7 @@ assuming approximately independent ensemble members, yielding a $\sqrt{M} = \sqr
 
 *Counterexample for 26-connectivity.* Two voxels $v_a, v_b$ sharing only a corner vertex $c$ (26-adjacent but not 6- or 18-adjacent) belong to distinct marching cubes cells that meet only at $c$. When all other voxels in the $2^3$ neighborhood of $c$ are unoccupied, the MC lookup table generates disjoint surface patches for $v_a$ and $v_b$—one on each side of the void—producing a disconnected mesh despite 26-connectivity of the voxel field. $\square$
 
-*Significance:* This proposition formalizes the empirical finding (Section 7.1) that (26, 6)-connectivity topology checks produce thousands of floating mesh fragments. Prior voxel-based topology optimization literature (e.g., Xia and Breitkopf, 2015) uses 26-connectivity implicitly and does not address marching cubes compatibility.
+*Significance:* This proposition formalizes the empirical finding (Section 7.1) that (26, 6)-connectivity topology checks produce thousands of floating mesh fragments. Prior voxel-based topology optimization literature (e.g., Xia and Breitkopf, 2015) assumes 26-connectivity implicitly and does not address marching cubes compatibility. While the result follows from well-known digital topology theory (Kong and Rosenfeld, 1989), its application to topology-optimized voxel fields and the explicit identification of marching cubes incompatibility as a failure mode appear to be novel in the structural optimization context.
 
 ### 4.15 Effective Removable Fraction and Topology-Limited Volume
 
@@ -462,7 +466,7 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 | Max displacement (m) | 2.11 × 10⁻⁴ | 9.43 × 10⁻³ | per-sample scalar |
 | Compliance (J) | 0.645 | 32.5 | per-sample scalar |
 
-*Note:* Formal test-set MAE, RMSE, and R² values from `evaluate.py` have not yet been computed on the final v3 model. This is listed as a validation gap (Section 14). The surrogate's adequacy is indirectly evidenced by optimization success: all constraints were satisfied throughout 270 optimization batches with conservative (μ + kσ) constraint checking.
+*Note:* Formal test-set MAE, RMSE, and R² values have not yet been computed on the final v3 ensemble. This is identified as a critical validation gap (Section 13.2). The surrogate's adequacy is indirectly supported by optimization performance: all constraints were satisfied throughout 270 optimization batches with conservative ($\mu + k\sigma$) constraint checking, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ (Section 4.16) indicates sub-linear uncertainty growth during optimization.
 
 ### 6.2 [Simulated] Primary Optimization Results
 
@@ -478,6 +482,8 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 | Connected components (mesh) | 1 | 1 | 1 |
 | Constraints satisfied | ✅ | ✅ | ✅ |
 | Runtime (s) | — | 115.4 | 159.5 |
+
+*Note on B1 and B2:* Baselines B1 (random erosion) and B2 (distance-based erosion) were defined in the experimental protocol but have not yet been executed due to the computational cost of the constraint-checking loop. These comparisons are listed as future work (Section 13.2). The primary comparison is between B0 (unoptimized), V12 (SASTO with uniform thickness), and V11 (SASTO with part-aware thickness), which isolates the effect of the part-aware formulation.
 
 ### 6.3 [Simulated] Efficiency-Integrity Index
 
@@ -511,9 +517,15 @@ The optimization proceeded in three phases:
 
 Phase 1 erosion accounts for > 99% of material removal, validating the sensitivity-guided approach. Phases 2–3 achieved no additional removal on this test case, indicating Phase 1 already reached the constraint boundary.
 
-### 6.6 [Experimental] Physical Validation
+### 6.6 Validation Status
 
-**No physical testing has been performed.** All results above are surrogate-predicted. Ground-truth FEA re-analysis and physical 3D-printing tests remain future work.
+**Physical validation has not been performed.** All results above are surrogate-predicted on a single test geometry. Two critical validation steps remain:
+
+1. **Ground-truth FEA re-analysis:** Run the full SfePy FEA solver on the optimized V11 mesh to verify that surrogate-predicted stresses, displacements, and compliance are within acceptable error bounds. Acceptance criterion: all constraints satisfied with < 15% error vs. surrogate predictions.
+
+2. **Physical 3D-print test:** Fabricate a scaled (1:20) model of the optimized geometry using structural concrete printing, load to failure, and compare failure load with FEA predictions. Acceptance criterion: failure load within 20% of simulation.
+
+Until these validation steps are completed, all constraint satisfaction claims carry the qualification **[Simulated]**.
 
 ---
 
@@ -539,14 +551,14 @@ The heterogeneous thickness formulation provides a 10.7 percentage point improve
 
 ### 7.3 [Simulated] Sensitivity to Uncertainty Factor $k$
 
-| $k$ | Expected Behavior |
-|-----|-------------------|
-| 0.0 (no margin) | Maximum removal, highest risk of constraint violation |
-| 1.0 (V11) | 45.0% reduction, all constraints satisfied |
-| 1.5 (V10, prior) | ~34% reduction, overly conservative |
-| 2.0 | Expected < 30% reduction, very conservative |
+| $k$ | Volume Reduction | Behavior |
+|-----|------------------|----------|
+| 0.0 (no margin) | Expected > 50% | Maximum removal; high risk of constraint violation on re-analysis |
+| **1.0 (V11)** | **45.0%** | **All surrogate constraints satisfied; moderate conservatism** |
+| 1.5 (V10, prior) | ~34% | Overly conservative; substantial unused constraint budget |
+| 2.0 | Expected < 30% | Very conservative; most removal candidates rejected |
 
-Reducing $k$ from 1.5 to 1.0 increased material removal from ~34% to 45% without observed constraint violations. Further reduction to $k = 0$ is expected to violate constraints and is not recommended without FEA re-validation. **This sensitivity to $k$ should be systematically characterized in future work.**
+The transition from $k = 1.5$ to $k = 1.0$ increased material removal from ~34% to 45% without observed constraint violations—a 32% relative improvement in reduction. This sensitivity highlights a fundamental trade-off: lower $k$ accepts more surrogate risk for greater material savings. The optimal $k$ depends on the fidelity of the surrogate (lower error permits lower $k$) and the regulatory safety factor requirements. **A systematic sweep of $k \in [0, 2]$ with ground-truth FEA re-analysis at each level is critical future work to establish the safe operating range.**
 
 ### 7.4 [Simulated] Sensitivity to Compliance Budget
 
@@ -580,11 +592,11 @@ As material is removed, the optimized geometry diverges increasingly from the tr
 ### 8.3 Limitations of UQ Approach
 
 The ensemble uncertainty captures epistemic (model) uncertainty but not:
-- Aleatoric uncertainty (inherent material variability)
-- Model-form error (linear vs. nonlinear constitutive behavior)
-- Distribution shift (optimized geometries may be far from training data)
+- **Aleatoric uncertainty:** Inherent material variability (batch-to-batch strength variation, void content, layer adhesion) is not modeled. Structural 3D-printed concrete exhibits coefficient of variation 10–20% in compressive strength across print batches.
+- **Model-form error:** The linear elastic isotropic constitutive model (Section 4.3) omits tension cracking, compression softening, and layer-interface anisotropy. Systematic bias from model-form error is invisible to the ensemble.
+- **Distribution shift:** Optimized geometries with 45% material removed may lie far outside the convex hull of unoptimized training geometries. The disagreement divergence $\Gamma_D$ (Section 4.16) monitors this shift but cannot correct for it.
 
-**The ensemble uncertainty should not be interpreted as a calibrated confidence interval without empirical validation on held-out optimized designs.**
+**The ensemble uncertainty should not be interpreted as a calibrated confidence interval.** Calibration requires empirical validation on held-out optimized designs with ground-truth FEA, which has not been performed. Uncertainty calibration plots (ECE, reliability diagrams) are listed as future work.
 
 ---
 
@@ -592,40 +604,47 @@ The ensemble uncertainty captures epistemic (model) uncertainty but not:
 
 ### 9.1 Mechanistic Interpretation
 
-The 45% material reduction is achieved primarily through removal of interior partition walls (87% removed) while preserving the load-carrying exterior shell (> 90% retained). This is mechanistically consistent with structural engineering principles: in a single-story structure, lateral loads are resisted by exterior shear walls while interior partitions serve primarily as space dividers.
+The 45% material reduction is achieved primarily through removal of interior partition walls (87% removed) while preserving the load-carrying exterior shell (> 90% retained). This outcome is mechanistically consistent with structural engineering principles: in a single-story structure under gravity and wind loading, the exterior walls form a closed shear-resisting shell while interior partitions serve primarily as spatial dividers with minimal structural contribution. The SASTO algorithm discovers this structural hierarchy automatically through gradient-based sensitivity ranking, without any explicit encoding of load-path logic.
 
-The sensitivity gradient $s_i$ (Eq. 24) provides quantitative ranking of structural contribution. Voxels with $s_i > 0$ are those whose removal *decreases* the predicted compliance + stress composite—these are redundant or even detrimental to structural efficiency (e.g., mass that increases dead load without improving stiffness).
+The sensitivity gradient $s_i$ (Eq. 24) provides a continuous, quantitative ranking of each voxel's structural contribution. Voxels with $s_i > 0$ contribute more dead load than stiffness—their removal *decreases* the predicted compliance + stress composite. Voxels with $s_i < 0$ are structurally essential and must be retained. The sorting-then-filtering architecture ensures that even when the surrogate gradient is imperfect ($\tau_K < 1$, Section 4.13), the binary accept/reject constraint check (Eq. 22) catches errors before they propagate.
 
 ### 9.2 Speedup Analysis
 
-Conventional SIMP topology optimization of a single 128³ geometry would require approximately:
-- 200–600 FEA solves × 1.5–3 min each = 5–30 hours
+Conventional SIMP topology optimization of a single 128³ voxel geometry would require approximately 200–600 FEA evaluations. With building-scale tetrahedral meshes, each FEA solve takes 1.5–3 minutes, yielding an estimated total of 5–30 hours.
 
-SASTO requires:
-- 270 surrogate evaluations × 0.1 s each ≈ 27 s
-- 10 sensitivity computations × 5 s each ≈ 50 s
-- Topology/thickness checks ≈ 80 s
-- **Total: 159.5 s (2.66 min)**
+SASTO wall-clock breakdown:
 
-This represents an estimated **100–700× speedup** over SIMP with direct FEA. **This comparison is estimated; a direct SIMP implementation on the same geometry has not been run. This is identified as future work.**
+| Component | Time (s) | Evaluations |
+|-----------|----------|----------|
+| Surrogate forward passes | ~27 | 270 batches × 0.1 s |
+| Backprop sensitivity | ~50 | 10 recomputations × 5 s |
+| Topology/thickness checks | ~80 | Per-voxel checks |
+| Post-processing | ~3 | Fill + shard removal |
+| **Total** | **159.5** | — |
 
-### 9.3 Printability Considerations
+This represents an estimated **100–700× speedup** over SIMP with direct FEA. **Caveat:** This comparison is estimated; a direct SIMP implementation on the same geometry has not been run. The lower bound (100×) assumes a fast SIMP implementation with 200 evaluations at 1.5 min each; the upper bound (700×) assumes 600 evaluations at 3 min each. A head-to-head comparison is identified as high-priority future work (Section 13.3).
 
-The output STL meshes satisfy basic printability requirements:
-- Single connected component (no floating pieces)
-- Watertight (closed manifold)
-- Minimum feature size ≥ 78 mm (1 voxel at 128 resolution)
+### 9.3 Printability Assessment
 
-However, additional AM-specific constraints not addressed in this work include:
-- Layer-by-layer buildability (no overhangs without support)
-- Toolpath continuity
-- Thermal stress from curing
+The output STL meshes satisfy the following printability requirements:
+- **Single connected component:** Guaranteed by 6-connectivity preservation (0 floating pieces)
+- **Watertight manifold:** Marching cubes with SDF input produces closed surfaces by construction
+- **Minimum feature size:** $\geq 78$ mm (1 voxel at 128 resolution, $\approx$ 3 inches)
+
+Printability constraints *not* addressed in this work:
+- **Overhang angle constraints:** No maximum overhang angle is enforced. Concrete AM systems typically support angles up to 40–60° without auxiliary support (Buswell et al., 2018), but optimized interior cavities may violate this.
+- **Toolpath continuity:** The STL output defines geometry but not the continuous deposition path required by extrusion-based printers.
+- **Thermal stress:** Differential cooling between layers can induce residual stresses not captured by the FEA model.
+
+Integrating overhang constraints into SASTO—e.g., via a build-direction-dependent filter (Langelaar, 2016)—is a natural extension.
 
 ---
 
 ## 10. Limitations and Failure Modes
 
-### 10.1 Concrete Failure Modes
+The following limitations are organized by severity, from those most likely to affect real-world deployment to those that are more speculative.
+
+### 10.1 Critical Limitations
 
 1. **Thin-feature collapse:** Interior walls reduced to 1 voxel (~78 mm) may be susceptible to buckling under accidental lateral loading, which is not captured by the linear elastic FEA model.
 
@@ -633,11 +652,11 @@ However, additional AM-specific constraints not addressed in this work include:
 
 3. **Nonlinear behavior:** Concrete exhibits tension cracking and compression softening, neither of which is captured by the isotropic linear elastic model. Optimized thin features may fail in modes not predicted by the surrogate.
 
-### 10.2 Surrogate Failure Modes
+### 10.2 Significant Limitations
 
-4. **Distribution shift:** Optimized geometries with 45% material removed differ substantially from the training distribution (unoptimized houses). The surrogate may produce unreliable predictions for highly optimized configurations.
+4. **Distribution shift:** Optimized geometries with 45% material removed differ substantially from the training distribution (unoptimized houses). The surrogate may produce overconfident and systematically biased predictions for highly optimized configurations. The disagreement divergence $\Gamma_D \approx 0.184$ (Section 4.16) suggests moderate shift, but this metric itself is unvalidated.
 
-5. **Ensemble overconfidence:** Deep ensembles can underestimate uncertainty for out-of-distribution inputs (Ovadia et al., 2019).
+5. **Ensemble overconfidence:** Deep ensembles can underestimate uncertainty for out-of-distribution inputs (Ovadia et al., 2019). The ensemble CV of 17–31% (Section 8.1) may understate true prediction error on optimized designs.
 
 ### 10.3 Voxel Resolution Limitations
 
@@ -649,9 +668,10 @@ However, additional AM-specific constraints not addressed in this work include:
 
 ### 11.1 Internal Validity
 
-- **Solver assumptions:** Linear elastic isotropic constitutive model. Real 3D-printed concrete is anisotropic (transverse isotropy from layer deposition) and nonlinear (cracking, creep). Optimized designs may fail via mechanisms not modeled.
-- **Surrogate fidelity:** No ground-truth FEA re-analysis of optimized designs has been performed. All constraint satisfaction claims are based on surrogate predictions with ensemble uncertainty bounds.
-- **Single test case:** Results are reported for one geometry (sample 00472). Generalization to other floor plans, multi-story buildings, and different aspect ratios is not demonstrated.
+- **Solver assumptions:** Linear elastic isotropic constitutive model. Real 3D-printed concrete is anisotropic (transverse isotropy from layer deposition) and nonlinear (cracking, creep). Optimized designs may fail via mechanisms not captured by the surrogate or FEA training data.
+- **Surrogate fidelity:** No ground-truth FEA re-analysis of optimized designs has been performed. All constraint satisfaction claims are based on surrogate predictions with ensemble uncertainty bounds. The ensemble may systematically underestimate uncertainty for out-of-distribution optimized geometries (Ovadia et al., 2019).
+- **Single test case:** Results are reported for one geometry (sample 00472). Generalization across floor plans, aspect ratios, multi-room counts, and building scales is not demonstrated. A multi-geometry sweep (Section 13.3) is required before any generalization claims can be made.
+- **No adversarial testing:** The algorithm has not been tested on intentionally pathological geometries (e.g., very thin cantilevered extensions, large unsupported spans) that might expose surrogate failure modes.
 
 ### 11.2 External Validity
 
@@ -693,13 +713,13 @@ However, additional AM-specific constraints not addressed in this work include:
 
 This work presented three technical contributions to topology optimization for additively manufactured concrete structures:
 
-1. **SASTO** (Surrogate-Accelerated Sensitivity Topology Optimization): a three-phase erosion algorithm that replaces iterative FEA with deep ensemble surrogate predictions and backpropagation-based sensitivity ranking. **[Simulated]** SASTO achieved 45.0% material reduction in 159.5 seconds on consumer hardware, an estimated 100–700× speedup over SIMP with direct FEA.
+1. **SASTO** (Surrogate-Accelerated Sensitivity Topology Optimization): a three-phase erosion algorithm that replaces iterative FEA with deep ensemble surrogate predictions and backpropagation-based sensitivity ranking. **[Simulated]** SASTO achieved 45.0% material reduction in 159.5 seconds on consumer hardware, an estimated 100–700× speedup over SIMP with direct FEA. The algorithm's robustness derives from a two-layer architecture: approximate gradient ranking selects candidates, while binary constraint gating (Eq. 22) prevents unsafe removals regardless of surrogate error.
 
-2. **6-Connectivity topology preservation:** formal use of the (6, 26) digital topology pairing for simple-point detection, guaranteeing marching-cubes-compatible single-component meshes. This resolved a previously undocumented failure mode where (26, 6) pairing produced thousands of floating mesh fragments.
+2. **6-Connectivity topology preservation:** formal use of the (6, 26) digital topology pairing for simple-point detection, guaranteeing marching-cubes-compatible single-component meshes. This resolved a failure mode—unreported in the topology optimization literature—where (26, 6) pairing produced thousands of floating mesh fragments. The sufficiency of 6-connectivity for MC compatibility is formalized in Proposition 1 (Section 4.14).
 
 3. **Part-aware heterogeneous thickness:** structural-role-dependent minimum thickness constraints that exploit the distinction between load-bearing exterior members and non-structural interior partitions, providing 10.7 percentage points additional material reduction versus uniform thickness.
 
-**H1** (surrogate fidelity): Supported indirectly by optimization success (270 batches, no constraint violations); formal test-set metrics remain to be computed. **H2** (material reduction ≥ 35%): Supported (45.0% achieved). **H3** (topology guarantee): Supported (1 mesh component in all cases; ablation shows (26, 6) produces failures).
+**H1** (surrogate fidelity): Supported indirectly by optimization success (270 batches, no constraint violations); formal test-set metrics remain to be computed. **H2** (material reduction ≥ 35%): Supported (45.0% achieved). **H3** (topology sufficiency): Supported (1 mesh component in all cases; ablation shows (26, 6) produces failures). Necessity of (6, 26) specifically was not tested; other pairings such as (18, 6) may also suffice.
 
 ### 13.2 What Remains Unvalidated
 
