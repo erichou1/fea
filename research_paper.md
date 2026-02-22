@@ -317,6 +317,82 @@ This provides a probabilistic safety margin without requiring explicit Monte Car
 | Random seeds | 42 (training), deterministic for reproducibility |
 | Runtime budget | Optimization: < 600 s; Training: < 48 h per ensemble member |
 
+### 4.13 Surrogate Sensitivity Decomposition and Ranking Robustness
+
+In classical SIMP, compliance sensitivity is computed exactly via the adjoint method (Bendsøe and Sigmund, 2003):
+
+$$\frac{\partial C}{\partial \rho_i}\bigg|_\text{SIMP} = -\mathbf{u}_e^\top \frac{\partial \mathbf{K}_e}{\partial \rho_i} \mathbf{u}_e$$
+
+requiring a complete FEA forward solve plus adjoint solve. In SASTO, the surrogate gradient $\tilde{s}_i = \partial f_\theta / \partial \rho_i$ is computed via backpropagation through the CNN. This gradient is *not* the true structural sensitivity—it is the sensitivity of the *surrogate's learned approximation*. It decomposes as:
+
+$$\tilde{s}_i = \underbrace{\frac{\partial F(\boldsymbol{\rho})}{\partial \rho_i}}_{\text{true sensitivity } s_i^*} + \underbrace{\frac{\partial \left(f_\theta - F\right)(\boldsymbol{\rho})}{\partial \rho_i}}_{\text{surrogate gradient error } \delta_i} \tag{29}$$
+
+where $F(\boldsymbol{\rho})$ is the true FEA response. The key insight is that SASTO does not require $\delta_i \to 0$ (pointwise gradient accuracy); it requires only **ranking consistency**—that the surrogate-induced ordering of voxels by sensitivity agrees with the true ordering for the subset being removed. Define the Kendall rank correlation between surrogate and true sensitivity rankings over the candidate set $\mathcal{S}$:
+
+$$\tau_K(\tilde{\mathbf{s}},\, \mathbf{s}^*) = \frac{|\mathcal{P}_c| - |\mathcal{P}_d|}{\binom{|\mathcal{S}|}{2}}, \quad \mathcal{P}_c = \{(i,j) : \text{sgn}(\tilde{s}_i - \tilde{s}_j) = \text{sgn}(s_i^* - s_j^*)\} \tag{30}$$
+
+where $\mathcal{P}_d$ is the set of discordant pairs. For erosion correctness, we require $\tau_K > 0$ (better than random). Critically, even when ranking is imperfect ($0 < \tau_K < 1$), the accept/reject constraint check (Eq. 22) acts as a safety filter: incorrectly prioritized voxels whose removal violates constraints are rejected and the batch is halved. This two-layer architecture—*approximate ranking + exact constraint gating*—makes SASTO robust to surrogate gradient error.
+
+*Ensemble gradient variance reduction:*
+
+$$\text{Var}[\bar{s}_i] = \frac{1}{M^2} \sum_{m=1}^{M} \text{Var}[s_i^{(m)}] \approx \frac{\text{Var}[s_i^{(1)}]}{M} \tag{31}$$
+
+assuming approximately independent ensemble members, yielding a $\sqrt{M} = \sqrt{5} \approx 2.24\times$ reduction in gradient standard deviation relative to a single model. This is a direct benefit of the ensemble architecture beyond uncertainty quantification.
+
+### 4.14 Proposition: 6-Connectivity Sufficiency for Marching Cubes Mesh Connectivity
+
+**Proposition 1.** *Let $\boldsymbol{\rho} \in \{0,1\}^{N^3}$ be a binary voxel field with exactly one 6-connected component. Let $\psi(\mathbf{x}) = \text{SDF}(\boldsymbol{\rho})$ be a signed distance field with $\psi \leq 0$ inside occupied voxels and $\psi > 0$ outside. Then the marching cubes triangulation $\mathcal{M} = \text{MC}(\psi, 0)$ has exactly one connected surface component.*
+
+*Proof sketch.* Consider two 6-adjacent occupied voxels $v_a, v_b$ sharing a face $F_{ab}$. The four dual-grid vertices of $F_{ab}$ satisfy $\psi \leq 0$ (interior to the occupied region). Any marching cubes cell containing an edge of $F_{ab}$ produces triangle patches whose edges lie along $F_{ab}$, guaranteeing that the surface mesh is locally connected across every 6-adjacent pair. Since any two occupied voxels in a 6-connected field are linked by a finite path of 6-adjacent pairs, mesh connectivity follows by induction over the path length.
+
+*Counterexample for 26-connectivity.* Two voxels $v_a, v_b$ sharing only a corner vertex $c$ (26-adjacent but not 6- or 18-adjacent) belong to distinct marching cubes cells that meet only at $c$. When all other voxels in the $2^3$ neighborhood of $c$ are unoccupied, the MC lookup table generates disjoint surface patches for $v_a$ and $v_b$—one on each side of the void—producing a disconnected mesh despite 26-connectivity of the voxel field. $\square$
+
+*Significance:* This proposition formalizes the empirical finding (Section 7.1) that (26, 6)-connectivity topology checks produce thousands of floating mesh fragments. Prior voxel-based topology optimization literature (e.g., Xia and Breitkopf, 2015) uses 26-connectivity implicitly and does not address marching cubes compatibility.
+
+### 4.15 Effective Removable Fraction and Topology-Limited Volume
+
+At each optimization step, only a subset of surface voxels pass all feasibility filters. Define the *effective removable fraction* at volume fraction $\phi = V/V_0$:
+
+$$\eta(\phi) = \frac{\left|\left\{i \in \mathcal{S}(\phi) \;:\; \text{SP}_6(i) = 1 \;\wedge\; \text{DT}(i) \geq t_\text{min}(p_i) \;\wedge\; i \notin \Gamma_\text{skin}\right\}\right|}{|\mathcal{S}(\phi)|} \tag{32}$$
+
+where $\mathcal{S}(\phi)$ is the set of interior surface voxels (voxels with $\rho = 1$ adjacent to at least one voxel with $\rho = 0$ on the interior side), and $\Gamma_\text{skin}$ is the protected exterior boundary band. The denominator $|\mathcal{S}(\phi)|$ generally grows as the structure thins (increasing surface-to-volume ratio), while the numerator shrinks as more voxels become topologically critical (non-simple points) or thickness-limited.
+
+This defines an intrinsic *topology-limited volume fraction*:
+
+$$\phi_\text{topo}^* = \inf\{\phi : \eta(\phi) = 0\} \tag{33}$$
+
+representing the minimum volume achievable under topology and thickness constraints alone, independent of structural performance. The actual optimization terminates at:
+
+$$\phi_\text{final} = \max\left(\phi_\text{struct}^*,\; \phi_\text{topo}^*\right) \tag{34}$$
+
+where $\phi_\text{struct}^*$ is the volume fraction at which structural constraints become binding ($g_j = 0$ for some $j$). In practice, $\phi_\text{struct}^* > \phi_\text{topo}^*$ for all tested geometries—structural constraints are binding before topological exhaustion—indicating that the 45% reduction is *structurally limited, not topologically limited*. This suggests that a more accurate surrogate or relaxed constraints could achieve further reduction without algorithmic changes.
+
+### 4.16 Ensemble Disagreement Divergence as Distribution Shift Monitor
+
+As material is removed, the optimized geometry progressively diverges from the training distribution of unoptimized houses. Define the *normalized ensemble disagreement* at volume fraction $\phi$:
+
+$$D(\phi) = \frac{1}{T} \sum_{j=1}^{T} \frac{\sigma_j(\phi)}{\mu_j(\phi)} \tag{35}$$
+
+where $T = 3$ is the number of prediction targets and $\sigma_j, \mu_j$ are the ensemble standard deviation and mean for target $j$. This is the average coefficient of variation across targets. At the baseline ($\phi = 1.0$), $D(1.0) = D_0$ reflects in-distribution model uncertainty. The *disagreement divergence rate*:
+
+$$\Gamma_D(\phi) = \frac{D(\phi) - D_0}{1 - \phi} \tag{36}$$
+
+quantifies ensemble uncertainty growth per unit volume fraction removed. A divergence $\Gamma_D \gg 1$ signals that the surrogate is extrapolating into an out-of-distribution regime where predictions may be unreliable. This provides a data-driven early-warning criterion for surrogate breakdown, independent of—and complementary to—the structural constraint checks.
+
+For the V11 optimization on sample 00472: $D_0 \approx 0.226$ (mean CV at baseline) and $D(0.55) \approx 0.309$ (at 45% removal), giving $\Gamma_D \approx 0.184$. This moderate value indicates the ensemble uncertainty grew sub-linearly with material removal, suggesting the surrogate remained in a regime of reasonable extrapolation. **[Simulated]**
+
+### 4.17 Adaptive Batch Size as Discrete Trust Region
+
+The batch-halving mechanism in Phase 1 can be interpreted as a discrete analog of trust-region methods from continuous optimization (Conn et al., 2000). In trust-region methods, the step size $\Delta_n$ is controlled by the ratio of actual-to-predicted objective decrease. In SASTO, the batch size $B_n$ plays the role of $\Delta_n$, and the "ratio test" is replaced by binary constraint satisfaction:
+
+$$B_{n+1} = \begin{cases} B_n & \text{if } \hat{y}_j^+ \leq g_j^\text{allow} \;\forall j \quad \text{(batch accepted)} \\ \max\left(B_\text{min},\, \lfloor B_n / 2 \rfloor\right) & \text{if } \exists\, j : \hat{y}_j^+ > g_j^\text{allow} \quad \text{(batch rejected)} \end{cases}$$
+
+The worst-case number of surrogate evaluations to remove $\Delta V$ voxels with this scheme is:
+
+$$N_\text{eval} \leq \frac{\Delta V}{B_\text{min}} + \sum_{r=0}^{\lfloor \log_2(B_0/B_\text{min}) \rfloor} 1 = \frac{\Delta V}{B_\text{min}} + \lceil \log_2(B_0 / B_\text{min}) \rceil$$
+
+With $B_0 = 200$, $B_\text{min} = 10$, and $\Delta V \approx 52{,}500$ (V11), the worst case is $\approx 5{,}254$ evaluations. The observed count (270 batches) is 19× better because most batches are accepted at large batch sizes—the constraint boundary is only approached at the end of optimization.
+
 ---
 
 ## 5. Experimental/Simulation Protocol
@@ -405,9 +481,9 @@ The 5-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 h
 
 ### 6.3 [Simulated] Efficiency-Integrity Index
 
-$$\mathcal{I}_\text{EI}(\text{V11}) = \frac{0.450}{(3.08 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.146 / 0.140)} = \frac{0.450}{0.616 \times 2.043} = \frac{0.450}{1.258} = 0.358 \tag{29}$$
+$$\mathcal{I}_\text{EI}(\text{V11}) = \frac{0.450}{(3.08 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.146 / 0.140)} = \frac{0.450}{0.616 \times 2.043} = \frac{0.450}{1.258} = 0.358 \tag{37}$$
 
-$$\mathcal{I}_\text{EI}(\text{V12}) = \frac{0.343}{(3.57 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.138 / 0.140)} = \frac{0.343}{0.714 \times 1.986} = \frac{0.343}{1.418} = 0.242 \tag{30}$$
+$$\mathcal{I}_\text{EI}(\text{V12}) = \frac{0.343}{(3.57 \times 10^6 / 5.0 \times 10^6) \cdot (1 + 0.138 / 0.140)} = \frac{0.343}{0.714 \times 1.986} = \frac{0.343}{1.418} = 0.242 \tag{38}$$
 
 V11 achieves 48% higher efficiency-integrity index than V12, indicating superior material utilization per unit structural demand.
 
