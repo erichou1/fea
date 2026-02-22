@@ -1,76 +1,170 @@
 """
-Voxel-based geometry parameterization for structural optimization.
+V7: Wall-segment removal optimization.
 
-Implements region-wise masked erosion with part-specific constraints:
-- Exterior walls: interior-side erosion only (protected shell)
-- Interior walls: full erosion within edit mask
-- Roof/floor: controlled erosion respecting min thickness
+At 128^3, building walls are only 1-2 voxels thick — too thin for
+voxel-level thinning without creating holes/slats/double-wall artifacts.
+
+This module segments interior walls into discrete wall segments via
+2D skeleton analysis and makes binary keep/remove decisions per segment.
+
+Key properties:
+  - Exterior walls: FULLY PROTECTED (never modified)
+  - Roof:           FULLY PROTECTED
+  - Floor:          FULLY PROTECTED
+  - Interior walls: segmented into ~29 individual wall segments
+  - Junction voxels (where walls meet): ALWAYS KEPT
+  - Each segment: binary keep/remove (1 CMA-ES parameter each)
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 from scipy import ndimage
+from scipy.spatial import cKDTree
+from skimage.morphology import skeletonize
+from scipy.signal import convolve2d
 
-from fea_ml.geometry.voxelize import (
-    PART_EXTERIOR_WALL,
-    PART_INTERIOR_WALL,
-    PART_ROOF,
-    PART_FLOOR,
-    PART_OTHER,
-    compute_sdf,
-)
+PART_EXTERIOR_WALL = 1
+PART_INTERIOR_WALL = 2
+PART_ROOF = 3
+PART_FLOOR = 4
 
 
 @dataclass
-class VoxelMaskedErosionConfig:
-    """Configuration for masked erosion parameterization."""
-    # Erosion strength bounds
-    erosion_min: float = 0.0
-    erosion_max: float = 0.3
-    # Smoothing strength bounds
-    smooth_min: float = 0.0
-    smooth_max: float = 0.2
-    # Min thickness constraint (in voxels)
-    min_thickness_voxels: float = 2.0
-    # Shell thickness for exterior wall protection (in voxels)
-    shell_thickness_voxels: int = 3
+class WallSegmentConfig:
+    """Configuration for wall-segment removal optimization."""
+    min_segment_pixels: int = 3   # minimum skeleton pixels per valid segment
 
 
-class VoxelMaskedErosion:
+class WallSegmentParam:
     """
-    Parameterization that erodes voxel geometry within editable regions.
-    
-    Parameter vector: [e_ext, e_int, e_roof, e_floor, smooth_strength]
-    - e_*: erosion strength for each part type [0, 1] -> scaled to config bounds
-    - smooth_strength: morphological smoothing [0, 1]
-    
-    Constraints enforced:
-    - Erosion only where edit_mask == 1
-    - Never modifies protected_mask regions
-    - Exterior walls: only erode from interior side (protected shell)
-    - Closing operation maintains printability
+    Binary keep/remove optimization of interior wall segments.
+
+    Segments interior walls by:
+      1. Project interior walls to XY (plan view)
+      2. Skeletonize to find wall centerlines
+      3. Detect junction points (>2 skeleton neighbours)
+      4. Dilate junctions → protected junction zone
+      5. Split skeleton at junctions → individual segments
+      6. Voronoi-assign all wall pixels to nearest segment
+      7. Extend 2D assignment to 3D column-wise
+
+    CMA-ES controls one [0,1] parameter per segment.
+    params[i] > 0.5  →  remove segment (i+1)
+    params[i] ≤ 0.5  →  keep segment (i+1)
     """
-    
-    def __init__(self, config: VoxelMaskedErosionConfig) -> None:
+
+    def __init__(
+        self,
+        config: WallSegmentConfig,
+        occ: np.ndarray,
+        part: np.ndarray,
+    ) -> None:
+        self.shape = occ.shape
         self.config = config
-    
+        self._build(occ, part)
+
+    # ── segmentation ─────────────────────────────────────────────
+
+    def _build(self, occ: np.ndarray, part: np.ndarray) -> None:
+        int_mask = (part == PART_INTERIOR_WALL) & (occ > 0)
+
+        # ---- 2D projection (plan view) ----
+        proj_xy = int_mask.max(axis=2).astype(bool)
+        print(f"  Interior wall 2D projection: {int(proj_xy.sum())} pixels",
+              flush=True)
+
+        # ---- Skeletonize ----
+        skel = skeletonize(proj_xy)
+        print(f"  Skeleton pixels: {int(skel.sum())}", flush=True)
+
+        # ---- Junction detection ----
+        kernel = np.ones((3, 3), dtype=int)
+        kernel[1, 1] = 0
+        nc = convolve2d(skel.astype(int), kernel, mode='same', boundary='fill')
+        junctions = skel & (nc > 2)
+        junction_zone = ndimage.binary_dilation(junctions, iterations=1)
+        print(f"  Junction points: {int(junctions.sum())}, "
+              f"zone pixels: {int(junction_zone.sum())}", flush=True)
+
+        # ---- Split skeleton at junctions ----
+        skel_split = skel.copy()
+        skel_split[junction_zone] = False
+        labeled_skel, n_raw = ndimage.label(skel_split)
+
+        # ---- Filter small fragments ----
+        min_px = self.config.min_segment_pixels
+        valid = [i for i in range(1, n_raw + 1)
+                 if (labeled_skel == i).sum() >= min_px]
+        relabeled = np.zeros_like(labeled_skel)
+        for new_id, old_id in enumerate(valid, 1):
+            relabeled[labeled_skel == old_id] = new_id
+        labeled_skel = relabeled
+        n_seg = len(valid)
+        print(f"  Valid segments after filtering (<{min_px}px): {n_seg}",
+              flush=True)
+
+        # ---- Voronoi assignment of all wall pixels to segments ----
+        assignment_2d = np.zeros(proj_xy.shape, dtype=np.int32)
+        assignment_2d[labeled_skel > 0] = labeled_skel[labeled_skel > 0]
+
+        unlabeled = proj_xy & (labeled_skel == 0)
+        if unlabeled.any():
+            labeled_mask = labeled_skel > 0
+            if labeled_mask.any():
+                src = np.argwhere(labeled_mask)
+                src_vals = labeled_skel[labeled_mask]
+                tree = cKDTree(src)
+                dst = np.argwhere(unlabeled)
+                _, idx = tree.query(dst)
+                assignment_2d[unlabeled] = src_vals[idx]
+
+        # ---- Protect junction zone pixels (label → 0 = always kept) ----
+        junction_wall = junction_zone & proj_xy
+        assignment_2d[junction_wall] = 0
+
+        # ---- Extend 2D assignment to 3D (column-wise) ----
+        self.segment_3d = np.zeros(self.shape, dtype=np.int32)
+        for x in range(self.shape[0]):
+            for y in range(self.shape[1]):
+                seg = assignment_2d[x, y]
+                if seg > 0:
+                    zs = np.where(int_mask[x, y, :])[0]
+                    if len(zs) > 0:
+                        self.segment_3d[x, y, zs] = seg
+
+        # ---- Statistics ----
+        self.n_segments = n_seg
+        total_int = int(int_mask.sum())
+        total_seg = int((self.segment_3d > 0).sum())
+        junction_count = total_int - total_seg
+
+        self.segment_sizes: Dict[int, int] = {}
+        for s in range(1, n_seg + 1):
+            self.segment_sizes[s] = int((self.segment_3d == s).sum())
+
+        print(f"  === Wall Segment Summary ===", flush=True)
+        print(f"  Total interior wall voxels: {total_int}", flush=True)
+        print(f"  Removable (in segments):    {total_seg} "
+              f"({total_seg / max(total_int, 1) * 100:.1f}%)", flush=True)
+        print(f"  Junction (protected):       {junction_count} "
+              f"({junction_count / max(total_int, 1) * 100:.1f}%)", flush=True)
+        print(f"  Segments:", flush=True)
+        sorted_segs = sorted(self.segment_sizes.items(),
+                             key=lambda x: x[1], reverse=True)
+        for seg_id, cnt in sorted_segs:
+            pct = cnt / max(total_int, 1) * 100
+            print(f"    seg {seg_id:2d}: {cnt:5d} voxels ({pct:.1f}%)",
+                  flush=True)
+
+    # ── public interface ─────────────────────────────────────────
+
     def parameter_dim(self) -> int:
-        """Return dimension of parameter vector."""
-        return 5  # e_ext, e_int, e_roof, e_floor, smooth_strength
-    
-    def default_params(self) -> np.ndarray:
-        """Return default (no change) parameters."""
-        return np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    
-    def random_params(self, rng: Optional[np.random.Generator] = None) -> np.ndarray:
-        """Generate random parameters in valid range."""
-        if rng is None:
-            rng = np.random.default_rng()
-        return rng.uniform(0.0, 1.0, size=5).astype(np.float32)
-    
+        """Number of CMA-ES parameters (one per wall segment)."""
+        return self.n_segments
+
     def apply(
         self,
         occ: np.ndarray,
@@ -80,193 +174,51 @@ class VoxelMaskedErosion:
         params: np.ndarray,
     ) -> np.ndarray:
         """
-        Apply erosion parameterization to voxel geometry.
-        
-        Args:
-            occ: (D, H, W) occupancy grid
-            part: (D, H, W) part labels
-            edit_mask: (D, H, W) where edits allowed
-            protected_mask: (D, H, W) where edits forbidden
-            params: (5,) parameter vector [e_ext, e_int, e_roof, e_floor, smooth]
-            
-        Returns:
-            (D, H, W) modified occupancy grid
-        """
-        # Clip and scale parameters
-        params = np.clip(params, 0.0, 1.0)
-        
-        e_ext = self._scale_erosion(params[0])
-        e_int = self._scale_erosion(params[1])
-        e_roof = self._scale_erosion(params[2])
-        e_floor = self._scale_erosion(params[3])
-        smooth = self._scale_smooth(params[4])
-        
-        # Start with original occupancy
-        result = occ.copy().astype(np.float32)
-        
-        # Create erosion strength map based on part labels
-        erosion_map = np.zeros_like(result)
-        erosion_map[part == PART_EXTERIOR_WALL] = e_ext
-        erosion_map[part == PART_INTERIOR_WALL] = e_int
-        erosion_map[part == PART_ROOF] = e_roof
-        erosion_map[part == PART_FLOOR] = e_floor
-        erosion_map[part == PART_OTHER] = 0.0  # Don't erode unknown parts
-        
-        # Apply erosion only within edit_mask
-        erosion_map = erosion_map * edit_mask
-        erosion_map = erosion_map * (1 - protected_mask)  # Never erode protected
-        
-        # Compute SDF for erosion
-        sdf = compute_sdf(occ)
-        
-        # Apply spatially-varying erosion
-        # Erosion = threshold SDF at positive value
-        # sdf > erosion_strength means eroded away
-        erosion_threshold = erosion_map * self.config.min_thickness_voxels * 2
-        eroded = (sdf < erosion_threshold).astype(np.float32)
-        
-        # Combine: keep original where not editable, use eroded where editable
-        editable = (edit_mask > 0) & (protected_mask == 0)
-        result = np.where(editable, eroded, result)
-        
-        # Apply smoothing (morphological closing to fill small gaps)
-        if smooth > 0.01:
-            kernel_size = max(1, int(smooth * 3))
-            struct = ndimage.generate_binary_structure(3, 1)
-            
-            # Close: dilate then erode (fills holes)
-            result_closed = ndimage.binary_closing(
-                result > 0.5, 
-                structure=struct,
-                iterations=kernel_size,
-            )
-            
-            # Only apply closing within editable regions
-            result = np.where(editable, result_closed.astype(np.float32), result)
-        
-        # Enforce min thickness by protecting thin regions
-        result = self._enforce_min_thickness(result, sdf)
-        
-        # Ensure protected regions unchanged
-        result = np.where(protected_mask > 0, occ, result)
-        
-        return (result > 0.5).astype(np.uint8)
-    
-    def _scale_erosion(self, p: float) -> float:
-        """Scale [0,1] parameter to erosion strength."""
-        return self.config.erosion_min + p * (self.config.erosion_max - self.config.erosion_min)
-    
-    def _scale_smooth(self, p: float) -> float:
-        """Scale [0,1] parameter to smoothing strength."""
-        return self.config.smooth_min + p * (self.config.smooth_max - self.config.smooth_min)
-    
-    def _enforce_min_thickness(
-        self,
-        occ: np.ndarray,
-        original_sdf: np.ndarray,
-    ) -> np.ndarray:
-        """Restore voxels that would violate min thickness."""
-        # Compute new SDF
-        new_sdf = compute_sdf((occ > 0.5).astype(np.uint8))
-        
-        # Find voxels that are too thin (inside but close to surface)
-        thin_mask = (occ > 0.5) & (np.abs(new_sdf) < self.config.min_thickness_voxels / 2)
-        
-        # Check if removing these would create issues
-        # For now, just keep them
-        # More sophisticated: check connectivity
-        
-        return occ
-    
-    def compute_volume(self, occ: np.ndarray) -> int:
-        """Compute volume as count of occupied voxels."""
-        return int(np.sum(occ > 0))
-    
-    def volume_reduction(self, original: np.ndarray, modified: np.ndarray) -> float:
-        """Compute volume reduction fraction."""
-        v_orig = self.compute_volume(original)
-        v_mod = self.compute_volume(modified)
-        if v_orig == 0:
-            return 0.0
-        return 1.0 - v_mod / v_orig
+        Apply wall segment removal.
 
+        params[i] > 0.5 → remove segment (i+1)
+        params[i] ≤ 0.5 → keep segment (i+1)
 
-class GradientFriendlyErosion:
-    """
-    Differentiable approximation of erosion for gradient-based optimization.
-    
-    Uses soft thresholding on SDF for differentiability.
-    """
-    
-    def __init__(self, config: VoxelMaskedErosionConfig, temperature: float = 1.0) -> None:
-        self.config = config
-        self.temperature = temperature
-    
-    def parameter_dim(self) -> int:
-        return 5
-    
-    def apply_soft(
-        self,
-        occ_soft: "torch.Tensor",
-        part: np.ndarray,
-        edit_mask: np.ndarray,
-        protected_mask: np.ndarray,
-        params: "torch.Tensor",
-    ) -> "torch.Tensor":
+        Exterior walls, roof, floor: UNTOUCHED.
+        Junction voxels: ALWAYS KEPT.
         """
-        Apply soft erosion for gradient computation.
-        
-        Args:
-            occ_soft: (D, H, W) soft occupancy in [0, 1]
-            part, edit_mask, protected_mask: numpy arrays
-            params: (5,) torch tensor
-            
-        Returns:
-            (D, H, W) soft modified occupancy
-        """
-        import torch
-        
-        # This is a simplified version - full differentiability
-        # would require differentiable SDF computation
-        
-        params = torch.clamp(params, 0.0, 1.0)
-        
-        # Convert masks to torch
-        device = occ_soft.device
-        edit_mask_t = torch.from_numpy(edit_mask).float().to(device)
-        protected_mask_t = torch.from_numpy(protected_mask).float().to(device)
-        
-        # Compute approximate erosion strength
-        erosion_strength = params[0:4].mean() * self.config.erosion_max
-        
-        # Soft erosion: scale occupancy down in editable regions
-        scale = 1.0 - erosion_strength * edit_mask_t * (1 - protected_mask_t)
-        result = occ_soft * scale
-        
-        # Keep protected unchanged
-        result = torch.where(protected_mask_t > 0.5, occ_soft, result)
-        
+        result = occ.copy()
+        for i in range(self.n_segments):
+            if params[i] > 0.5:
+                result[self.segment_3d == (i + 1)] = 0
         return result
 
+    def removed_segment_ids(self, params: np.ndarray) -> List[int]:
+        """Return list of segment IDs that would be removed."""
+        return [i + 1 for i in range(self.n_segments) if params[i] > 0.5]
 
-def create_parameterization(
-    method: str = "masked_erosion",
-    config: Optional[VoxelMaskedErosionConfig] = None,
-) -> VoxelMaskedErosion:
-    """
-    Factory function to create parameterization.
-    
-    Args:
-        method: Parameterization type
-        config: Configuration (uses defaults if None)
-        
-    Returns:
-        Parameterization instance
-    """
-    if config is None:
-        config = VoxelMaskedErosionConfig()
-    
-    if method == "masked_erosion":
-        return VoxelMaskedErosion(config)
-    else:
-        raise ValueError(f"Unknown parameterization: {method}")
+    def kept_segment_ids(self, params: np.ndarray) -> List[int]:
+        """Return list of segment IDs that would be kept."""
+        return [i + 1 for i in range(self.n_segments) if params[i] <= 0.5]
+
+    def removal_summary(self, params: np.ndarray) -> Dict:
+        """Return dict with removal details."""
+        removed = self.removed_segment_ids(params)
+        kept = self.kept_segment_ids(params)
+        vox_removed = sum(self.segment_sizes.get(s, 0) for s in removed)
+        vox_kept = sum(self.segment_sizes.get(s, 0) for s in kept)
+        return {
+            "removed_segments": removed,
+            "kept_segments": kept,
+            "n_removed": len(removed),
+            "n_kept": len(kept),
+            "n_total": self.n_segments,
+            "voxels_removed": vox_removed,
+            "voxels_kept": vox_kept,
+        }
+
+    @staticmethod
+    def compute_volume(occ: np.ndarray) -> int:
+        return int(np.sum(occ > 0))
+
+
+# Backward-compatible aliases so old imports don't break
+SurfaceErosionConfig = WallSegmentConfig
+SurfaceErosionParam = WallSegmentParam
+VoxelMaskedErosionConfig = WallSegmentConfig
+VoxelMaskedErosion = WallSegmentParam

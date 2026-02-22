@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from fea_ml.geometry.validity_checks import (
+    ValidityResult,
     check_watertight,
     check_min_thickness,
     check_connectivity,
@@ -25,9 +26,24 @@ from fea_ml.geometry.validity_checks import (
 from fea_ml.geometry.voxelize import VoxelGrids, voxels_to_mesh
 from fea_ml.models.uncertainty import predict_with_uncertainty
 from fea_ml.optim.voxel_parameterization import (
-    VoxelMaskedErosion,
-    VoxelMaskedErosionConfig,
+    SurfaceErosionConfig,
+    SurfaceErosionParam,
+    VoxelMaskedErosion,         # backward-compatible alias
+    VoxelMaskedErosionConfig,   # backward-compatible alias
 )
+
+
+def _json_safe(obj):
+    """Convert numpy types to native Python for JSON serialization."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
 @dataclass
@@ -39,7 +55,6 @@ class OptimizationConfig:
     sigma0: float = 0.3
     
     # Constraint thresholds (absolute values)
-    min_safety_factor: float = 1.5
     max_displacement: float = 1.0
     max_compliance_ratio: float = 1.05  # relative to baseline
     
@@ -59,9 +74,16 @@ class OptimizationConfig:
     thin_threshold_voxels: float = 1.5
     
     # Target indices (in prediction output)
-    safety_factor_idx: int = 2
+    von_mises_idx: int = 0
     displacement_idx: int = 1
-    compliance_idx: int = 3
+    compliance_idx: int = 2
+    
+    # Max allowable von Mises stress (Pa) — conservative upper bound
+    max_von_mises: float = 3.5e6  # default: yield stress for concrete
+    
+    # Skip expensive geometry validity checks (watertight, thickness, connectivity)
+    # Useful for fast demos or when running at high resolution
+    skip_validity_checks: bool = False
 
 
 @dataclass
@@ -92,7 +114,7 @@ class VoxelSurrogateOptimizer:
     def __init__(
         self,
         model: torch.nn.Module,
-        parameterization: VoxelMaskedErosion,
+        parameterization,  # SurfaceErosionParam (or legacy VoxelMaskedErosion)
         config: OptimizationConfig,
         device: torch.device,
         normalization_stats: Optional[Dict] = None,
@@ -110,6 +132,7 @@ class VoxelSurrogateOptimizer:
         self.config = config
         self.device = device
         self.normalization_stats = normalization_stats
+        self.target_resolution = None  # set to e.g. 128 to upsample lower-res voxels
     
     def optimize(
         self,
@@ -152,8 +175,7 @@ class VoxelSurrogateOptimizer:
         best_result = None
         best_objective = float("inf")
         
-        from tqdm import tqdm
-        pbar = tqdm(total=self.config.iterations, desc="Optimizing", unit="iter")
+        # Use simple counter instead of tqdm to avoid stderr issues
         iteration = 0
         
         while not es.stop():
@@ -186,12 +208,11 @@ class VoxelSurrogateOptimizer:
             vol_red = 0.0
             if best_result is not None:
                 vol_red = 1.0 - best_result["volume"] / original_volume
-            pbar.update(1)
-            pbar.set_postfix({"best_obj": f"{best_objective:.4f}", "vol_red": f"{vol_red:.1%}"})
+            print(f"  iter {iteration:3d}/{self.config.iterations} | "
+                  f"best_obj={best_objective:.4f} | vol_red={vol_red:.1%}",
+                  flush=True)
         
-        pbar.close()
-        
-        # Final result
+        # Done
         if best_result is None:
             # No valid solution found
             return OptimizationResult(
@@ -249,21 +270,33 @@ class VoxelSurrogateOptimizer:
         # Compute geometry metrics
         volume = int(np.sum(modified_occ))
         surface_area = compute_surface_area(modified_occ)
-        thin_count, thin_frac = count_thin_features(
-            modified_occ, 
-            thin_threshold_voxels=cfg.thin_threshold_voxels,
-        )
         
-        # Validity checks
-        wt = check_watertight(modified_occ, grids.part)
-        th = check_min_thickness(modified_occ, cfg.min_thickness_voxels)
-        cn = check_connectivity(modified_occ, cfg.max_components)
-        validity_ok = wt.passed and th.passed and cn.passed
+        if cfg.skip_validity_checks:
+            thin_count, thin_frac = 0, 0.0
+            validity_ok = True
+            wt = ValidityResult(passed=True, value=0.0, message="skipped")
+            th = ValidityResult(passed=True, value=0.0, message="skipped")
+            cn = ValidityResult(passed=True, value=0.0, message="skipped")
+        else:
+            thin_count, thin_frac = count_thin_features(
+                modified_occ, 
+                thin_threshold_voxels=cfg.thin_threshold_voxels,
+            )
+            wt = check_watertight(modified_occ, grids.part)
+            th = check_min_thickness(modified_occ, cfg.min_thickness_voxels)
+            cn = check_connectivity(modified_occ, cfg.max_components)
+            validity_ok = wt.passed and th.passed and cn.passed
         
         # Build voxel input for surrogate
         voxel_input = self._build_voxel_input(modified_occ, grids.part, grids.sdf)
         voxel_tensor = torch.from_numpy(voxel_input[None, ...]).float().to(self.device)
         features_tensor = torch.from_numpy(features[None, ...]).float().to(self.device)
+        
+        # Upsample if model expects a different resolution (e.g., 64³ data → 128³ model)
+        if hasattr(self, 'target_resolution') and self.target_resolution is not None and voxel_tensor.shape[-1] != self.target_resolution:
+            voxel_tensor = torch.nn.functional.interpolate(
+                voxel_tensor, size=self.target_resolution, mode="nearest"
+            )
         
         # Get predictions with uncertainty
         self.model.eval()
@@ -306,12 +339,12 @@ class VoxelSurrogateOptimizer:
         # Check constraints conservatively
         k = cfg.uncertainty_k
         
-        # Safety factor: lower bound (mean - k*std >= threshold)
-        sf_pred = pred_mean[cfg.safety_factor_idx]
-        sf_std = pred_std[cfg.safety_factor_idx]
-        sf_conservative = sf_pred - k * sf_std
-        sf_ok = sf_conservative >= cfg.min_safety_factor
-        sf_violation = max(0, cfg.min_safety_factor - sf_conservative)
+        # Von Mises stress: upper bound (mean + k*std <= threshold)
+        vm_pred = pred_mean[cfg.von_mises_idx]
+        vm_std = pred_std[cfg.von_mises_idx]
+        vm_conservative = vm_pred + k * vm_std
+        vm_ok = vm_conservative <= cfg.max_von_mises
+        vm_violation = max(0, vm_conservative - cfg.max_von_mises) / max(cfg.max_von_mises, 1e-12)
         
         # Displacement: upper bound (mean + k*std <= threshold)
         disp_pred = pred_mean[cfg.displacement_idx]
@@ -333,7 +366,7 @@ class VoxelSurrogateOptimizer:
             comp_ok = True
             comp_violation = 0.0
         
-        constraints_ok = sf_ok and disp_ok and comp_ok
+        constraints_ok = vm_ok and disp_ok and comp_ok
         
         # Compute objective
         # Normalize volume to [0, 1] range
@@ -348,7 +381,7 @@ class VoxelSurrogateOptimizer:
         )
         
         # Add constraint penalties
-        total_violation = sf_violation + disp_violation + comp_violation
+        total_violation = vm_violation + disp_violation + comp_violation
         if not constraints_ok:
             objective += cfg.constraint_penalty * total_violation
         
@@ -367,7 +400,7 @@ class VoxelSurrogateOptimizer:
             "constraints_ok": constraints_ok,
             "validity_ok": validity_ok,
             "details": {
-                "sf_conservative": sf_conservative,
+                "vm_conservative": vm_conservative,
                 "disp_conservative": disp_conservative,
                 "comp_conservative": comp_conservative,
                 "validity": {
@@ -411,6 +444,7 @@ def run_optimization(
     baseline_targets: Optional[Dict[str, float]] = None,
     normalization_stats: Optional[Dict] = None,
     output_dir: Optional[Path] = None,
+    target_resolution: Optional[int] = None,
 ) -> OptimizationResult:
     """
     Convenience function to run optimization.
@@ -424,15 +458,21 @@ def run_optimization(
         baseline_targets: Baseline FEA results
         normalization_stats: Normalization info for denormalization
         output_dir: Optional directory to save results
+        target_resolution: If set, upsample voxels to this resolution before model inference
         
     Returns:
         OptimizationResult
     """
-    # Create parameterization
-    param_config = VoxelMaskedErosionConfig(
-        min_thickness_voxels=config.min_thickness_voxels,
+    # Create parameterization (surface-erosion based)
+    param_config = SurfaceErosionConfig(
+        grid_res=3,
+        max_filter_size=7,
     )
-    parameterization = VoxelMaskedErosion(param_config)
+    parameterization = SurfaceErosionParam(
+        param_config,
+        occ_128=grids.occ,
+        part_128=grids.part,
+    )
     
     # Create optimizer
     optimizer = VoxelSurrogateOptimizer(
@@ -442,6 +482,7 @@ def run_optimization(
         device=device,
         normalization_stats=normalization_stats,
     )
+    optimizer.target_resolution = target_resolution
     
     # Run optimization
     result = optimizer.optimize(
@@ -463,18 +504,18 @@ def run_optimization(
         
         # Save summary
         summary = {
-            "success": result.success,
-            "volume_original": result.volume_original,
-            "volume_optimized": result.volume_optimized,
-            "volume_reduction": result.volume_reduction,
-            "constraints_satisfied": result.constraints_satisfied,
-            "validity_passed": result.validity_passed,
+            "success": bool(result.success),
+            "volume_original": int(result.volume_original),
+            "volume_optimized": int(result.volume_optimized),
+            "volume_reduction": float(result.volume_reduction),
+            "constraints_satisfied": bool(result.constraints_satisfied),
+            "validity_passed": bool(result.validity_passed),
             "predicted_mean": result.predicted_mean.tolist(),
             "predicted_std": result.predicted_std.tolist(),
             "details": result.details,
         }
         with open(output_dir / "optimization_summary.json", "w") as f:
-            json.dump(summary, f, indent=2)
+            json.dump(summary, f, indent=2, default=_json_safe)
         
         # Export mesh
         try:
