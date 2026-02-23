@@ -199,14 +199,26 @@ def train_member_on_gpu(
             except Exception as e:
                 logger.warning(f"torch.compile failed: {e}")
 
-        # Optimizer & scheduler
+        # Optimizer & scheduler with warmup
         epochs = config["training"]["epochs"]
         lr = config["training"]["lr"]
         weight_decay = config["training"].get("weight_decay", 1e-4)
+        warmup_epochs = config["training"].get("warmup_epochs", 5)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=epochs, eta_min=lr * 0.01,
+
+        # Cosine annealing with linear warmup
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
         )
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=epochs - warmup_epochs, eta_min=lr * 0.01,
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_epochs],
+        )
+        logger.info(f"LR schedule: {warmup_epochs}-epoch warmup → cosine annealing")
 
         # Loss
         loss_fn = nn.SmoothL1Loss()
@@ -248,11 +260,53 @@ def train_member_on_gpu(
         ckpt_every = mon.get("checkpoint_every", 10)
         early_warn_epoch = mon.get("early_warning_epoch", 10)
 
+        # ---- Data sanity check (catch corrupted files before training) ----
+        logger.info("Running data sanity check (first 5 samples)...")
+        for si in range(min(5, len(train_dataset))):
+            try:
+                sample = train_dataset[si]
+                v = sample["voxel"]
+                t = sample["targets"]
+                if torch.isnan(v).any() or torch.isinf(v).any():
+                    logger.error(f"  Sanity check FAILED: sample {si} has NaN/Inf in voxel")
+                    raise ValueError(f"Corrupt voxel data in sample {si}")
+                if torch.isnan(t).any() or torch.isinf(t).any():
+                    logger.error(f"  Sanity check FAILED: sample {si} has NaN/Inf in targets")
+                    raise ValueError(f"Corrupt target data in sample {si}")
+            except Exception as e:
+                logger.error(f"  Sanity check FAILED on sample {si}: {e}")
+                raise
+        logger.info("  Data sanity check passed ✓")
+
         # Training loop
         best_val_loss = float("inf")
         wait = 0
+        nan_count = 0  # Track consecutive NaN losses
         history = {"train_loss": [], "val_loss": [], "val_r2": [], "lr": [], "epoch_time": [],
                     "grad_norm": [], "gpu_mem_gb": []}
+
+        # ---- Epoch-0 baseline validation (before any training) ----
+        model.eval()
+        baseline_preds, baseline_tgts = [], []
+        with torch.no_grad():
+            for batch in val_loader:
+                voxel = batch["voxel"].to(device, non_blocking=True)
+                features = batch["features"].to(device, non_blocking=True)
+                targets_b = batch["targets"].to(device, non_blocking=True)
+                with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
+                    preds = model(voxel, features)
+                baseline_preds.append(preds.cpu().numpy())
+                baseline_tgts.append(targets_b.cpu().numpy())
+        bp = np.concatenate(baseline_preds)
+        bt = np.concatenate(baseline_tgts)
+        baseline_r2 = []
+        for i in range(bp.shape[1]):
+            ss_res = ((bt[:, i] - bp[:, i]) ** 2).sum()
+            ss_tot = ((bt[:, i] - bt[:, i].mean()) ** 2).sum()
+            baseline_r2.append(float(1.0 - ss_res / (ss_tot + 1e-8)))
+        logger.info(f"Baseline (untrained) R²: {[f'{r:.4f}' for r in baseline_r2]}")
+        logger.info(f"  (Expected: strongly negative. If R²≈0, targets may be trivial.)")
+        model.train()
 
         for epoch in range(epochs):
             t0 = time.time()
@@ -295,7 +349,23 @@ def train_member_on_gpu(
                                 else:
                                     ema_state[k].copy_(v)
 
-                train_losses.append(loss.item() * grad_accum)
+                raw_loss = loss.item() * grad_accum
+
+                # NaN/Inf detection
+                if not np.isfinite(raw_loss):
+                    nan_count += 1
+                    logger.warning(f"⚠️  NaN/Inf loss at epoch {epoch+1}, step {step+1} "
+                                   f"(consecutive count: {nan_count})")
+                    if nan_count >= 10:
+                        logger.error("❌ 10 consecutive NaN/Inf losses — aborting training. "
+                                     "Check data normalization, LR, or model architecture.")
+                        raise RuntimeError("Training diverged (persistent NaN/Inf loss)")
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
+                else:
+                    nan_count = 0
+
+                train_losses.append(raw_loss)
 
             scheduler.step()
             train_loss = float(np.mean(train_losses))
@@ -367,6 +437,8 @@ def train_member_on_gpu(
                 f"time={epoch_time:.1f}s"
             )
 
+            # ---- Quality Checks ----
+
             # Early warning
             if epoch + 1 == early_warn_epoch:
                 if all(r < 0 for r in val_r2):
@@ -379,6 +451,28 @@ def train_member_on_gpu(
                         "⚠️  R² values very low. Learning is slow — "
                         "consider lowering LR or checking data."
                     )
+
+            # Loss divergence detection: val_loss > 5× best
+            if best_val_loss < float("inf") and val_loss > best_val_loss * 5.0:
+                logger.warning(
+                    f"⚠️  Val loss ({val_loss:.4f}) is >5× best ({best_val_loss:.4f}). "
+                    f"Possible divergence!"
+                )
+
+            # Overfitting detection: train << val
+            if epoch >= 20 and train_loss < val_loss * 0.3:
+                logger.warning(
+                    f"⚠️  Significant overfitting detected: "
+                    f"train_loss={train_loss:.4f} << val_loss={val_loss:.4f} "
+                    f"(ratio={train_loss/val_loss:.2f})"
+                )
+
+            # NaN in validation R²
+            if any(not np.isfinite(r) for r in val_r2):
+                logger.warning(
+                    f"⚠️  Non-finite R² values detected: {val_r2}. "
+                    f"Check target normalization."
+                )
 
             # TensorBoard
             if tb_writer:

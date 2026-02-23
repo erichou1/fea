@@ -84,6 +84,7 @@ training:
   grad_accum_steps: 4                  # effective batch = 4 × 4 = 16
   epochs: 300                          # more epochs — early stopping will cut short
   lr: 0.0003                           # lower peak LR for stability with large model
+  warmup_epochs: 5                     # linear warmup to avoid early divergence
   weight_decay: 0.0001
   seed: 42
   mixed_precision: true                # bf16 autocast (Blackwell native)
