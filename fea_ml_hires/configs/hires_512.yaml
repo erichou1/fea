@@ -1,0 +1,136 @@
+# FEA Voxel Surrogate — HIGH-RESOLUTION 512³ Configuration
+#
+# Target hardware : 4× NVIDIA GB200 GPUs (189 GB HBM3e each, NVL72)
+# Ensemble        : 8 members (4 GPUs × 2 members each, trained in parallel)
+#
+# Memory budget per GPU (512³, bf16):
+#   Input tensor (7ch × 512³ × 2B)        ≈  1.9 GB per sample
+#   batch_size=4 inputs                    ≈  7.5 GB
+#   After stem (/8 → 64³)                 ≈  tiny
+#   Model (32→64→128→256→512 channels)    ≈  1.3 GB params + grads + optimizer  (81M params)
+#   Peak working memory (w/ grad-ckpt)    ≈ ~25 GB
+#   → Fits easily in 189 GB per GPU  (~13% utilisation)
+#
+# Data preparation:
+#   python -m fea_ml_hires.scripts.prepare_real_data \
+#       --parts-dir optimization/data/3dwire_parts_combined \
+#       --fea-dir  optimization/fea_gmsh_run/fea_results \
+#       --output-dir fea_ml_hires/data/runs_real_512 \
+#       --resolution 512 --workers 32
+#
+# Training (parallel ensemble across 4 GPUs):
+#   python -m fea_ml_hires.scripts.train_ensemble_parallel \
+#       --config fea_ml_hires/configs/hires_512.yaml \
+#       --output runs/hires_512_v1 \
+#       --n_gpus 4
+
+project: fea_voxel_surrogate_hires_512
+
+data:
+  runs_dir: data/runs_real_512          # 512³ voxelized dataset
+  resolution: 512
+  use_sdf: false
+  length_unit: meters
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  split_by_design_family: true
+
+parts:
+  exterior_wall:
+    editable: thickness_only
+    shell_thickness_voxels: 12         # scaled from 3 @ 128 → 12 @ 512
+  interior_wall:
+    editable: full
+    min_thickness: 0.02
+  roof:
+    editable: full
+    min_thickness: 0.015
+  floor:
+    editable: limited
+    protected_zones: true
+
+targets:
+  - max_von_mises
+  - max_displacement
+  - min_safety_factor
+  - compliance
+
+materials:
+  - concrete
+  - mortar
+  - polymer
+
+load_cases:
+  - gravity
+  - wind
+  - combined
+
+constraints:
+  min_safety_factor: 1.5
+  max_displacement: 1.0
+  max_compliance_ratio: 1.05
+
+model:
+  type: ensemble
+  n_models: 8                          # 4 GPUs × 2 members each
+  backbone: resnet3d_hires
+  base_channels: 32                    # 81M params — good capacity/data ratio for 14k samples
+  dropout: 0.12                        # slightly lower with more ensemble members
+  drop_path: 0.15                      # stochastic depth
+
+training:
+  batch_size: 4                        # 512³ fits ~4 per GPU @ bf16 in 189 GB
+  grad_accum_steps: 4                  # effective batch = 4 × 4 = 16
+  epochs: 300                          # more epochs — early stopping will cut short
+  lr: 0.0003                           # lower peak LR for stability with large model
+  weight_decay: 0.0001
+  seed: 42
+  mixed_precision: true                # bf16 autocast (Blackwell native)
+  grad_clip: 1.0
+  patience: 40                         # more patience with larger dataset
+  use_ema: true
+  ema_decay: 0.9995                    # slower EMA for larger effective batch
+  compile: true                        # torch.compile (inductor)
+  num_workers: 8                       # more workers — 512³ loads faster than 1024³
+
+loss:
+  type: huber
+  log_transform: null                  # log-transform all targets
+  winsorize_pct: 2.0
+  target_weights:
+    max_von_mises: 1.0
+    max_displacement: 1.0
+    min_safety_factor: 1.5             # safety-critical
+    compliance: 0.5
+
+monitoring:
+  tensorboard: true
+  log_grad_norms: true                 # log gradient norm per epoch
+  log_weight_histograms: true          # weight distribution histograms (every 10 ep)
+  log_lr: true
+  log_memory: true                     # GPU memory usage
+  checkpoint_every: 10                 # save checkpoint every N epochs
+  early_warning_epoch: 10              # warn if R² still negative after this epoch
+  live_plot: true                      # generate live training curves as PNG
+
+optimization:
+  parameterization:
+    erosion_min: 0.0
+    erosion_max: 0.3
+    smooth_min: 0.0
+    smooth_max: 0.2
+  search:
+    iterations: 100
+    population_size: 32
+    sigma0: 0.3
+    surface_area_weight: 0.01
+    thin_feature_weight: 0.1
+    constraint_penalty: 100.0
+    uncertainty_k: 2.0
+    mc_samples: 16
+
+validation:
+  min_thickness_voxels: 8.0            # scaled from 2 @ 128 → 8 @ 512
+  max_components: 1
+  thin_threshold_voxels: 6.0           # scaled from 1.5 @ 128 → 6 @ 512
