@@ -87,8 +87,7 @@ def fig12_stl_comparison():
 
     meshes = [orig, opt]
     labels = ["(a) Original Geometry (116,872 voxels)",
-              "(b) Optimized V11 (64,280 voxels, -45.0%)"]
-
+              "(b) Optimized SASTO-PA (64,280 voxels, -45.0%)"]
     for row, (mesh, label) in enumerate(zip(meshes, labels)):
         verts = mesh.vertices
         faces = mesh.faces
@@ -143,7 +142,7 @@ def fig12_stl_comparison():
         # Row label
         axes[row, 0].set_ylabel(f"Y (m)\n\n{label}", fontsize=10)
 
-    plt.suptitle("Figure 12: 3D Geometry Comparison — Original vs. Optimized (V11)",
+    plt.suptitle("Figure 12: 3D Geometry Comparison -- Original vs. Optimized (SASTO-PA)",
                  fontsize=14, fontweight="bold", y=0.98)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     for ext in ("png", "pdf"):
@@ -509,7 +508,7 @@ def fig16_fea_placeholder():
             ),
         },
         {
-            "title": "(b) Von Mises Stress Contour — Optimized V11",
+            "title": "(b) Von Mises Stress Contour -- Optimized SASTO-PA",
             "description": (
                 "FEA re-analysis required\n\n"
                 "Shows stress redistribution after\n"
@@ -574,7 +573,7 @@ def fig17_physical_placeholder():
             "description": (
                 "Physical prototype required\n\n"
                 "1:20 scale model of optimized\n"
-                "V11 geometry, fabricated via\n"
+                "SASTO-PA geometry, fabricated via\n"
                 "structural concrete 3D printing.\n\n"
                 "Material: Structural concrete\n"
                 "Print volume: ~50 x 45 x 35 cm\n"
@@ -671,8 +670,8 @@ def fig18_voxel_before_after():
     # Row 1: Occupancy masks (binary)
     data_sets = [
         (orig[:, :, z], "Original (B0)"),
-        (opt12[:, :, z], "V12 Uniform ($t_{min}$=2)"),
-        (opt11[:, :, z], "V11 Part-Aware"),
+        (opt12[:, :, z], "SASTO-U ($t_{min}$=2)"),
+        (opt11[:, :, z], "SASTO-PA"),
     ]
     for col, (data, title) in enumerate(data_sets):
         ax = axes[0, col]
@@ -701,8 +700,8 @@ def fig18_voxel_before_after():
 
     # Difference maps
     for col, (diff, title) in enumerate([
-        (diff12, "V12: Removed Voxels"),
-        (diff11, "V11: Removed Voxels")
+        (diff12, "SASTO-U: Removed Voxels"),
+        (diff11, "SASTO-PA: Removed Voxels")
     ], start=1):
         ax = axes[1, col]
         # Show: 0=unchanged occupied, 1=removed, -1=added (shouldn't happen)

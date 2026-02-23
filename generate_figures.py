@@ -26,10 +26,10 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 V11_JSON = os.path.join(os.path.dirname(__file__),
                         "fea_ml", "runs", "v3", "optimization_128",
-                        "optimization_summary_v11.json")
+                        "optimization_summary_v11.json")  # SASTO-PA
 V12_JSON = os.path.join(os.path.dirname(__file__),
                         "fea_ml", "runs", "v3", "optimization_128",
-                        "optimization_summary_v12.json")
+                        "optimization_summary_v12.json")  # SASTO-U
 
 # Publication style
 plt.rcParams.update({
@@ -55,7 +55,7 @@ def load_history(path):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Figure 4: Optimization Convergence (V11 vs V12)
+# Figure 4: Optimization Convergence (SASTO-PA vs SASTO-U)
 # ═══════════════════════════════════════════════════════════════════
 def fig4_convergence():
     v11 = load_history(V11_JSON)
@@ -79,9 +79,9 @@ def fig4_convergence():
     # Panel A: Volume reduction
     ax = axes[0]
     ax.plot(batches_11, vol_red_11, "-", color="#1565c0", linewidth=1.5,
-            label="V11 (part-aware)")
+            label="SASTO-PA (part-aware)")
     ax.plot(batches_12, vol_red_12, "--", color="#e65100", linewidth=1.5,
-            label="V12 (uniform)")
+            label="SASTO-U (uniform)")
     ax.set_xlabel("Batch Number")
     ax.set_ylabel("Volume Reduction (%)")
     ax.set_title("(a) Volume Reduction")
@@ -93,9 +93,9 @@ def fig4_convergence():
     # Panel B: Von Mises stress
     ax = axes[1]
     ax.plot(batches_11, vm_11, "-", color="#1565c0", linewidth=1.5,
-            label="V11 (part-aware)")
+            label="SASTO-PA (part-aware)")
     ax.plot(batches_12, vm_12, "--", color="#e65100", linewidth=1.5,
-            label="V12 (uniform)")
+            label="SASTO-U (uniform)")
     ax.axhline(y=5.0, color="#c62828", linewidth=2, linestyle="-",
                alpha=0.7, label="$\\sigma_{VM,allow}$ = 5.0 MPa")
     ax.set_xlabel("Batch Number")
@@ -108,9 +108,9 @@ def fig4_convergence():
     C0 = h11[0]["comp"]  # baseline compliance
     C_allow = C0 * 1.15
     ax.plot(batches_11, comp_11, "-", color="#1565c0", linewidth=1.5,
-            label="V11 (part-aware)")
+            label="SASTO-PA (part-aware)")
     ax.plot(batches_12, comp_12, "--", color="#e65100", linewidth=1.5,
-            label="V12 (uniform)")
+            label="SASTO-U (uniform)")
     ax.axhline(y=C_allow, color="#c62828", linewidth=2, linestyle="-",
                alpha=0.7, label=f"$C_{{allow}}$ = {C_allow:.3f} J")
     ax.set_xlabel("Batch Number")
@@ -122,7 +122,7 @@ def fig4_convergence():
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(OUT_DIR, f"fig4_convergence.{ext}"))
     plt.close(fig)
-    print("  ✓ Figure 4: Optimization convergence (V11 vs V12)")
+    print("  OK Figure 4: Optimization convergence (SASTO-PA vs SASTO-U)")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -142,7 +142,7 @@ def fig5_per_part():
     width = 0.35
     bars1 = ax.bar(x - width / 2, original, width, label="Original (B0)",
                    color="#90caf9", edgecolor="#1565c0", linewidth=0.8)
-    bars2 = ax.bar(x + width / 2, optimized, width, label="Optimized (V11)",
+    bars2 = ax.bar(x + width / 2, optimized, width, label="Optimized (SASTO-PA)",
                    color="#a5d6a7", edgecolor="#2e7d32", linewidth=0.8)
     ax.set_xlabel("Structural Part")
     ax.set_ylabel("Volume (voxels)")
@@ -176,7 +176,7 @@ def fig5_per_part():
 # Figure 6: Efficiency-Integrity Index Comparison
 # ═══════════════════════════════════════════════════════════════════
 def fig6_efficiency():
-    variants = ["B0\n(Baseline)", "V12\n(Uniform)", "V11\n(Part-Aware)"]
+    variants = ["B0\n(Baseline)", "SASTO-U\n(Uniform)", "SASTO-PA\n(Part-Aware)"]
     vol_red = [0.0, 34.3, 45.0]
     iei = [0.0, 0.242, 0.358]
 
@@ -255,7 +255,7 @@ def fig7_uncertainty():
 
     ax.set_xlabel("Volume Fraction $\\phi = V/V_0$")
     ax.set_ylabel("Normalized Response (ratio to baseline)")
-    ax.set_title("Response Evolution During Optimization (V11)")
+    ax.set_title("Response Evolution During Optimization (SASTO-PA)")
     ax.legend(loc="upper right")
     ax.invert_xaxis()
     ax.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
@@ -290,7 +290,7 @@ def fig8_batch_adaptation():
            edgecolor="none")
     ax.set_xlabel("Batch Number")
     ax.set_ylabel("Voxels Removed per Batch")
-    ax.set_title("Adaptive Batch Size During V11 Optimization")
+    ax.set_title("Adaptive Batch Size During SASTO-PA Optimization")
 
     # Annotate phases
     ax.axvline(x=260, color="#c62828", linestyle="--", linewidth=1.5)
@@ -389,7 +389,7 @@ def fig10_k_sensitivity():
 # Figure 11: Speedup Comparison
 # ═══════════════════════════════════════════════════════════════════
 def fig11_speedup():
-    methods = ["SIMP\n(conservative)", "SIMP\n(aggressive)", "SASTO\n(V11)"]
+    methods = ["SIMP\n(conservative)", "SIMP\n(aggressive)", "SASTO\n(SASTO-PA)"]
     times_hr = [30.0, 5.0, 159.5 / 3600]
     colors = ["#ef9a9a", "#ffe0b2", "#a5d6a7"]
 
