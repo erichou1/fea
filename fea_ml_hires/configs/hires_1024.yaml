@@ -1,0 +1,121 @@
+# FEA Voxel Surrogate — HIGH-RESOLUTION 1024³ Configuration
+#
+# Target hardware: NVIDIA GB200 (192 GB HBM3e)
+# Memory budget:
+#   Input tensor (7ch × 1024³ × bf16)  ≈ 14 GB
+#   After stem (/8 spatial → 128³)      ≈  100 MB
+#   Model params + optimizer states     ≈  200 MB
+#   Peak working memory (incl. grads)   ≈ ~40 GB total (grad-checkpoint keeps it manageable)
+#
+# Usage:
+#   Single-GPU:
+#     python -m fea_ml_hires.scripts.train --config configs/hires_1024.yaml --output runs/hires_1024
+#
+#   Multi-GPU (FSDP via torchrun):
+#     torchrun --nproc_per_node=4 -m fea_ml_hires.scripts.train \
+#       --config configs/hires_1024.yaml --output runs/hires_1024 --fsdp
+#
+#   Override grad accumulation:
+#     python -m fea_ml_hires.scripts.train --config configs/hires_1024.yaml \
+#       --output runs/hires_1024 --grad_accum 16
+
+project: fea_voxel_surrogate_hires_1024
+
+data:
+  runs_dir: data/runs_real_1024        # 1024³ voxelized dataset
+  resolution: 1024
+  use_sdf: false
+  length_unit: meters
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  split_by_design_family: true
+
+parts:
+  exterior_wall:
+    editable: thickness_only
+    shell_thickness_voxels: 24         # scaled from 3 @ 128 → 24 @ 1024
+  interior_wall:
+    editable: full
+    min_thickness: 0.02
+  roof:
+    editable: full
+    min_thickness: 0.015
+  floor:
+    editable: limited
+    protected_zones: true
+
+targets:
+  - max_von_mises
+  - max_displacement
+  - min_safety_factor
+  - compliance
+
+materials:
+  - concrete
+  - mortar
+  - polymer
+
+load_cases:
+  - gravity
+  - wind
+  - combined
+
+constraints:
+  min_safety_factor: 1.5
+  max_displacement: 1.0
+  max_compliance_ratio: 1.05
+
+model:
+  type: ensemble
+  n_models: 5
+  backbone: resnet3d_hires             # HiRes variant with aggressive /8 stem + 5 stages
+  base_channels: 24                    # conservative: memory-limited at 1024³
+  dropout: 0.15
+  drop_path: 0.1
+
+training:
+  batch_size: 1                        # 1024³ → only 1 sample fits in memory
+  grad_accum_steps: 8                  # effective batch size = 8
+  epochs: 200
+  lr: 0.0003                           # lower LR for large models w/ grad accum
+  weight_decay: 0.0001
+  seed: 42
+  mixed_precision: true                # bf16 autocast (Hopper/Blackwell native)
+  grad_clip: 1.0
+  patience: 30
+  use_ema: true
+  ema_decay: 0.999
+  compile: true                        # torch.compile for GB200 (inductor)
+  num_workers: 4                       # fewer workers — each sample is huge
+
+loss:
+  type: huber
+  log_transform: null                  # log-transform all targets
+  winsorize_pct: 2.0
+  target_weights:
+    max_von_mises: 1.0
+    max_displacement: 1.0
+    min_safety_factor: 1.5
+    compliance: 0.5
+
+optimization:
+  parameterization:
+    erosion_min: 0.0
+    erosion_max: 0.3
+    smooth_min: 0.0
+    smooth_max: 0.2
+  search:
+    iterations: 100
+    population_size: 32
+    sigma0: 0.3
+    surface_area_weight: 0.01
+    thin_feature_weight: 0.1
+    constraint_penalty: 100.0
+    uncertainty_k: 2.0
+    mc_samples: 16
+
+validation:
+  min_thickness_voxels: 16.0           # scaled from 2 @ 128 → 16 @ 1024
+  max_components: 1
+  thin_threshold_voxels: 12.0          # scaled from 1.5 @ 128 → 12 @ 1024
