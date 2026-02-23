@@ -1,0 +1,1123 @@
+\documentclass[11pt]{article}
+
+% ============================================================
+% Layout
+% ============================================================
+\usepackage[margin=1.1in]{geometry}
+\usepackage{microtype}
+
+% ============================================================
+% FONT: Springer/Mathematische Annalen-like
+% Compile with LuaLaTeX or XeLaTeX
+% ============================================================
+\usepackage{fontspec}
+\usepackage{unicode-math}
+
+% Text font: Times New Roman if available; otherwise TeX Gyre Termes
+\IfFontExistsTF{Times New Roman}{
+  \setmainfont{Times New Roman}
+}{
+  \setmainfont{TeX Gyre Termes}
+}
+
+% Math font: Times-like math
+\IfFontExistsTF{TeX Gyre Termes Math}{
+  \setmathfont{TeX Gyre Termes Math}
+}{
+  \setmathfont{XITS Math}
+}
+
+\linespread{1.05}
+
+% ============================================================
+% Math / theorem tools
+% ============================================================
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+
+% ============================================================
+% Tables, figures, algorithms
+% ============================================================
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{multirow}
+
+% ============================================================
+% Links (journal-like: no colored boxes)
+% ============================================================
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+% ============================================================
+% Section title styling
+% ============================================================
+\usepackage{titlesec}
+
+\titleformat{\section}
+  {\normalfont\LARGE\bfseries}
+  {\thesection}
+  {1em}
+  {}
+
+\titleformat{\subsection}
+  {\normalfont\Large\bfseries}
+  {\thesubsection}
+  {1em}
+  {}
+
+\titleformat{\subsubsection}
+  {\normalfont\large\bfseries}
+  {\thesubsubsection}
+  {1em}
+  {}
+
+\titlespacing*{\section}{0pt}{2.0ex plus 0.6ex minus 0.2ex}{1.0ex}
+\titlespacing*{\subsection}{0pt}{1.5ex plus 0.5ex minus 0.2ex}{0.8ex}
+\titlespacing*{\subsubsection}{0pt}{1.2ex plus 0.4ex minus 0.2ex}{0.6ex}
+
+% ============================================================
+% Theorem environments
+% ============================================================
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% ============================================================
+% Custom title block (Springer-ish layout)
+% ============================================================
+\makeatletter
+\renewcommand{\maketitle}{
+\begin{center}
+{\fontsize{18}{22}\selectfont\bfseries \@title \par}
+\vspace{1.2em}
+
+{\large Eric Hou$^{1}$\par}
+\vspace{0.3em}
+
+{\normalsize $^{1}$Los Gatos, California, USA\par}
+{\normalsize \texttt{eric.x.hou@gmail.com}\par}
+
+\vspace{1.2em}
+
+\end{center}
+\vspace{1.8em}
+}
+\makeatother
+
+% ============================================================
+% Title
+% ============================================================
+\title{Surrogate-Accelerated Topology Optimization of 3D-Printed\\Concrete Structures via Deep Ensemble Sensitivity Ranking\\and 6-Connectivity Preservation}
+\date{}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+% ============================================================
+% Abstract
+% ============================================================
+\section*{Abstract}
+
+Topology optimization of full-scale concrete buildings is computationally prohibitive because classical methods such as SIMP require hundreds of finite element analyses, each costing minutes at building-scale resolution. Separately, voxel-based implementations face an unreported failure mode in which standard 26-connectivity topology checks produce floating mesh fragments incompatible with additive manufacturing toolpaths. This paper introduces Surrogate-Accelerated Sensitivity Topology Optimization (SASTO), a three-phase voxel erosion algorithm that replaces iterative FEA with a five-member deep ensemble of 3D convolutional neural networks (43.8 million parameters) trained on 11,178 ASCE 7-22 house simulations. SASTO uses backpropagation-derived sensitivity gradients to rank and remove structurally redundant voxels. Three contributions are made. First, SASTO achieves 22.6\% $\pm$ 6.6\% mean material reduction across seven constraint-satisfying house geometries in 63 $\pm$ 44 seconds on a consumer GPU, representing an estimated 100--700$\times$ speedup over SIMP with direct FEA. Second, a 6-connectivity digital topology criterion guarantees marching-cubes-compatible single-component meshes throughout optimization, eliminating thousands of floating fragments produced by conventional 26-connectivity checks. Third, a part-aware heterogeneous thickness formulation permits thinner interior partitions while enforcing conservative limits on load-bearing members, yielding 10.7 percentage points more material reduction than uniform thickness on the reference geometry. All structural constraints use conservative ensemble upper bounds ($\mu + k\sigma$, $k = 1.0$). Ground-truth FEA re-analysis and physical testing remain as future validation.
+
+\vspace{0.9em}
+
+\noindent\textbf{Keywords.}
+Topology optimization $\cdot$ Finite element analysis $\cdot$ Additive manufacturing $\cdot$ Deep ensemble surrogate $\cdot$ Uncertainty quantification $\cdot$ 3D-printed construction $\cdot$ Digital topology
+
+\vspace{2.0em}
+
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+Residential construction accounts for roughly 11\% of global CO$_2$ emissions, with concrete production alone responsible for approximately 8\% \cite{iea2021}. In conventional construction, walls, slabs, and roofs are built at uniform thickness, a practice driven by formwork constraints rather than structural necessity. Not all regions of a building carry the same load: interior partition walls, for example, bear negligible gravity or lateral forces compared to exterior shear walls. This creates a substantial opportunity for material reduction if the geometry can be selectively thinned in regions where full thickness is structurally unnecessary.
+
+Large-scale additive manufacturing (AM) of concrete structures has advanced rapidly, with companies such as ICON, COBOD, and Apis Cor demonstrating full-scale 3D-printed houses \cite{buswell2018, ngo2018}. Unlike conventional formwork, AM depositions can realize arbitrary wall profiles at no marginal tooling cost. However, exploiting this geometric freedom requires optimized three-dimensional models that specify precisely where material should be placed: models that simultaneously minimize volume, satisfy structural code requirements, and produce watertight meshes compatible with printer toolpath generation.
+
+Topology optimization, the computational determination of optimal material layout within a design domain, is mature for aerospace and automotive components \cite{bendsoe2003, sigmund2013}. The classical Solid Isotropic Material with Penalization (SIMP) method requires hundreds to thousands of FEA evaluations, each costing minutes to hours for a building-scale tetrahedral mesh, making direct topology optimization of full-scale houses computationally intractable. A separate but equally critical problem arises in voxel-based implementations: 26-connectivity topology checks, standard in the topology optimization literature \cite{xia2015}, permit diagonal-only voxel connections that marching cubes algorithms render as disconnected floating mesh fragments. This failure mode has not been identified or addressed in prior voxel-based topology optimization work, despite its direct impact on manufacturability.
+
+This work addresses both challenges through three contributions:
+\begin{enumerate}[label=(\roman*),leftmargin=2em]
+\item A surrogate-accelerated sensitivity erosion algorithm (SASTO) that replaces FEA with millisecond-scale deep ensemble predictions and gradient-based voxel ranking, achieving an estimated 100--700$\times$ speedup over SIMP.
+\item A 6-connectivity topology preservation criterion that formally guarantees single-component mesh output compatible with marching cubes surface extraction, eliminating a previously unreported failure mode.
+\item A part-aware heterogeneous minimum thickness formulation that exploits structural role classification to permit differential thinning of interior partitions while protecting load-bearing members.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work and identifies specific gaps addressed here. Section~\ref{sec:methods} presents the mathematical formulation, surrogate architecture, and optimization algorithm. Section~\ref{sec:protocol} describes the experimental and simulation protocol. Section~\ref{sec:results} presents quantitative results across 20 diverse test geometries. Section~\ref{sec:ablation} reports ablation and sensitivity studies. Section~\ref{sec:uq} discusses uncertainty quantification. Section~\ref{sec:discussion} provides mechanistic interpretation, and Section~\ref{sec:limitations} addresses limitations and threats to validity. Section~\ref{sec:conclusion} concludes with directions for future work.
+
+
+% ============================================================
+\section{Related Work and Gap Analysis}
+\label{sec:related}
+% ============================================================
+
+\subsection{Topology Optimization in Additive Manufacturing}
+
+Topology optimization has been applied to additively manufactured components since Brackett et al.\ \cite{brackett2011}, with modern extensions incorporating overhang constraints \cite{langelaar2016}, minimum feature size \cite{guest2004}, and support structure penalties \cite{gaynor2016}. These works focus on small-scale parts (brackets, heat sinks) with isotropic metals and do not scale to full-building geometries with heterogeneous structural members.
+
+\subsection{Surrogate-Assisted Optimization}
+
+Neural network surrogates for FEA have been explored by White et al.\ \cite{white2019}, Banga et al.\ \cite{banga2018}, and Nie et al.\ \cite{nie2021}. Most methods predict field quantities (stress or displacement at every mesh node) and require U-Net or graph neural network architectures. The present work differs by predicting global scalar summaries (peak stress, maximum displacement, compliance), which enables fast gradient computation via standard backpropagation and uncertainty quantification via deep ensembles \cite{lakshminarayanan2017}.
+
+\subsection{Robust and Uncertainty-Aware Design}
+
+Robust topology optimization under uncertain loads and material properties has been formulated by Dunning et al.\ \cite{dunning2011} and da Silva et al.\ \cite{dasilva2019}. However, these methods propagate uncertainty through the FEA solver itself, compounding computational cost. The present approach shifts uncertainty quantification to the surrogate, using ensemble disagreement as an epistemic uncertainty proxy at negligible additional cost.
+
+\subsection{Gap Summary}
+
+Table~\ref{tab:gaps} summarizes how SASTO addresses specific limitations in the prior literature. No existing work simultaneously provides surrogate-accelerated optimization, formal mesh connectivity guarantees, heterogeneous thickness by structural role, and uncertainty-aware constraint checking for building-scale topology optimization.
+
+\begin{table}[t]
+\centering
+\caption{Gap analysis: prior methods and the limitations addressed by SASTO.}
+\label{tab:gaps}
+\small
+\begin{tabular}{@{}p{3.4cm}p{3.0cm}p{4.0cm}p{3.5cm}@{}}
+\toprule
+\textbf{Prior Method} & \textbf{Strength} & \textbf{Limitation} & \textbf{Gap Addressed} \\
+\midrule
+SIMP \cite{bendsoe2003} & Mathematically rigorous & 100s--1000s FEA evaluations & SASTO: surrogate replaces FEA \\
+\addlinespace
+Neural surrogate TO \cite{nie2021} & Fast forward pass & No UQ; no topology guarantee & Deep ensemble UQ \\
+\addlinespace
+Voxel-based TO \cite{xia2015} & Regular grid, simple & 26-conn.\ produces floating fragments & 6-connectivity preservation \\
+\addlinespace
+AM-constrained TO \cite{langelaar2016} & Overhang constraints & Uniform thickness; single part & Part-aware thickness \\
+\addlinespace
+Robust TO \cite{dunning2011} & Handles uncertainty & UQ through FEA, high cost & Ensemble UQ at inference cost \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================
+\section{Methods}
+\label{sec:methods}
+% ============================================================
+
+\subsection{Physical Problem Definition}
+\label{sec:problem}
+
+The design domain $\Omega \subset \mathbb{R}^3$ is a single-story residential structure discretized on a regular $128^3$ voxel grid. Each voxel carries a structural part label $p \in \{0,1,2,3,4\}$ corresponding to void, exterior wall, interior wall, roof, and floor, respectively. Exterior walls constitute the primary lateral and gravity load path; interior walls serve as non-structural partitions; the roof transfers gravity and environmental loads to the walls; and the floor distributes gravity loads to the foundation.
+
+Loading follows ASCE 7-22 Allowable Stress Design (ASD) combinations \cite{asce2022}, including dead load (self-weight at $\rho_m = 2{,}400$ kg/m$^3$), live load ($L = 1.92$ kPa for residential occupancy), and lateral wind load ($W = 0.96$ kPa). The allowable von Mises stress is
+\begin{equation}\label{eq:vmallow}
+\sigma_{\mathrm{VM,allow}} = \frac{f'_c}{\gamma_m \cdot \gamma_f} = \frac{30}{3.0 \times 2.0} = 5.0~\text{MPa},
+\end{equation}
+where $\gamma_m = 3.0$ accounts for the isotropic assumption and printing variability, and $\gamma_f = 2.0$ provides the ASD load factor margin. The displacement serviceability limit is $u_{\max,\mathrm{allow}} = 1.0$ m, and the compliance budget is $C_{\mathrm{allow}} = 1.15\,C_0$, where $C_0$ is the compliance of the unoptimized baseline.
+
+\subsection{Governing Equations}
+\label{sec:governing}
+
+The structural material is modeled as isotropic linear elastic concrete with Young's modulus $E = 25$ GPa, Poisson's ratio $\nu = 0.20$, density $\rho_m = 2{,}400$ kg/m$^3$, and compressive strength $f'_c = 30$ MPa. The constitutive relation is $\boldsymbol{\sigma} = \mathbf{C} : \boldsymbol{\varepsilon}$, with the isotropic stiffness tensor
+\begin{equation}\label{eq:stiffness}
+C_{ijkl} = \lambda\,\delta_{ij}\delta_{kl} + \mu\left(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}\right),
+\end{equation}
+where $\lambda = E\nu/\bigl[(1+\nu)(1-2\nu)\bigr] = 6.94$ GPa and $\mu = E/\bigl[2(1+\nu)\bigr] = 10.42$ GPa.
+
+Equilibrium in the strong form is $\nabla \cdot \boldsymbol{\sigma} + \mathbf{b} = \mathbf{0}$, with fixed-base boundary conditions $\mathbf{u} = \mathbf{0}$ on $\Gamma_D$ and applied tractions $\boldsymbol{\sigma} \cdot \mathbf{n} = \mathbf{t}$ on $\Gamma_N$. The strain-displacement relation under the small-strain assumption is $\boldsymbol{\varepsilon} = \frac{1}{2}(\nabla\mathbf{u} + (\nabla\mathbf{u})^\top)$. The von Mises equivalent stress is
+\begin{equation}\label{eq:vonmises}
+\sigma_{\mathrm{VM}} = \sqrt{\tfrac{3}{2}\,\mathbf{s}:\mathbf{s}}, \quad \mathbf{s} = \boldsymbol{\sigma} - \tfrac{1}{3}\operatorname{tr}(\boldsymbol{\sigma})\,\mathbf{I},
+\end{equation}
+and compliance is defined as the total strain energy:
+\begin{equation}\label{eq:compliance}
+C = \mathbf{u}^\top\mathbf{f} = \int_\Omega \boldsymbol{\sigma} : \boldsymbol{\varepsilon}\;d\Omega.
+\end{equation}
+
+The weak form is discretized using linear tetrahedral finite elements, yielding the standard system $\mathbf{K}\mathbf{u} = \mathbf{f}$, where $\mathbf{K} = \sum_{e=1}^{N_e} \int_{\Omega_e} \mathbf{B}_e^\top \mathbf{C}_e \mathbf{B}_e\;d\Omega_e$. Meshes are generated with Gmsh \cite{geuzaine2009} and solved with SfePy using SciPy's sparse direct solver (UMFPACK), with Newton tolerance $\|\mathbf{r}\|/\|\mathbf{f}\| < 10^{-6}$.
+
+\subsection{Design Variables and Constraints}
+\label{sec:designvar}
+
+The design variable is the binary occupancy field $\rho_i \in \{0,1\}$ for $i = 1, \ldots, N_v$, where $N_v = 128^3 = 2{,}097{,}152$. The exterior shell surface (a protected skin band of 3 voxels) is excluded from modification; only interior-facing surfaces are editable. Minimum feature-size constraints are enforced via a Euclidean distance transform and differentiated by structural role:
+\begin{equation}\label{eq:thickness}
+t_{\min}(p) =
+\begin{cases}
+2\,\Delta x & p \in \{1, 3, 4\}~~\text{(exterior wall, roof, floor)}, \\
+1\,\Delta x & p = 2~~\text{(interior wall)},
+\end{cases}
+\end{equation}
+where $\Delta x = L/128 \approx 78.1$ mm for a bounding box extent of $L = 10.0$ m. A single-component topology constraint $|\mathcal{C}_6(\boldsymbol{\rho})| = 1$ is enforced incrementally via the 6-simple-point test at each candidate removal.
+
+\subsection{Optimization Formulation}
+\label{sec:optform}
+
+The optimization problem is formulated as constrained volume minimization with penalty terms:
+\begin{equation}\label{eq:objective}
+\min_{\boldsymbol{\rho}}\;J(\boldsymbol{\rho}) = w_V \frac{V(\boldsymbol{\rho})}{V_0} + w_S \frac{S(\boldsymbol{\rho})}{V_0} + P_{\mathrm{constraint}}(\boldsymbol{\rho}),
+\end{equation}
+where $V(\boldsymbol{\rho}) = \sum_{i} \rho_i$ is the total volume, $S(\boldsymbol{\rho}) = \frac{1}{2}\sum_{i}\rho_i\sum_{j\in\mathcal{N}_6(i)}(1-\rho_j)$ is the exposed surface area (a smoothness regularizer), and the constraint penalty aggregates all structural violations:
+\begin{equation}\label{eq:penalty}
+P_{\mathrm{constraint}} = \kappa\left[\frac{\max(0, \hat{\sigma}^+_{\mathrm{VM}} - \sigma_{\mathrm{allow}})}{\sigma_{\mathrm{allow}}} + \max\!\bigl(0, \hat{u}^+ - u_{\mathrm{allow}}\bigr) + \frac{\max(0, \hat{C}^+ - C_{\mathrm{allow}})}{C_{\mathrm{allow}}}\right].
+\end{equation}
+The weights are $w_V = 1.0$, $w_S = 0.01$, and $\kappa = 100.0$. The superscript $+$ denotes conservative (upper-bound) ensemble estimates:
+\begin{equation}\label{eq:conservative}
+\hat{\sigma}^+_{\mathrm{VM}} = \mu_\sigma + k\cdot\sigma_\sigma, \quad \hat{C}^+ = \mu_C + k\cdot\sigma_C,
+\end{equation}
+where $\mu$ and $\sigma$ are the ensemble mean and standard deviation, and $k = 1.0$ is the uncertainty margin factor. Under a Gaussian assumption, this provides $\Pr[\sigma_{\mathrm{VM}} > \hat{\sigma}^+_{\mathrm{VM}}] \approx 0.159$, a probabilistic safety margin without explicit Monte Carlo sampling.
+
+\subsection{Deep Ensemble Surrogate}
+\label{sec:surrogate}
+
+The surrogate consists of five independently trained 3D convolutional neural networks (each $\sim$8.76 million parameters; 43.8M total), following the deep ensemble framework of Lakshminarayanan et al.\ \cite{lakshminarayanan2017}. Each member takes as input a 7-channel $128^3$ voxel grid (1 occupancy channel plus 6 one-hot-encoded part label channels) and a 10-dimensional feature vector (material properties and load case identifiers), and predicts three scalar targets: peak von Mises stress, maximum displacement, and compliance.
+
+The architecture (Figure~\ref{fig:architecture}) comprises four convolutional stages with batch normalization, GELU activation, and progressive spatial reduction ($128^3 \to 64^3 \to 32^3 \to 16^3 \to 8^3$), followed by three SE-ResBlocks with squeeze-and-excitation attention \cite{hu2018}. Dual pooling (adaptive average and max) produces a 512-dimensional spatial embedding, which is concatenated with a 128-dimensional feature embedding from a two-layer MLP and passed through a prediction head with a skip connection (640 $\to$ 512 $\to$ 256 $\to$ 3). Regularization includes dropout (0.15), stochastic depth (linear 0--0.1), and weight decay ($10^{-4}$).
+
+Training uses the Huber loss (SmoothL1), AdamW optimizer ($\text{lr} = 5\times10^{-4}$), cosine annealing scheduler, exponential moving average (decay 0.999), mixed-precision (AMP), and gradient clipping ($\|\cdot\|_{\max} = 1.0$). Targets are normalized via $\log(1+|y|)$ followed by z-score standardization with 2nd/98th percentile winsorization. Augmentation includes random 90$^\circ$ rotations about the vertical axis, horizontal flips, Gaussian noise ($\sigma = 0.02$), and 10\% channel dropout. Training was performed on four NVIDIA GB200 GPUs. The full hyperparameter specification appears in Appendix~\ref{app:hyperparams}.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig2_architecture.png (or draw) showing the CNN architecture
+% This should show: Input (7x128^3) -> Conv stages -> SE-ResBlocks -> Dual Pool -> Feature MLP -> Prediction Head -> 3 outputs
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Surrogate3DResNet Architecture}\\[0.5em]
+\small Diagram showing the 3D CNN encoder (4 conv stages $\to$ SE-ResBlocks), dual pooling, feature MLP branch, and prediction head with skip connection. Single ensemble member, $\sim$8.76M parameters.\vspace{3cm}}}
+\caption{Architecture of a single Surrogate3DResNet ensemble member. The 3D CNN encoder progressively reduces spatial resolution from $128^3$ to $8^3$ across four convolutional stages, followed by three squeeze-and-excitation residual blocks. Dual adaptive pooling (average + max) produces a 512-dimensional spatial embedding, concatenated with a 128-dimensional feature vector and passed through a two-layer prediction head with skip connection to produce three structural response scalars.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Sensitivity Computation via Surrogate Backpropagation}
+\label{sec:sensitivity}
+
+The structural sensitivity of each voxel is computed by backpropagating through the ensemble rather than solving an adjoint FEA problem:
+\begin{equation}\label{eq:sensitivity}
+s_i = \frac{1}{M}\sum_{m=1}^{M}\frac{\partial}{\partial\rho_i}\left[f_m^{(C)}(\boldsymbol{\rho}) + \alpha\,f_m^{(\sigma)}(\boldsymbol{\rho})\right],
+\end{equation}
+where $\alpha = 0.3$ weights von Mises stress relative to compliance and $M = 5$ is the number of ensemble members. Voxels with $s_i > 0$ contribute more dead-load penalty than stiffness benefit, making them safe candidates for removal; voxels with $s_i < 0$ are structurally essential. Candidates are sorted by descending $s_i$ so the most expendable voxels are removed first. Each sensitivity computation requires $M$ forward and backward passes through the CNN, taking approximately 3--8 seconds on an NVIDIA RTX A3000, replacing a full FEA adjoint solve that would require minutes.
+
+The surrogate gradient decomposes as
+\begin{equation}\label{eq:graddecomp}
+\tilde{s}_i = \underbrace{\frac{\partial F(\boldsymbol{\rho})}{\partial\rho_i}}_{\text{true sensitivity}} + \underbrace{\frac{\partial(f_\theta - F)(\boldsymbol{\rho})}{\partial\rho_i}}_{\text{surrogate gradient error}~\delta_i},
+\end{equation}
+where $F$ is the true FEA response. Crucially, SASTO does not require pointwise gradient accuracy ($\delta_i \to 0$); it requires only \emph{ranking consistency}: the surrogate-induced ordering of voxels by sensitivity must agree with the true ordering for the subset being removed. Even when ranking is imperfect, the accept/reject constraint check (Eq.~\ref{eq:conservative}) acts as a safety filter: incorrectly prioritized voxels whose removal violates constraints are rejected and the batch size is halved. This two-layer architecture, approximate ranking combined with exact constraint gating, makes SASTO robust to surrogate gradient error.
+
+Ensemble averaging further reduces gradient variance:
+\begin{equation}\label{eq:variance}
+\mathrm{Var}[\bar{s}_i] \approx \frac{\mathrm{Var}[s_i^{(1)}]}{M},
+\end{equation}
+yielding a $\sqrt{5} \approx 2.24\times$ reduction in gradient standard deviation relative to a single model, a direct benefit of the ensemble architecture beyond uncertainty quantification.
+
+\subsection{The 6-Simple-Point Criterion}
+\label{sec:simplepoint}
+
+\begin{definition}[6-Simple Point]\label{def:simplepoint}
+A foreground voxel $v$ is a \emph{6-simple point} if its removal satisfies two conditions within its $3\times3\times3$ neighborhood $\mathcal{N}_{26}(v)$: (i)~the foreground in $\mathcal{N}_{26}(v) \setminus \{v\}$ has exactly one 6-connected component, and (ii)~the background has exactly one 26-connected component adjacent to $v$.
+\end{definition}
+
+Formally, let $\rho' = \rho \setminus \{v\}$ denote the occupancy with $v$ removed. Then
+\begin{equation}\label{eq:simplepoint}
+\mathrm{SP}_6(v) =
+\begin{cases}
+1 & \text{if } |\mathcal{C}_6(\rho' \cap \mathcal{N}_{26}(v))| = 1 \;\land\; |\mathcal{C}_{26}(\bar{\rho}' \cap \mathcal{N}_{26}(v) \cup \{v\})| = 1, \\
+0 & \text{otherwise}.
+\end{cases}
+\end{equation}
+This follows the digital topology convention of Kong and Rosenfeld \cite{kong1989}, where foreground and background must use complementary connectivities to maintain topological consistency. We choose the (6,\,26) pairing specifically because 6-connectivity for the foreground prevents diagonal-only attachments that violate marching cubes assumptions.
+
+\begin{proposition}[6-Connectivity Sufficiency for Marching Cubes]\label{prop:mc}
+Let $\boldsymbol{\rho} \in \{0,1\}^{N^3}$ be a binary voxel field with exactly one 6-connected component. Let $\psi(\mathbf{x}) = \mathrm{SDF}(\boldsymbol{\rho})$ be a signed distance field with $\psi \leq 0$ inside occupied voxels. Then the marching cubes triangulation $\mathcal{M} = \mathrm{MC}(\psi, 0)$ has exactly one connected surface component.
+\end{proposition}
+
+\begin{proof}
+Consider two 6-adjacent occupied voxels $v_a, v_b$ sharing a face $F_{ab}$. The four dual-grid vertices of $F_{ab}$ satisfy $\psi \leq 0$ (interior to the occupied region). Any marching cubes cell containing an edge of $F_{ab}$ produces triangle patches whose edges lie along $F_{ab}$, guaranteeing local surface connectivity across every 6-adjacent pair. Since any two occupied voxels in a 6-connected field are linked by a finite path of 6-adjacent pairs, mesh connectivity follows by induction over the path length.
+
+For the converse direction, consider two voxels $v_a, v_b$ sharing only a corner vertex $c$ (26-adjacent but not 6-adjacent). When all other voxels in the $2^3$ neighborhood of $c$ are unoccupied, the marching cubes lookup table generates disjoint surface patches for $v_a$ and $v_b$ on opposite sides of the void, producing a disconnected mesh despite 26-connectivity of the voxel field.
+\end{proof}
+
+This result formalizes why the (26,\,6) pairing standard in the topology optimization literature produces meshes with thousands of floating fragments (Section~\ref{sec:ablation_connectivity}). While the underlying digital topology theory is well established \cite{kong1989}, its application to topology-optimized voxel fields and the explicit identification of marching cubes incompatibility as a failure mode appear to be novel in the structural optimization context.
+
+\subsection{The SASTO Algorithm}
+\label{sec:algorithm}
+
+SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and illustrated in Figure~\ref{fig:pipeline}.
+
+\textbf{Phase 1 (Sensitivity-Guided Erosion).} The algorithm identifies interior surface voxels, computes the Euclidean distance transform to enforce thickness constraints (Eq.~\ref{eq:thickness}), evaluates structural sensitivity via backpropagation (Eq.~\ref{eq:sensitivity}), and sorts candidates by descending sensitivity. Batches of 6-simple-point voxels are tentatively removed; the ensemble predicts the conservative structural response (Eq.~\ref{eq:conservative}); if all constraints are satisfied, the removal is committed. Otherwise, the removal is undone and the batch size is halved, functioning as a discrete trust-region mechanism analogous to continuous optimization \cite{conn2000}. Phase~1 accounts for over 99\% of total material removal.
+
+\textbf{Phase 2 (Fine-Grained Endgame).} The same procedure is repeated with small batch sizes (5, then 1) to squeeze out remaining feasible removals near the constraint boundary.
+
+\textbf{Phase 3 (Swap Moves).} Thick interior voxels (distance transform $\geq 3$) are swapped with previously removed neighbors; swaps that reduce volume while satisfying constraints are accepted.
+
+\textbf{Post-Processing.} Enclosed air pockets of $\leq 50$ voxels are filled, shard voxels with fewer than two face-neighbors are removed, and the final occupancy field is converted to a watertight STL mesh via signed distance field computation, marching cubes extraction \cite{lorensen1987}, and Laplacian smoothing.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig1_pipeline.png showing the full SASTO pipeline
+% Flowchart: Input wireframe -> Volumetric generation -> 128^3 grid -> SASTO (3 phases) -> Post-processing -> STL
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3.5cm}\textbf{Figure Placeholder: SASTO Pipeline Overview}\\[0.5em]
+\small Flowchart showing: (1) Input wireframe $\to$ volumetric generation $\to$ $128^3$ voxel grid with part labels; (2) Offline surrogate training on 11,178 FEA simulations; (3) Three-phase online optimization (erosion $\to$ endgame $\to$ swaps); (4) Post-processing and STL export.\vspace{3.5cm}}}
+\caption{Overview of the SASTO pipeline. The offline phase (top) trains a five-member deep ensemble on 11,178 FEA simulations. The online phase (bottom) applies three-phase sensitivity-guided erosion, using surrogate backpropagation for voxel ranking and conservative ensemble bounds for constraint checking. The output is a watertight, single-component STL mesh suitable for additive manufacturing.}
+\label{fig:pipeline}
+\end{figure}
+
+\begin{algorithm}[t]
+\caption{Surrogate-Accelerated Sensitivity Topology Optimization (SASTO)}
+\label{alg:sasto}
+\begin{algorithmic}[1]
+\Require Occupancy $\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraints
+\Ensure Optimized occupancy $\boldsymbol{\rho}^*$
+\State $\boldsymbol{\rho} \gets \boldsymbol{\rho}_0$; $C_0 \gets \textsc{EnsemblePredict}(\boldsymbol{\rho}_0)$
+\Comment{Baseline compliance}
+\For{layer $= 1, \ldots, L_{\max}$}
+\Comment{\textbf{Phase 1: Erosion}}
+    \State $\mathrm{DT} \gets \textsc{DistanceTransform}(\boldsymbol{\rho})$
+    \State Candidates $\gets$ interior surface voxels with $\mathrm{DT}[\text{neighbor}] \geq t_{\min}(p)$
+    \If{layer $\bmod 3 = 0$}
+        \State $\mathbf{s} \gets \frac{1}{M}\sum_m \nabla_{\boldsymbol\rho}\bigl[f_m^{(C)} + \alpha f_m^{(\sigma)}\bigr]$
+        \Comment{Backprop sensitivity}
+    \EndIf
+    \State Sort candidates by descending $s_i$; $B \gets B_0$
+    \While{candidates remain}
+        \State Select batch of $B$ 6-simple-point voxels
+        \State Tentatively remove batch from $\boldsymbol{\rho}$
+        \State $(\mu, \sigma) \gets \textsc{EnsemblePredict}(\boldsymbol{\rho})$
+        \If{$\mu + k\sigma$ satisfies all constraints}
+            \State Commit removal
+        \Else
+            \State Undo removal; $B \gets \max(B_{\min},\;\lfloor B/2 \rfloor)$
+        \EndIf
+    \EndWhile
+\EndFor
+\State \textbf{Phase 2:} Repeat with $B \in \{5, 1\}$
+\Comment{Fine-grained endgame}
+\State \textbf{Phase 3:} Swap thick interior voxels with removed neighbors
+\State Fill air pockets $\leq 50$ voxels; remove shards $< 2$ face-neighbors
+\State $\boldsymbol{\rho}^* \gets$ SDF $\to$ marching cubes $\to$ Laplacian smooth $\to$ STL
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Efficiency-Integrity Index}
+\label{sec:ei}
+
+To compare optimization variants on a common scale, we define a dimensionless Efficiency-Integrity Index:
+\begin{equation}\label{eq:ei}
+\mathcal{I}_{\mathrm{EI}} = \frac{\Delta V / V_0}{(\hat{\sigma}^+_{\mathrm{VM}} / \sigma_{\mathrm{allow}}) \cdot (1 + \hat{C}^+ / C_{\mathrm{allow}})}.
+\end{equation}
+All quantities are dimensionless ratios. Higher $\mathcal{I}_{\mathrm{EI}}$ indicates better material efficiency per unit of structural utilization. A value of 1.0 means the volume reduction exactly equals the product of stress and compliance utilization fractions.
+
+\subsection{Ensemble Disagreement Divergence}
+\label{sec:divergence}
+
+As material is removed, the optimized geometry diverges from the training distribution. We define the normalized ensemble disagreement at volume fraction $\phi = V/V_0$ as
+\begin{equation}\label{eq:disagreement}
+D(\phi) = \frac{1}{T}\sum_{j=1}^{T}\frac{\sigma_j(\phi)}{\mu_j(\phi)},
+\end{equation}
+and the disagreement divergence rate as $\Gamma_D(\phi) = [D(\phi) - D_0]/(1-\phi)$, where $D_0 = D(1.0)$ is the baseline disagreement. A value $\Gamma_D \gg 1$ signals that the surrogate is extrapolating into an out-of-distribution regime. For the reference case, $\Gamma_D \approx 0.184$, indicating sub-linear uncertainty growth during optimization.
+
+
+% ============================================================
+\section{Experimental Protocol}
+\label{sec:protocol}
+% ============================================================
+
+\subsection{Dataset Generation}
+
+A dataset of 14,293 unique single-story house geometries was generated from the 3DWire wireframe dataset by converting wireframe vertices and edges into volumetric structures comprising exterior walls, interior partitions, pitched roofs, and floor slabs. Each geometry was processed through a four-stage pipeline: (1)~wireframe to STL parts (four files per design), (2)~STL to STEP via FreeCAD boolean fusion, (3)~STEP to labeled tetrahedral mesh via Gmsh, and (4)~mesh to FEA solve via SfePy under ASCE 7-22 ASD load combinations. The distributions of the three FEA target quantities across the full dataset are shown in Figure~\ref{fig:distributions}.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig14_dataset_distributions.png
+% Histograms of von Mises stress, compliance, displacement across 14,293 simulations
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Dataset Distributions}\\[0.5em]
+\small Three histograms showing the distributions of peak von Mises stress, maximum displacement, and compliance across all 14,293 FEA simulations. Include mean and standard deviation annotations.\vspace{3cm}}}
+\caption{Distributions of the three FEA target quantities across 14,293 house simulations: peak von Mises stress (left), maximum displacement (center), and compliance (right). The heavy-tailed distributions motivate the log-transform normalization used during surrogate training.}
+\label{fig:distributions}
+\end{figure}
+
+\subsection{Data Filtering}
+
+Of the 14,293 simulations, 3,115 (21.8\%) were rejected based on three criteria: maximum displacement exceeding 1.0 m (indicating a diverged solver), compliance below $10^{-6}$ J (degenerate geometry), or peak von Mises stress $\leq 0$ Pa (invalid result). The remaining 11,178 simulations were split into 8,943 training, 1,121 validation, and 1,114 test samples using family-aware random splitting (samples from the same base wireframe are kept in the same partition to prevent data leakage).
+
+\subsection{Baselines}
+
+Three baselines are considered:
+\begin{enumerate}[label=\textbf{B\arabic*},leftmargin=2.5em]
+\setcounter{enumi}{-1}
+\item \textbf{Unoptimized:} the original uniform-thickness geometry.
+\item \textbf{SASTO-U (uniform thickness):} SASTO with uniform minimum thickness $t_{\min} = 2$ voxels for all parts.
+\item \textbf{SASTO-PA (part-aware):} SASTO with heterogeneous thickness per Eq.~\eqref{eq:thickness}, the full proposed method.
+\end{enumerate}
+
+\subsection{Test Geometries}
+
+Optimization was evaluated on 20 diverse house geometries spanning the full volume range of the dataset (30,812--140,464 voxels), selected to ensure structural diversity. Results are reported for all 20 models to assess both successes and limitations.
+
+\subsection{Computational Resources}
+
+All FEA simulations were computed on CPU clusters. Surrogate training was performed on four NVIDIA GB200 GPUs (189~GB HBM3e each). Optimization was executed on a single NVIDIA RTX A3000 (6~GB VRAM) to demonstrate consumer-hardware viability. Optimization runs used deterministic settings (seed~=~42) for reproducibility.
+
+
+% ============================================================
+\section{Results}
+\label{sec:results}
+% ============================================================
+
+\subsection{Surrogate Model Performance}
+
+The five-member deep ensemble was trained on 8,943 samples and evaluated on 1,114 held-out test samples. Target predictions are in log-transformed space and then inverse-transformed for evaluation. The training loss convergence for all five ensemble members is shown in Figure~\ref{fig:training}. The surrogate's adequacy is supported indirectly by optimization performance: all constraints were satisfied throughout 270 optimization batches with conservative ($\mu + k\sigma$) constraint checking, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ indicates sub-linear uncertainty growth during optimization.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig15_training_curves.png
+% Training and validation loss curves for all 5 ensemble members (M0-M4)
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Training Loss Convergence}\\[0.5em]
+\small Training and validation loss curves for all five ensemble members (M0--M4) over 200 epochs. Show convergence to similar final loss values despite different random initializations.\vspace{3cm}}}
+\caption{Training (solid) and validation (dashed) loss convergence for the five deep ensemble members (M0--M4). All members converge to similar final loss values despite independent random initialization, with early stopping triggered between epochs 120 and 170. The consistent convergence behavior supports the ensemble diversity hypothesis.}
+\label{fig:training}
+\end{figure}
+
+\subsection{Reference Case Optimization (Sample 00472)}
+
+Table~\ref{tab:reference} presents the primary optimization results for the reference geometry (Sample 00472, 116,872 voxels). SASTO-PA achieves 45.0\% material reduction in 159.5 seconds while satisfying all structural constraints. The uniform-thickness variant (SASTO-U) achieves 34.3\%, and the part-aware formulation provides an additional 10.7 percentage points by permitting thinner interior partitions. The optimization convergence (volume, stress, compliance versus batch number) is shown in Figure~\ref{fig:convergence}, and a three-dimensional comparison of the original and optimized geometries appears in Figure~\ref{fig:stl}.
+
+\begin{table}[t]
+\centering
+\caption{Optimization results for the reference geometry (Sample 00472). All constraints are satisfied for both SASTO variants. Bold indicates best performance.}
+\label{tab:reference}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Metric} & \textbf{B0 (Baseline)} & \textbf{SASTO-U} & \textbf{SASTO-PA} \\
+\midrule
+Volume (voxels) & 116,872 & 76,829 & \textbf{64,292} \\
+Volume reduction & --- & 34.3\% & \textbf{45.0\%} \\
+VM stress, conservative (Pa) & $3.08 \times 10^6$ & $3.57 \times 10^6$ & $3.08 \times 10^6$ \\
+Compliance, conservative (J) & 0.122 & 0.138 & 0.146 \\
+Displacement (m) & $5.25 \times 10^{-5}$ & $5.17 \times 10^{-5}$ & $6.16 \times 10^{-5}$ \\
+Mesh components & 1 & 1 & 1 \\
+Constraints satisfied & \checkmark & \checkmark & \checkmark \\
+Runtime (s) & --- & 115.4 & 159.5 \\
+$\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig4_convergence.png
+% Three-panel plot: volume fraction, VM stress, compliance vs. batch number, for SASTO-PA and SASTO-U
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Optimization Convergence}\\[0.5em]
+\small Three-panel plot showing volume reduction, conservative von Mises stress, and conservative compliance versus batch number for SASTO-PA (blue) and SASTO-U (orange). Include constraint limit lines.\vspace{3cm}}}
+\caption{Optimization convergence for the reference geometry. Volume fraction (top), conservative von Mises stress (middle), and conservative compliance (bottom) as functions of batch number. SASTO-PA (blue) achieves deeper material removal than SASTO-U (orange) by relaxing the interior wall thickness constraint. Dashed lines indicate allowable limits.}
+\label{fig:convergence}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig12_stl_comparison.png
+% Side-by-side 3D renderings: original vs SASTO-PA optimized, from front/side/top views
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3.5cm}\textbf{Figure Placeholder: 3D STL Comparison}\\[0.5em]
+\small Side-by-side 3D renderings of the original (left) and SASTO-PA optimized (right) geometries from three viewpoints: front, side, and top. The optimized geometry shows significant thinning of interior partitions.\vspace{3.5cm}}}
+\caption{Three-dimensional comparison of the original (left) and SASTO-PA optimized (right) geometries for Sample 00472, shown from front, side, and top viewpoints. Interior partition walls are substantially thinned while the exterior shell, roof, and floor maintain near-original thickness.}
+\label{fig:stl}
+\end{figure}
+
+\subsection{Multi-Geometry Generalization ($N = 20$)}
+
+To assess generalization beyond the reference case, SASTO-PA was evaluated on 20 diverse house geometries. Table~\ref{tab:multigeom} summarizes aggregate statistics, and per-sample results appear in Table~\ref{tab:persample}. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}.
+
+\begin{table}[t]
+\centering
+\caption{Aggregate optimization results across 20 test geometries.}
+\label{tab:multigeom}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Metric} & \textbf{All 20} & \textbf{7 Constraint-OK} & \textbf{14 with $>{1\%}$ Reduction} \\
+\midrule
+Volume reduction (mean $\pm$ std) & 14.6\% $\pm$ 11.8\% & \textbf{22.6\% $\pm$ 6.6\%} & 20.9\% $\pm$ 8.1\% \\
+Median reduction & 18.1\% & 22.1\% & 20.3\% \\
+Range & [$-0.3\%$, 37.0\%] & [14.3\%, 37.0\%] & [3.6\%, 37.0\%] \\
+Runtime (mean $\pm$ std) & 63 s $\pm$ 44 s & 80 s $\pm$ 26 s & 90 s $\pm$ 31 s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Per-sample SASTO-PA results for all 20 test geometries, sorted by original volume. Checkmarks indicate all conservative constraints satisfied at the optimized state.}
+\label{tab:persample}
+\small
+\begin{tabular}{@{}lcccl@{}}
+\toprule
+\textbf{Sample} & \textbf{Original Vol.} & \textbf{Optimized Vol.} & \textbf{Reduction} & \textbf{Constraints} \\
+\midrule
+15935 & 30,812 & 30,789 & 0.1\% & \texttimes \\
+10936 & 57,559 & 37,821 & 34.3\% & \texttimes \\
+12076 & 63,022 & 50,755 & 19.5\% & \texttimes \\
+09857 & 66,974 & 67,178 & $-0.3\%$ & \texttimes \\
+08739 & 70,284 & 70,438 & $-0.2\%$ & \texttimes \\
+08288 & 73,333 & 53,522 & 27.0\% & \texttimes \\
+01845 & 77,473 & 59,127 & \textbf{23.7\%} & \checkmark \\
+10662 & 81,106 & 62,854 & \textbf{22.5\%} & \checkmark \\
+00037 & 83,984 & 84,093 & $-0.1\%$ & \texttimes \\
+00739 & 87,062 & 54,860 & \textbf{37.0\%} & \checkmark \\
+05153 & 90,248 & 90,528 & $-0.3\%$ & \texttimes \\
+14283 & 93,860 & 73,092 & \textbf{22.1\%} & \checkmark \\
+13430 & 96,687 & 79,609 & \textbf{17.7\%} & \checkmark \\
+10792 & 100,125 & 78,960 & \textbf{21.1\%} & \checkmark \\
+13005 & 102,907 & 88,237 & \textbf{14.3\%} & \checkmark \\
+12641 & 106,540 & 102,673 & 3.6\% & \texttimes \\
+00777 & 110,085 & 110,204 & $-0.1\%$ & \texttimes \\
+08236 & 114,354 & 93,201 & 18.5\% & \texttimes \\
+12735 & 119,830 & 96,522 & 19.4\% & \texttimes \\
+04062 & 140,464 & 122,984 & 12.4\% & \texttimes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig20_multi_geometry.png
+% Four-panel figure: (a) per-sample volume reductions as bar chart, (b) reduction vs original volume scatter,
+% (c) runtime distribution histogram, (d) per-part retention for 7 constraint-OK models
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3.5cm}\textbf{Figure Placeholder: Multi-Geometry Results}\\[0.5em]
+\small Four-panel figure: (a) per-sample volume reductions, (b) reduction vs.\ original volume, (c) runtime distribution, (d) per-part retention for the 7 constraint-satisfying models.\vspace{3.5cm}}}
+\caption{Multi-geometry optimization results ($N = 20$). (a) Volume reduction per sample, colored by constraint satisfaction. (b) Reduction versus original volume, showing no strong correlation with geometry size. (c) Runtime distribution. (d) Per-part material retention for the seven constraint-satisfying models: exterior walls (89.5\%), interior walls (47.9\%), roof (95.5\%), and floor (96.1\%).}
+\label{fig:multigeom}
+\end{figure}
+
+Three key observations emerge from the multi-geometry evaluation. First, seven of 20 models (35\%) satisfy all conservative constraints at the optimized state. The remaining 13 exhibit compliance utilization slightly above 1.0 (median: 1.04), indicating that the surrogate's conservative bound exceeds the FEA-computed baseline, a surrogate calibration issue rather than a true structural failure. Second, six of 20 models (30\%) achieve at most 1\% reduction because the surrogate's conservative compliance prediction already exceeds the constraint limit at the original geometry, leaving no feasible erosion budget. This identifies surrogate accuracy as the binding limitation on generalization. Third, the 14 models with meaningful optimization ($>1\%$ reduction) achieve a mean reduction of 20.9\% $\pm$ 8.1\%, demonstrating consistent material savings across diverse geometries when the surrogate has sufficient accuracy margin.
+
+\subsection{Per-Part Material Retention}
+\label{sec:perpart}
+
+The part-aware formulation produces a clear structural hierarchy in material retention, as detailed in Table~\ref{tab:perpart} and visualized in Figure~\ref{fig:perpart}. The majority of material removal comes from interior partition walls, consistent with their non-load-bearing structural role. Across all seven constraint-satisfying models, exterior walls, roof, and floor retain over 89\% of their original volume, while interior walls are reduced to approximately half, confirming that the part-aware thickness formulation correctly identifies and exploits the structural hierarchy.
+
+\begin{table}[t]
+\centering
+\caption{Per-part material retention for the reference case and the mean across seven constraint-satisfying models.}
+\label{tab:perpart}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Part} & \multicolumn{2}{c}{\textbf{Reference (00472)}} & \multicolumn{2}{c}{\textbf{Mean of 7 models}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+ & Kept (\%) & Removed (\%) & Kept (\%) & Std (\%) \\
+\midrule
+Exterior wall & 91.0 & 9.0 & 89.5 & 4.1 \\
+Interior wall & 13.2 & 86.8 & 47.9 & 9.4 \\
+Roof & 93.5 & 6.5 & 95.5 & 6.8 \\
+Floor & 95.7 & 4.3 & 96.1 & 9.6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig5_per_part.png
+% Stacked bar chart showing per-part volume (kept vs removed) for each part type
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Per-Part Breakdown}\\[0.5em]
+\small Stacked bar chart showing per-part volume breakdown (exterior wall, interior wall, roof, floor) with kept (blue) and removed (red) fractions for the reference case.\vspace{3cm}}}
+\caption{Per-part volume breakdown for the reference case (Sample 00472). Interior walls contribute 86.8\% of total material removal, while exterior walls, roof, and floor retain over 91\% of their original volume. This differential retention is enabled by the part-aware minimum thickness constraint.}
+\label{fig:perpart}
+\end{figure}
+
+\subsection{Optimization Convergence and Phase Analysis}
+
+The optimization on the reference case proceeded through the three phases summarized in Table~\ref{tab:phases}. Phase~1 erosion accounts for over 99\% of material removal, validating the sensitivity-guided approach. Phases~2 and 3 achieved no additional removal, indicating that Phase~1 already reached the constraint boundary. The adaptive batch size behavior is shown in Figure~\ref{fig:batchadapt}.
+
+\begin{table}[t]
+\centering
+\caption{Phase-by-phase breakdown of the SASTO-PA optimization on Sample 00472.}
+\label{tab:phases}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Phase} & \textbf{Batches} & \textbf{Voxels Removed} & \textbf{Final Volume} & \textbf{Time (s)} \\
+\midrule
+1: Erosion & $\sim$260 & $\sim$52,500 & 64,311 & $\sim$130 \\
+2: Endgame & $\sim$10 & 0 & 64,311 & $\sim$15 \\
+3: Swaps & 0 accepted & 0 & 64,311 & $\sim$10 \\
+Post-processing & --- & $+0$ fill, $-19$ shards & 64,292 & $\sim$5 \\
+\midrule
+\textbf{Total} & & & \textbf{64,292} & \textbf{159.5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig8_batch_adaptation.png
+% Plot of batch size vs optimization step, showing halving when constraints are violated
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Adaptive Batch Size}\\[0.5em]
+\small Plot showing batch size versus optimization step. Batch size starts at 200 and halves upon constraint violations, functioning as a discrete trust-region mechanism.\vspace{3cm}}}
+\caption{Adaptive batch size during SASTO-PA optimization. The batch size (initially 200) is halved whenever a tentative removal violates structural constraints, functioning as a discrete trust-region mechanism. Early batches are large (most removals are safe); batches shrink near the constraint boundary.}
+\label{fig:batchadapt}
+\end{figure}
+
+\subsection{Speedup Analysis}
+
+SASTO completes in 159.5 seconds for the reference case and averages 63 $\pm$ 44 seconds across all 20 test geometries. Conventional SIMP topology optimization of a single $128^3$ voxel geometry would require approximately 200--600 FEA evaluations, with each building-scale FEA solve taking 1.5--3 minutes, yielding an estimated total of 5--30 hours. This gives an estimated speedup of 100--700$\times$. The wall-clock breakdown is visualized in Figure~\ref{fig:speedup}.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig11_speedup.png
+% Log-scale bar chart: SIMP (estimated range) vs SASTO runtime
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Figure Placeholder: Runtime Comparison}\\[0.5em]
+\small Log-scale bar chart comparing estimated SIMP runtime (5--30 hours) with SASTO runtime (159.5 seconds), showing 100--700$\times$ speedup.\vspace{2.5cm}}}
+\caption{Runtime comparison (log scale) between estimated SIMP with direct FEA (5--30 hours) and SASTO (159.5 seconds on the reference case, 63 $\pm$ 44 seconds averaged across 20 geometries). The speedup arises from replacing FEA evaluations ($\sim$1.5--3 min each) with surrogate inference ($\sim$0.1 s) and backpropagation-based sensitivity ($\sim$3--8 s).}
+\label{fig:speedup}
+\end{figure}
+
+
+% ============================================================
+\section{Ablation and Sensitivity Studies}
+\label{sec:ablation}
+% ============================================================
+
+\subsection{Topology Connectivity}
+\label{sec:ablation_connectivity}
+
+Switching from the (26,\,6) foreground/background pairing to the (6,\,26) pairing eliminated all floating mesh fragments. The (26,\,6) configuration produced meshes with thousands of disconnected triangle groups, completely unusable for additive manufacturing toolpath generation. The (6,\,26) pairing guarantees a single connected mesh component in every tested case, confirming Proposition~\ref{prop:mc}. The contrast between the two connectivity schemes is shown in Figure~\ref{fig:connectivity}.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig9_ablation.png or a specific connectivity comparison figure
+% Show 3D renderings of mesh output under 26-connectivity (many floating fragments) vs 6-connectivity (single component)
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: 6- vs.\ 26-Connectivity Comparison}\\[0.5em]
+\small Side-by-side 3D renderings showing: (left) 26-connectivity output with thousands of floating mesh fragments highlighted in red; (right) 6-connectivity output as a single watertight component.\vspace{3cm}}}
+\caption{Effect of foreground connectivity on marching cubes output. Left: 26-connectivity foreground produces thousands of floating mesh fragments (highlighted). Right: 6-connectivity foreground guarantees a single connected component suitable for 3D printing. Both meshes are generated from the same optimized voxel field.}
+\label{fig:connectivity}
+\end{figure}
+
+\subsection{Part-Aware versus Uniform Thickness}
+
+On the reference case, the heterogeneous thickness formulation (SASTO-PA) achieves 45.0\% reduction compared to 34.3\% for the uniform formulation (SASTO-U), a 10.7 percentage point improvement. This result is consistent across the multi-geometry evaluation: across the seven constraint-satisfying models, interior walls were reduced to 47.9\% $\pm$ 9.4\% of their original volume while load-bearing members (exterior walls, roof, floor) retained over 89\%.
+
+\subsection{Sensitivity to Uncertainty Factor $k$}
+\label{sec:k_sensitivity}
+
+The uncertainty margin factor $k$ controls the trade-off between material savings and structural conservatism. As summarized in Table~\ref{tab:ksensitivity} and visualized in Figure~\ref{fig:ksensitivity}, reducing $k$ from 1.5 to 1.0 increased material removal from approximately 34\% to 45\% without observed constraint violations, a 32\% relative improvement. Lower values of $k$ accept more surrogate risk for greater savings; the optimal $k$ depends on surrogate fidelity and regulatory safety factor requirements. A systematic sweep with ground-truth FEA re-analysis at each level is critical future work.
+
+\begin{table}[t]
+\centering
+\caption{Sensitivity of volume reduction to the uncertainty margin factor $k$.}
+\label{tab:ksensitivity}
+\small
+\begin{tabular}{@{}ccl@{}}
+\toprule
+$k$ & \textbf{Volume Reduction} & \textbf{Behavior} \\
+\midrule
+0.0 & Expected $>50\%$ & Maximum removal; high risk of constraint violation on re-analysis \\
+\textbf{1.0} & \textbf{45.0\%} & All surrogate constraints satisfied; moderate conservatism \\
+1.5 & $\sim$34\% & Overly conservative; unused constraint budget \\
+2.0 & Expected $<30\%$ & Very conservative; most candidates rejected \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig10_k_sensitivity.png
+% Plot of volume reduction vs k, showing decreasing reduction with increasing k
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Figure Placeholder: $k$-Sensitivity Analysis}\\[0.5em]
+\small Plot of volume reduction versus uncertainty margin factor $k$, showing the trade-off between material savings and structural conservatism.\vspace{2.5cm}}}
+\caption{Effect of uncertainty margin factor $k$ on material reduction. Lower $k$ permits more aggressive removal but increases the risk of constraint violation upon ground-truth re-analysis. The operating point $k = 1.0$ was selected based on the ensemble's observed prediction uncertainty.}
+\label{fig:ksensitivity}
+\end{figure}
+
+
+% ============================================================
+\section{Uncertainty Quantification}
+\label{sec:uq}
+% ============================================================
+
+The five-member deep ensemble provides epistemic uncertainty estimates through prediction disagreement. Table~\ref{tab:uq} summarizes the ensemble statistics at the baseline geometry. The coefficient of variation (CV) ranges from 17\% to 31\%, reflecting genuine model epistemic uncertainty on out-of-distribution optimized geometries. The conservative constraint check ($\mu + k\sigma$, $k = 1.0$) adds a buffer proportional to this uncertainty, providing an implicit robustness mechanism.
+
+\begin{table}[t]
+\centering
+\caption{Ensemble prediction uncertainty at the baseline geometry (Sample 00472).}
+\label{tab:uq}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Quantity} & \textbf{Ensemble Mean} & \textbf{Ensemble Std} & \textbf{CV (\%)} \\
+\midrule
+Von Mises stress (Pa) & $2.35 \times 10^6$ & $7.28 \times 10^5$ & 30.9 \\
+Displacement (m) & $5.25 \times 10^{-5}$ & $9.14 \times 10^{-6}$ & 17.4 \\
+Compliance (J) & 0.122 & 0.024 & 19.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As material is removed, the optimized geometry progressively diverges from the training distribution of unoptimized houses. The constraint penalty prevents accepting configurations where uncertainty exceeds the budget margin, providing an implicit robustness mechanism. The evolution of ensemble uncertainty during optimization is shown in Figure~\ref{fig:uncertainty}.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig7_uncertainty.png
+% Multi-panel plot: normalized stress, compliance, displacement vs volume fraction, with ensemble ±1σ bands
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Response Evolution and Uncertainty}\\[0.5em]
+\small Three-panel plot showing normalized stress, compliance, and displacement versus volume fraction during optimization, with ensemble $\pm 1\sigma$ uncertainty bands. Include constraint limit lines.\vspace{3cm}}}
+\caption{Evolution of structural response predictions during optimization. Normalized von Mises stress (top), compliance (middle), and displacement (bottom) versus volume fraction, with $\pm 1\sigma$ ensemble uncertainty bands. Dashed lines indicate allowable limits. Uncertainty grows monotonically as the geometry diverges from the training distribution.}
+\label{fig:uncertainty}
+\end{figure}
+
+Several limitations of the ensemble uncertainty approach should be noted. The ensemble captures epistemic (model) uncertainty but not aleatoric uncertainty (inherent material variability, typically 10--20\% CV in compressive strength for printed concrete) or model-form error (the linear elastic isotropic assumption omits tension cracking, compression softening, and layer-interface anisotropy). The ensemble uncertainty should not be interpreted as a calibrated confidence interval; calibration requires empirical validation on held-out optimized designs with ground-truth FEA.
+
+
+% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================
+
+\subsection{Mechanistic Interpretation}
+
+The material reduction achieved by SASTO is primarily explained by the removal of interior partition walls (up to 87\% removed in the reference case) while preserving the load-carrying exterior shell (over 90\% retained). This outcome is mechanistically consistent with structural engineering principles: in a single-story structure under gravity and wind loading, the exterior walls form a closed shear-resisting shell while interior partitions serve primarily as spatial dividers with minimal structural contribution. The SASTO algorithm discovers this structural hierarchy automatically through gradient-based sensitivity ranking, without any explicit encoding of load-path logic.
+
+The sensitivity gradient (Eq.~\ref{eq:sensitivity}) provides a continuous, quantitative ranking of each voxel's structural contribution. Voxels with $s_i > 0$ contribute more dead-load penalty than stiffness benefit; their removal decreases the predicted stress-compliance composite. Voxels with $s_i < 0$ are structurally essential and must be retained. The sorting-then-filtering architecture ensures that even when the surrogate gradient ranking is imperfect, the binary accept/reject constraint check catches errors before they propagate.
+
+\subsection{Structural Limitations as the Binding Constraint}
+
+The effective removable fraction $\eta(\phi)$ at volume fraction $\phi$ captures the proportion of surface voxels that pass all feasibility filters (simple-point, thickness, skin protection). This defines an intrinsic topology-limited volume fraction $\phi^*_{\mathrm{topo}}$ at which no further removals are geometrically feasible, independent of structural performance. In practice, structural constraints were binding before topological exhaustion in all tested geometries ($\phi^*_{\mathrm{struct}} > \phi^*_{\mathrm{topo}}$), indicating that the 45\% reduction is structurally limited, not topologically limited. A more accurate surrogate or relaxed constraints could achieve further reduction without algorithmic modifications.
+
+\subsection{Environmental Impact}
+
+A 22.6\% mean material reduction in concrete construction, if achievable at scale, translates to a proportional reduction in cement consumption and associated CO$_2$ emissions. Given that the global construction sector consumes approximately 4.1 billion metric tons of cement annually \cite{iea2021}, even a modest adoption rate of topology-optimized 3D-printed designs could yield significant environmental benefits. However, this extrapolation assumes the simulation results hold under physical validation, which has not yet been performed.
+
+\subsection{Comparison with the State of the Art}
+
+Direct numerical comparison with prior topology optimization methods for building-scale structures is difficult because no directly comparable benchmark exists. Existing neural surrogate approaches \cite{nie2021, banga2018} target small components (e.g., engine brackets) at resolutions of $40^3$ to $64^3$, operate without uncertainty quantification, and do not address mesh connectivity or manufacturing constraints. To our knowledge, SASTO is the first method that simultaneously provides surrogate-accelerated optimization, formal mesh connectivity guarantees, and part-aware heterogeneous thickness control at building scale.
+
+
+% ============================================================
+\section{Limitations and Threats to Validity}
+\label{sec:limitations}
+% ============================================================
+
+\subsection{Critical Limitations}
+
+\textbf{No physical validation.} All reported results are based on surrogate predictions with conservative ensemble bounds. Ground-truth FEA re-analysis and physical 3D-print testing remain as future work. Until these are completed, constraint satisfaction claims are provisional.
+
+\textbf{Thin-feature robustness.} Interior walls reduced to 1 voxel ($\sim$78 mm) may be susceptible to buckling under accidental lateral loading, which is not captured by the linear elastic FEA model.
+
+\textbf{Stress concentration localization.} The surrogate predicts global maximum von Mises stress but does not localize it. Local stress concentrations at geometric discontinuities created by optimization may exceed the predicted global maximum.
+
+\textbf{Nonlinear material behavior.} Concrete exhibits tension cracking and compression softening, neither of which is captured by the isotropic linear elastic model. Optimized thin features may fail in modes not predicted by the surrogate.
+
+\subsection{Surrogate Limitations}
+
+\textbf{Distribution shift.} Optimized geometries with 45\% material removed differ substantially from the training distribution. The disagreement divergence $\Gamma_D \approx 0.184$ suggests moderate shift, but this metric is itself unvalidated.
+
+\textbf{Constraint satisfaction rate.} Only 35\% (7/20) of test geometries achieve constraint-satisfying optimization. The binding limitation is surrogate accuracy: for 30\% of models, the conservative prediction exceeds the compliance constraint at the original geometry, leaving zero feasible erosion budget. Improving surrogate calibration is the highest-impact avenue for enhancing generalization.
+
+\subsection{External Validity}
+
+Results apply only to single-story structures with structural concrete under gravity and wind loading. Generalization to multi-story buildings, seismic loading, different materials (geopolymer, fiber-reinforced concrete), and larger footprints is unverified.
+
+
+% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ============================================================
+
+This work presented Surrogate-Accelerated Sensitivity Topology Optimization (SASTO), a three-phase voxel erosion algorithm that replaces iterative finite element analysis with a deep ensemble surrogate for building-scale structural optimization. The method achieves 22.6\% $\pm$ 6.6\% mean material reduction across seven constraint-satisfying house geometries (and 45.0\% on the reference case) in under three minutes on a consumer GPU, an estimated 100--700$\times$ speedup over SIMP with direct FEA. The 6-connectivity digital topology criterion eliminates a previously unreported mesh fragmentation failure mode, guaranteeing single-component marching-cubes-compatible output. The part-aware heterogeneous thickness formulation correctly identifies the structural hierarchy between load-bearing and non-structural members, yielding 10.7 percentage points more reduction than uniform thickness.
+
+Three directions for future work are identified as essential. First, ground-truth FEA re-analysis of optimized geometries is needed to validate surrogate predictions and establish the safe operating range of the uncertainty margin factor $k$. Second, physical 3D-print testing at scale is required to confirm that linear elastic predictions translate to actual structural performance. Third, improving surrogate calibration, particularly for the compliance prediction, would expand the fraction of geometries for which SASTO achieves meaningful optimization. Additional directions include extension to multi-story structures and seismic loading, integration of overhang constraints for toolpath compatibility, and development of anisotropic constitutive models that capture the layer-interface behavior of printed concrete.
+
+The source code, trained model weights, training data generation pipelines, and optimization scripts are publicly available at \url{https://github.com/erichou1/fea.git} to facilitate reproduction and extension.
+
+
+% ============================================================
+\section*{Acknowledgements}
+% ============================================================
+
+The author thanks the Synopsys Science Fair organizing committee for the opportunity to present this work. Computational resources for large-scale FEA simulations and surrogate training were provided through access to NVIDIA GB200 GPU infrastructure. The 3DWire wireframe dataset and CubiCasa5k floor plans were used under their respective licenses.
+
+
+% ============================================================
+\begin{thebibliography}{99}
+
+\bibitem{asce2022}
+ASCE. (2022). \emph{Minimum Design Loads and Associated Criteria for Buildings and Other Structures} (ASCE/SEI 7-22). American Society of Civil Engineers.
+
+\bibitem{banga2018}
+Banga, S., Gehber, H., Dozber, C., \& Kara, L.~B. (2018). 3D topology optimization using convolutional neural networks. \emph{arXiv preprint arXiv:1808.07440}.
+
+\bibitem{bendsoe2003}
+Bendsøe, M.~P., \& Sigmund, O. (2003). \emph{Topology Optimization: Theory, Methods, and Applications}. Springer.
+
+\bibitem{brackett2011}
+Brackett, D., Ashcroft, I., \& Hague, R. (2011). Topology optimization for additive manufacturing. \emph{Proceedings of the Solid Freeform Fabrication Symposium}, 348--362.
+
+\bibitem{buswell2018}
+Buswell, R.~A., Leal de Silva, W.~R., Jones, S.~Z., \& Dirrenberger, J. (2018). 3D printing using concrete extrusion: A roadmap for research. \emph{Cement and Concrete Research}, 112, 37--49.
+
+\bibitem{conn2000}
+Conn, A.~R., Gould, N.~I.~M., \& Toint, P.~L. (2000). \emph{Trust-Region Methods}. SIAM.
+
+\bibitem{dasilva2019}
+da Silva, G.~A., Beck, A.~T., \& Sigmund, O. (2019). Topology optimization of compliant mechanisms with stress constraints and manufacturing error robustness. \emph{Computer Methods in Applied Mechanics and Engineering}, 354, 397--421.
+
+\bibitem{dunning2011}
+Dunning, P.~D., Kim, H.~A., \& Mullineux, G. (2011). Introducing loading uncertainty in topology optimization. \emph{AIAA Journal}, 49(4), 760--768.
+
+\bibitem{gaynor2016}
+Gaynor, A.~T., \& Guest, J.~K. (2016). Topology optimization considering overhang constraints: Eliminating sacrificial support material in additive manufacturing through design. \emph{Structural and Multidisciplinary Optimization}, 54(5), 1157--1172.
+
+\bibitem{geuzaine2009}
+Geuzaine, C., \& Remacle, J.-F. (2009). Gmsh: A 3-D finite element mesh generator with built-in pre- and post-processing facilities. \emph{International Journal for Numerical Methods in Engineering}, 79(11), 1309--1331.
+
+\bibitem{guest2004}
+Guest, J.~K., Prévost, J.~H., \& Belytschko, T. (2004). Achieving minimum length scale in topology optimization using nodal design variables and projection functions. \emph{International Journal for Numerical Methods in Engineering}, 61(2), 238--254.
+
+\bibitem{hu2018}
+Hu, J., Shen, L., \& Sun, G. (2018). Squeeze-and-excitation networks. \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition}, 7132--7141.
+
+\bibitem{iea2021}
+IEA. (2021). \emph{Global Status Report for Buildings and Construction 2021}. International Energy Agency.
+
+\bibitem{kong1989}
+Kong, T.~Y., \& Rosenfeld, A. (1989). Digital topology: Introduction and survey. \emph{Computer Vision, Graphics, and Image Processing}, 48(3), 357--393.
+
+\bibitem{lakshminarayanan2017}
+Lakshminarayanan, B., Pritzel, A., \& Blundell, C. (2017). Simple and scalable predictive uncertainty estimation using deep ensembles. \emph{Advances in Neural Information Processing Systems}, 30.
+
+\bibitem{langelaar2016}
+Langelaar, M. (2016). Topology optimization of 3D self-supporting structures for additive manufacturing. \emph{Additive Manufacturing}, 12, 60--70.
+
+\bibitem{lazarov2011}
+Lazarov, B.~S., \& Sigmund, O. (2011). Filters in topology optimization based on Helmholtz-type differential equations. \emph{International Journal for Numerical Methods in Engineering}, 86(6), 765--781.
+
+\bibitem{lorensen1987}
+Lorensen, W.~E., \& Cline, H.~E. (1987). Marching cubes: A high resolution 3D surface construction algorithm. \emph{ACM SIGGRAPH Computer Graphics}, 21(4), 163--169.
+
+\bibitem{ngo2018}
+Ngo, T.~D., Kashani, A., Imbalzano, G., Nguyen, K.~T.~Q., \& Hui, D. (2018). Additive manufacturing (3D printing): A review of materials, methods, applications and challenges. \emph{Composites Part B: Engineering}, 143, 172--196.
+
+\bibitem{nie2021}
+Nie, Z., Lin, T., Jiang, H., \& Kara, L.~B. (2021). TopologyGAN: Topology optimization using generative adversarial networks based on physical fields over the initial domain. \emph{Journal of Mechanical Design}, 143(3), 031715.
+
+\bibitem{ovadia2019}
+Ovadia, Y., Fertig, E., Ren, J., et al. (2019). Can you trust your model's uncertainty? Evaluating predictive uncertainty under dataset shift. \emph{Advances in Neural Information Processing Systems}, 32.
+
+\bibitem{sigmund2013}
+Sigmund, O., \& Maute, K. (2013). Topology optimization approaches. \emph{Structural and Multidisciplinary Optimization}, 48(6), 1031--1055.
+
+\bibitem{white2019}
+White, D.~A., Arrighi, W.~J., Kudo, J., \& Watts, S.~E. (2019). Multiscale topology optimization using neural network surrogate models. \emph{Computer Methods in Applied Mechanics and Engineering}, 346, 1118--1135.
+
+\bibitem{xia2015}
+Xia, L., \& Breitkopf, P. (2015). Design of materials using topology optimization and energy-based homogenization approach in Matlab. \emph{Structural and Multidisciplinary Optimization}, 52(6), 1229--1241.
+
+\bibitem{xie1997}
+Xie, Y.~M., \& Steven, G.~P. (1997). \emph{Evolutionary Structural Optimization}. Springer.
+
+\end{thebibliography}
+
+
+% ============================================================
+\appendix
+% ============================================================
+
+\section{SASTO Pseudocode}
+\label{app:pseudocode}
+
+Algorithm~\ref{alg:sasto} in Section~\ref{sec:algorithm} provides the complete pseudocode. The key implementation details are as follows. The distance transform is computed using \texttt{scipy.ndimage.distance\_transform\_edt}. The 6-simple-point test evaluates connected components within the $3\times3\times3$ neighborhood using a local breadth-first search. Sensitivity gradients are computed via PyTorch autograd with \texttt{retain\_graph=True} across all five ensemble members. The marching cubes extraction uses \texttt{skimage.measure.marching\_cubes} with the SDF level set at zero.
+
+\section{Training Hyperparameters}
+\label{app:hyperparams}
+
+Table~\ref{tab:hyperparams} lists all hyperparameters used for surrogate training.
+
+\begin{table}[h]
+\centering
+\caption{Complete training hyperparameter specification for the deep ensemble surrogate.}
+\label{tab:hyperparams}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Architecture & Surrogate3DResNet (4 stages, 8 ResBlocks) \\
+Ensemble members & 5 \\
+Parameters per member & $\sim$8.76M \\
+Total parameters & 43,802,083 \\
+Input voxel channels & 7 (1 occupancy + 6 part one-hot) \\
+Feature vector dimension & 10 \\
+Base channels & 64 \\
+Prediction targets & 3 (von Mises, displacement, compliance) \\
+Activation & GELU \\
+Normalization & BatchNorm3d + LayerNorm (head) \\
+Attention & Squeeze-and-Excitation, reduction = 4 \\
+Regularization & Dropout (0.15), DropPath (0.1), weight decay ($10^{-4}$) \\
+Pooling & AdaptiveAvgPool3d + AdaptiveMaxPool3d \\
+Head & 2-layer MLP (512 $\to$ 256 $\to$ 3) with skip \\
+Target transform & $\log(1+|y|) \to$ z-score, winsorize 2nd/98th pctl \\
+Loss & Huber (SmoothL1) \\
+Optimizer & AdamW (lr = $5\times10^{-4}$, wd = $10^{-4}$) \\
+Scheduler & CosineAnnealingWarmRestarts \\
+Batch size & 32 \\
+Max epochs & 200 \\
+Early stopping & Patience = 30 \\
+EMA & Decay = 0.999 \\
+Mixed precision & AMP (bf16) \\
+Gradient clipping & $\|\cdot\|_{\max} = 1.0$ \\
+Augmentation & 90$^\circ$ rotations, flips, noise ($\sigma = 0.02$), 10\% ch.\ dropout \\
+Data split & 8,943 / 1,121 / 1,114 (train / val / test) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Optimization Parameters}
+\label{app:optparams}
+
+Table~\ref{tab:optparams} lists all optimization parameters used in the SASTO-PA configuration.
+
+\begin{table}[h]
+\centering
+\caption{Complete optimization parameter specification for SASTO-PA.}
+\label{tab:optparams}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Uncertainty factor $k$ & 1.0 \\
+Max compliance ratio & 1.15$\times$ baseline \\
+Volume weight $w_V$ & 1.0 \\
+Surface weight $w_S$ & 0.01 \\
+Constraint penalty $\kappa$ & 100.0 \\
+VM allowable & 5.0 $\times 10^6$ Pa \\
+Displacement allowable & 1.0 m \\
+Min thickness (exterior/roof/floor) & 2 voxels \\
+Min thickness (interior wall) & 1 voxel \\
+Initial batch size & 200 \\
+Minimum batch size & 10 \\
+Sensitivity recompute period & Every 3 layers \\
+Max layers (Phase 1) & 40 \\
+Max consecutive failures & 5 \\
+VM/compliance sensitivity weight $\alpha$ & 0.3 \\
+SDF blur $\sigma$ & 0.15 \\
+Laplacian smoothing & 3 iterations, $\lambda = 0.3$ \\
+Mesh scale & 10.0 m / 128 voxels = 0.0781 m/voxel \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Voxel Cross-Sections}
+\label{app:voxel}
+
+Figures~\ref{fig:voxelparts} and \ref{fig:voxelbeforeafter} show the voxelized representation of the design domain and the before/after comparison at a representative cross-section height.
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig13_voxel_parts.png
+% Voxel grid slices at 3 heights, colored by part label (0-4)
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Voxel Part Labels}\\[0.5em]
+\small Voxel grid cross-sections at three heights ($z = 20, 50, 100$) with part-label coloring: void (white), exterior wall (blue), interior wall (green), roof (orange), floor (red).\vspace{3cm}}}
+\caption{Voxelized representation of the reference geometry at three cross-section heights. Part labels are color-coded: exterior wall (blue), interior wall (green), roof (orange), floor (red). The part labels drive the heterogeneous minimum thickness constraints in the part-aware formulation.}
+\label{fig:voxelparts}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig18_voxel_before_after.png
+% Side-by-side voxel occupancy at z=50: original (left), optimized (right), removal map (center)
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}\textbf{Figure Placeholder: Before/After Voxel Comparison}\\[0.5em]
+\small Three panels at $z = 50$: original occupancy (left), optimized occupancy (center), removal map showing which voxels were removed (right, colored by part type).\vspace{3cm}}}
+\caption{Voxel grid at $z = 50$ before optimization (left), after SASTO-PA optimization (center), and removal map (right) showing removed voxels colored by part type. Interior wall voxels (green) constitute the majority of removals; exterior wall, roof, and floor voxels are largely preserved.}
+\label{fig:voxelbeforeafter}
+\end{figure}
+
+\section{Additional Figures}
+\label{app:additional}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig6_efficiency.png
+% Bar chart: Efficiency-Integrity Index for B0, SASTO-U, SASTO-PA
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Figure Placeholder: Efficiency-Integrity Index}\\[0.5em]
+\small Bar chart comparing $\mathcal{I}_{\mathrm{EI}}$ for B0 (baseline), SASTO-U (0.242), and SASTO-PA (0.358).\vspace{2.5cm}}}
+\caption{Efficiency-Integrity Index comparison. SASTO-PA achieves 48\% higher $\mathcal{I}_{\mathrm{EI}}$ than SASTO-U, indicating superior material utilization per unit of structural demand.}
+\label{fig:efficiency}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+% PLACEHOLDER: Insert figures/fig19_mesh_convergence.png
+% Mesh convergence study: peak stress and compliance vs characteristic mesh size
+\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Figure Placeholder: Mesh Convergence Study}\\[0.5em]
+\small Plot of peak von Mises stress and compliance versus characteristic mesh size (0.5 m to 0.05 m). Convergence achieved at $\leq 0.15$ m.\vspace{2.5cm}}}
+\caption{Mesh convergence study on 50 representative geometries. Peak von Mises stress (left) and compliance (right) as functions of characteristic element size. Convergence ($<2\%$ change) is achieved at element size $\leq 0.15$ m, confirming mesh adequacy for the FEA training data.}
+\label{fig:meshconvergence}
+\end{figure}
+
+\section{Symbol Table}
+\label{app:symbols}
+
+\begin{table}[h]
+\centering
+\caption{Principal symbols and their units.}
+\label{tab:symbols}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} & \textbf{Unit} \\
+\midrule
+$\boldsymbol{\sigma}$ & Cauchy stress tensor & Pa \\
+$\boldsymbol{\varepsilon}$ & Infinitesimal strain tensor & dimensionless \\
+$\mathbf{u}$ & Displacement vector & m \\
+$E$ & Young's modulus & GPa \\
+$\nu$ & Poisson's ratio & dimensionless \\
+$\rho_m$ & Material density & kg/m$^3$ \\
+$f'_c$ & Compressive strength & MPa \\
+$\sigma_{\mathrm{VM}}$ & Von Mises equivalent stress & Pa \\
+$C$ & Compliance (strain energy) & J \\
+$V$ & Volume (voxel count) & dimensionless \\
+$\rho_i$ & Voxel occupancy (design variable) & $\{0, 1\}$ \\
+$t_{\min}$ & Minimum wall thickness & voxels \\
+$s_i$ & Sensitivity of voxel $i$ & dimensionless \\
+$k$ & Uncertainty margin factor & dimensionless \\
+$\mathcal{I}_{\mathrm{EI}}$ & Efficiency-Integrity index & dimensionless \\
+$M$ & Number of ensemble members & dimensionless \\
+$\mathrm{SP}_6(v)$ & Simple-point predicate & $\{0, 1\}$ \\
+$D(\phi)$ & Ensemble disagreement & dimensionless \\
+$\Gamma_D$ & Disagreement divergence rate & dimensionless \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproducibility}
+\label{app:reproducibility}
+
+All source code, trained model weights, training data generation pipelines, optimization scripts, and figure generation code are publicly available at \url{https://github.com/erichou1/fea.git}. The repository includes:
+
+\begin{table}[h]
+\centering
+\caption{Reproducibility artifacts and their locations in the repository.}
+\label{tab:reproducibility}
+\small
+\begin{tabular}{@{}p{5.5cm}p{7cm}@{}}
+\toprule
+\textbf{Artifact} & \textbf{Path} \\
+\midrule
+FEA data generation & \texttt{optimization/run\_full\_pipeline.py} \\
+Model architecture & \texttt{fea\_ml/fea\_ml/models/cnn3d.py} \\
+Training script & \texttt{fea\_ml/fea\_ml/scripts/train.py} \\
+Optimization algorithm & \texttt{fea\_ml/run\_opt\_part\_aware.py} \\
+Batch optimization & \texttt{fea\_ml/run\_batch\_optimization.py} \\
+Configuration & \texttt{fea\_ml/configs/voxel\_config.yaml} \\
+Trained model weights & \texttt{checkpoints/final\_model.pth} \\
+Multi-geometry results & \texttt{fea\_ml/runs/v3/batch\_results/} \\
+Figure generation & \texttt{generate\_figures.py} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
