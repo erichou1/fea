@@ -117,23 +117,23 @@ def generate_pipeline_figure():
     print("Generating fig1_pipeline.png ...")
 
     dot = graphviz.Digraph('pipeline', engine='dot')
-    dot.attr(rankdir='LR', dpi='200', size='16,5!',
+    dot.attr(rankdir='TB', dpi='300', size='10,14!',
              fontname='Arial', bgcolor='white',
-             nodesep='0.6', ranksep='0.9', margin='0.4')
+             nodesep='0.8', ranksep='1.0', margin='0.5')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='16',
-             fontcolor='white', penwidth='2.5', margin='0.22,0.15')
-    dot.attr('edge', fontname='Arial', fontsize='13',
-             penwidth='2.5', arrowsize='1.1')
+             fontname='Arial', fontsize='20',
+             fontcolor='white', penwidth='3.0', margin='0.30,0.20')
+    dot.attr('edge', fontname='Arial', fontsize='16',
+             penwidth='3.0', arrowsize='1.3')
 
     # ── Offline cluster ──
     with dot.subgraph(name='cluster_offline') as c:
         c.attr(label='  OFFLINE TRAINING PHASE  ', labelloc='t',
                style='filled,rounded', fillcolor='#EDF2F9',
                color='#0D3B66', fontcolor='#0D3B66',
-               fontsize='18', fontname='Arial',
-               penwidth='2.5')
+               fontsize='22', fontname='Arial',
+               penwidth='3.0')
 
         c.node('wire', '3DWire\nWireframes\n(14,293)',
                fillcolor='#1B5E9E', color='#0A2F5C')
@@ -153,8 +153,8 @@ def generate_pipeline_figure():
         c.attr(label='  ONLINE OPTIMIZATION PHASE  ', labelloc='t',
                style='filled,rounded', fillcolor='#FDF3EA',
                color='#8C3D00', fontcolor='#8C3D00',
-               fontsize='18', fontname='Arial',
-               penwidth='2.5')
+               fontsize='22', fontname='Arial',
+               penwidth='3.0')
 
         c.node('voxel', '128³ Voxel Grid\n+ Part Labels',
                fillcolor='#D46A00', color='#5C2D00')
@@ -193,24 +193,24 @@ def generate_architecture_figure():
     print("Generating fig2_architecture.png ...")
 
     dot = graphviz.Digraph('architecture', engine='dot')
-    dot.attr(rankdir='LR', dpi='200', size='16,5!',
+    dot.attr(rankdir='TB', dpi='300', size='12,14!',
              fontname='Arial', bgcolor='white',
-             nodesep='0.45', ranksep='0.7', margin='0.35',
+             nodesep='0.6', ranksep='0.8', margin='0.45',
              label='Surrogate3DResNet Architecture  (Single Ensemble Member, ~8.76M params)',
-             labelloc='t', fontsize='20', labeljust='c')
+             labelloc='t', fontsize='24', labeljust='c')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='15',
-             fontcolor='white', penwidth='2.2', margin='0.18,0.13')
-    dot.attr('edge', fontname='Arial', fontsize='12',
-             penwidth='2.2', arrowsize='1.0')
+             fontname='Arial', fontsize='18',
+             fontcolor='white', penwidth='2.8', margin='0.24,0.18')
+    dot.attr('edge', fontname='Arial', fontsize='14',
+             penwidth='2.8', arrowsize='1.2')
 
     # ── 3D CNN Backbone ──
     with dot.subgraph(name='cluster_cnn') as c:
         c.attr(label='3D CNN Backbone', labelloc='t',
                style='filled,rounded', fillcolor='#EDF2F9',
                color='#0D2E52', fontcolor='#0D2E52',
-               fontsize='12', penwidth='1.5')
+               fontsize='15', penwidth='2.0')
 
         c.node('input', 'Input\n7 × 128³',
                fillcolor='#2B5EA7', color='#0D2E52')
@@ -233,7 +233,7 @@ def generate_architecture_figure():
         c.attr(label='SE-Res + Pool', labelloc='t',
                style='filled,rounded', fillcolor='#FDF3EA',
                color='#7A3F06', fontcolor='#7A3F06',
-               fontsize='12', penwidth='1.5')
+               fontsize='15', penwidth='2.0')
 
         c.node('se', 'SE-ResBlock\n× 3\nSE(r=4)',
                fillcolor='#B8600A', color='#7A3F06')
@@ -249,7 +249,7 @@ def generate_architecture_figure():
         c.attr(label='Feature Branch', labelloc='t',
                style='filled,rounded', fillcolor='#FCEEF1',
                color='#5A1220', fontcolor='#5A1220',
-               fontsize='12', penwidth='1.5')
+               fontsize='15', penwidth='2.0')
 
         c.node('feat', 'Feature Vector\n10-d',
                fillcolor='#9D2235', color='#5A1220')
