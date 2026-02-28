@@ -69,12 +69,19 @@ def render_voxels_3d(ax, occ, part_labels=None, alpha=0.95, elev=25, azim=-60,
 
     ax.scatter(xs, ys, zs, c=colors, s=5.0, marker='s', linewidths=0, depthshade=True)
     ax.view_init(elev=elev, azim=azim)
-    ax.set_xlim(0, occ_ds.shape[0])
-    ax.set_ylim(0, occ_ds.shape[1])
-    ax.set_zlim(0, occ_ds.shape[2])
+    # Tight limits around occupied region so model fills the panel
+    pad = 2
+    x_lo, x_hi = xs.min() - pad, xs.max() + pad
+    y_lo, y_hi = ys.min() - pad, ys.max() + pad
+    z_lo, z_hi = zs.min() - pad, zs.max() + pad
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
+    ax.set_zlim(z_lo, z_hi)
     ax.set_axis_off()
-    # Aspect ratio matching the data extents
-    ax.set_box_aspect([occ_ds.shape[0], occ_ds.shape[1], occ_ds.shape[2]])
+    # Aspect ratio matching occupied extents
+    rx, ry, rz = x_hi - x_lo, y_hi - y_lo, z_hi - z_lo
+    rmax = max(rx, ry, rz)
+    ax.set_box_aspect([rx / rmax, ry / rmax, rz / rmax])
     if title:
         ax.set_title(title, fontsize=11, fontweight='bold', pad=-5)
 
@@ -90,13 +97,17 @@ def render_wireframe_3d(ax, vertices, lines, title=None, elev=25, azim=-60):
                  color='#CC3333', s=8, zorder=5, depthshade=False)
 
     ax.view_init(elev=elev, azim=azim)
-    margin = 0.1
+    margin = 0.05
+    lo = vertices.min(axis=0)
+    hi = vertices.max(axis=0)
+    ranges = hi - lo
     for i, setter in enumerate([ax.set_xlim, ax.set_ylim, ax.set_zlim]):
-        lo, hi = vertices[:, i].min(), vertices[:, i].max()
-        setter(lo - margin, hi + margin)
+        setter(lo[i] - margin, hi[i] + margin)
+    # Match aspect to data so wireframe fills the panel
+    ax.set_box_aspect(ranges / ranges.max() if ranges.max() > 0 else [1, 1, 1])
     ax.set_axis_off()
     if title:
-        ax.set_title(title, fontsize=10, fontweight='bold', pad=-5)
+        ax.set_title(title, fontsize=11, fontweight='bold', pad=-5)
 
 
 # ============================================================

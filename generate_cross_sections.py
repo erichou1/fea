@@ -106,8 +106,8 @@ def render_row(model_id, ax_full, ax_cut):
     set_equal_axes(ax_cut, lo, hi)
 
     ax_full.view_init(elev=20, azim=-60)
-    # Cut view: look straight into the exposed interior from the front
-    ax_cut.view_init(elev=15, azim=-5)
+    # Cut view: look from +Y direction into the exposed interior face
+    ax_cut.view_init(elev=20, azim=85)
 
 
 def main():
