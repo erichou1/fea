@@ -294,7 +294,7 @@ Training uses the Huber loss (SmoothL1), AdamW optimizer ($\text{lr} = 5\times10
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig2_architecture.png}
+\includegraphics[width=\textwidth]{figures/fig2_architecture.png}
 \caption{Architecture of a single Surrogate3DResNet ensemble member. The 3D CNN encoder progressively reduces spatial resolution from $128^3$ to $8^3$ across four convolutional stages, followed by three squeeze-and-excitation residual blocks. Dual adaptive pooling (average + max) produces a 512-dimensional spatial embedding, concatenated with a 128-dimensional feature vector and passed through a two-layer prediction head with skip connection to produce three structural response scalars.}
 \label{fig:architecture}
 \end{figure}
@@ -364,7 +364,7 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig1_pipeline.png}
+\includegraphics[width=\textwidth]{figures/fig1_pipeline.png}
 \caption{Overview of the SASTO pipeline. The offline phase (top) trains a five-member deep ensemble on 11,178 FEA simulations. The online phase (bottom) applies three-phase sensitivity-guided erosion, using surrogate backpropagation for voxel ranking and conservative ensemble bounds for constraint checking. The output is a watertight, single-component STL mesh suitable for additive manufacturing.}
 \label{fig:pipeline}
 \end{figure}
@@ -476,7 +476,7 @@ The wireframe-to-volume pipeline is illustrated in Figure~\ref{fig:wireframe_pip
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig_wireframe_pipeline.png}
+\includegraphics[width=\textwidth]{figures/fig_wireframe_pipeline.png}
 \caption{Wireframe-to-volume conversion pipeline. A 3DWire building wireframe (a) is extruded into four structural part volumes (b), which are boolean-fused, meshed, and voxelized onto a $128^3$ grid (c). Part labels are preserved throughout, enabling part-aware optimization.}
 \label{fig:wireframe_pipeline}
 \end{figure}
@@ -489,7 +489,7 @@ The retained dataset spans a wide range of structural responses: peak von Mises 
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig14_dataset_distributions.png}
+\includegraphics[width=\textwidth]{figures/fig14_dataset_distributions.png}
 \caption{Distributions of the three FEA target quantities across 14,293 house simulations: peak von Mises stress (left), maximum displacement (center), and compliance (right). The heavy-tailed distributions motivate the log-transform normalization used during surrogate training.}
 \label{fig:distributions}
 \end{figure}
@@ -498,7 +498,7 @@ Mesh adequacy was verified via a convergence study on 50 representative geometri
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig19_mesh_convergence.png}
+\includegraphics[width=\textwidth]{figures/fig19_mesh_convergence.png}
 \caption{Mesh convergence study on 50 representative geometries. Peak von Mises stress (left) and compliance (right) as functions of characteristic element size. Convergence ($<2\%$ change) is achieved at element size $\leq 0.15$ m, confirming mesh adequacy for the FEA training data.}
 \label{fig:meshconvergence}
 \end{figure}
@@ -554,7 +554,7 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 \centering
 % PLACEHOLDER: Insert figures/fig15_training_curves.png
 % Training and validation loss curves for all 5 ensemble members (M0-M4)
-\includegraphics[width=0.9\textwidth]{figures/fig15_training_curves.png}
+\includegraphics[width=\textwidth]{figures/fig15_training_curves.png}
 \caption{Training (solid) and validation (dashed) loss convergence for the five deep ensemble members (M0--M4). All members converge to similar final loss values despite independent random initialization, with early stopping triggered between epochs 120 and 170. The consistent convergence behavior supports the ensemble diversity hypothesis.}
 \label{fig:training}
 \end{figure}
@@ -589,7 +589,7 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \centering
 % PLACEHOLDER: Insert figures/fig4_convergence.png
 % Three-panel plot: volume fraction, VM stress, compliance vs. batch number, for SASTO-PA and SASTO-U
-\includegraphics[width=0.9\textwidth]{figures/fig4_convergence.png}
+\includegraphics[width=\textwidth]{figures/fig4_convergence.png}
 
 \caption{Optimization convergence for the reference geometry. Volume fraction (top), conservative von Mises stress (middle), and conservative compliance (bottom) as functions of batch number. SASTO-PA (blue) achieves deeper material removal than SASTO-U (orange) by relaxing the interior wall thickness constraint. Dashed lines indicate allowable limits.}
 \label{fig:convergence}
@@ -601,9 +601,18 @@ To assess generalization beyond the reference case, SASTO-PA was evaluated on 93
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig12_stl_comparison.png}
+\includegraphics[width=\textwidth]{figures/fig12_stl_comparison.png}
 \caption{Three-dimensional comparison of the original (left) and SASTO-PA optimized (right) geometries for Sample 00472, shown from front, side, and top viewpoints. Interior partition walls are substantially thinned while the exterior shell, roof, and floor maintain near-original thickness.}
 \label{fig:stl}
+\end{figure}
+
+Figure~\ref{fig:crosssections} presents cross-section views of six representative house geometries from the dataset. Each model is sliced at the Y-midplane, revealing the interior room layout, wall thicknesses, and the relationship between exterior shell and interior partition walls. These cross-sections illustrate the structural diversity across the 14,293-sample dataset and motivate the part-aware optimization strategy: interior partitions (blue) vary widely in thickness and configuration, while exterior walls (gray), roof (terracotta), and floor (dark gray) form a consistent structural shell.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_cross_sections.png}
+\caption{Cross-section views of six representative house geometries. Left: complete model. Right: Y-midplane section revealing interior room layout. Color coding: exterior walls (gray), interior rooms (blue), roof (terracotta), floor (dark gray), attic floor (tan). The structural diversity across models motivates the part-aware thickness constraints used by SASTO-PA.}
+\label{fig:crosssections}
 \end{figure}
 
 \begin{table}[H]
@@ -655,7 +664,7 @@ Median runtime & 50 s & --- & --- \\
 % PLACEHOLDER: Insert figures/fig20_multi_geometry.png
 % Four-panel figure: (a) per-sample volume reductions as bar chart, (b) reduction vs original volume scatter,
 % (c) runtime distribution histogram, (d) per-part retention for 7 constraint-OK models
-\includegraphics[width=0.9\textwidth]{figures/fig20_multi_geometry.png}
+\includegraphics[width=\textwidth]{figures/fig20_multi_geometry.png}
 
 \caption{Multi-geometry optimization results ($N = 930$). (a) Volume reduction per sample, colored by constraint satisfaction. (b) Reduction versus original volume, showing no strong correlation with geometry size. (c) Runtime distribution. (d) Per-part material retention for the 313 constraint-satisfying models: exterior walls (91.6\%), interior walls (45.3\%), roof (96.8\%), and floor (98.2\%).}
 \label{fig:multigeom}
@@ -665,7 +674,7 @@ Three key observations emerge from the large-scale evaluation. First, 313 of 930
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig_model_comparison.png}
+\includegraphics[width=\textwidth]{figures/fig_model_comparison.png}
 \caption{Visual comparison of optimization stages for a representative geometry. (a)~The original 3DWire wireframe skeleton encodes only topological connectivity. (b)~The volumetric house model generated from the wireframe, with four structural part types. (c)~The SASTO-U optimized model with uniform minimum thickness. (d)~The SASTO-PA optimized model with part-aware thickness, showing substantially thinner interior partitions while maintaining the structural shell.}
 \label{fig:model_comparison}
 \end{figure}
@@ -698,7 +707,7 @@ Floor & 95.7 & 4.3 & 98.2 & 6.2 \\
 \centering
 % PLACEHOLDER: Insert figures/fig5_per_part.png
 % Stacked bar chart showing per-part volume (kept vs removed) for each part type
-\includegraphics[width=0.9\textwidth]{figures/fig5_per_part.png}
+\includegraphics[width=\textwidth]{figures/fig5_per_part.png}
 
 \caption{Per-part volume breakdown for the reference case (Sample 00472). Interior walls contribute 86.8\% of total material removal, while exterior walls, roof, and floor retain over 91\% of their original volume. This differential retention is enabled by the part-aware minimum thickness constraint.}
 \label{fig:perpart}
@@ -731,7 +740,7 @@ Post-processing & --- & $+0$ fill, $-19$ shards & 64,292 & $\sim$5 \\
 \centering
 % PLACEHOLDER: Insert figures/fig8_batch_adaptation.png
 % Plot of batch size vs optimization step, showing halving when constraints are violated
-\includegraphics[width=0.9\textwidth]{figures/fig8_batch_adaptation.png}
+\includegraphics[width=\textwidth]{figures/fig8_batch_adaptation.png}
 \caption{Adaptive batch size during SASTO-PA optimization. The batch size (initially 200) is halved whenever a tentative removal violates structural constraints, functioning as a discrete trust-region mechanism. Early batches are large (most removals are safe); batches shrink near the constraint boundary.}
 \label{fig:batchadapt}
 \end{figure}
@@ -748,7 +757,7 @@ With SASTO's median runtime of $T_{\mathrm{SASTO}} = 50$ s $\approx 0.83$ min, t
 \centering
 % PLACEHOLDER: Insert figures/fig11_speedup.png
 % Log-scale bar chart: SIMP (estimated range) vs SASTO runtime
-\includegraphics[width=0.9\textwidth]{figures/fig11_speedup.png}
+\includegraphics[width=\textwidth]{figures/fig11_speedup.png}
 
 \caption{Runtime comparison (log scale) between estimated SIMP with direct FEA (5--30 hours) and SASTO (159.5 seconds on the reference case, 52 $\pm$ 118 seconds averaged across 930 geometries). The speedup arises from replacing FEA evaluations ($\sim$1.5--3 min each) with surrogate inference ($\sim$0.1 s) and backpropagation-based sensitivity ($\sim$3--8 s).}
 \label{fig:speedup}
@@ -784,7 +793,7 @@ Max components & 1 & 4 \\
 \centering
 % PLACEHOLDER: Insert figures/fig9_ablation.png or a specific connectivity comparison figure
 % Show 3D renderings of mesh output under 26-connectivity (many floating fragments) vs 6-connectivity (single component)
-\includegraphics[width=0.9\textwidth]{figures/fig9_ablation.png}
+\includegraphics[width=\textwidth]{figures/fig9_ablation.png}
 \caption{Effect of foreground connectivity on marching cubes output. Left: 26-connectivity foreground produces thousands of floating mesh fragments (highlighted). Right: 6-connectivity foreground guarantees a single connected component suitable for 3D printing. Both meshes are generated from the same optimized voxel field.}
 \label{fig:connectivity}
 \end{figure}
@@ -795,7 +804,7 @@ On the reference case, the heterogeneous thickness formulation (SASTO-PA) achiev
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{figures/fig6_efficiency.png}
+\includegraphics[width=\textwidth]{figures/fig6_efficiency.png}
 \caption{Efficiency-Integrity Index comparison. SASTO-PA achieves 48\% higher $\mathcal{I}_{\mathrm{EI}}$ than SASTO-U, indicating superior material utilization per unit of structural demand.}
 \label{fig:efficiency}
 \end{figure}
@@ -826,7 +835,7 @@ $k$ & \textbf{Volume Reduction} & \textbf{Behavior} \\
 \centering
 % PLACEHOLDER: Insert figures/fig10_k_sensitivity.png
 % Plot of volume reduction vs k, showing decreasing reduction with increasing k
-\includegraphics[width=0.9\textwidth]{figures/fig10_k_sensitivity.png}
+\includegraphics[width=\textwidth]{figures/fig10_k_sensitivity.png}
 \caption{Effect of uncertainty margin factor $k$ on material reduction. Lower $k$ permits more aggressive removal but increases the risk of constraint violation upon ground-truth re-analysis. The operating point $k = 1.0$ was selected based on the ensemble's observed prediction uncertainty.}
 \label{fig:ksensitivity}
 \end{figure}
@@ -860,7 +869,7 @@ As material is removed, the optimized geometry progressively diverges from the t
 \centering
 % PLACEHOLDER: Insert figures/fig7_uncertainty.png
 % Multi-panel plot: normalized stress, compliance, displacement vs volume fraction, with ensemble Â±1Ïƒ bands
-\includegraphics[width=0.9\textwidth]{figures/fig7_uncertainty.png}
+\includegraphics[width=\textwidth]{figures/fig7_uncertainty.png}
 \caption{Evolution of structural response predictions during optimization. Normalized von Mises stress (top), compliance (middle), and displacement (bottom) versus volume fraction, with $\pm 1\sigma$ ensemble uncertainty bands. Dashed lines indicate allowable limits. Uncertainty grows monotonically as the geometry diverges from the training distribution.}
 \label{fig:uncertainty}
 \end{figure}
@@ -1138,7 +1147,7 @@ Figures~\ref{fig:voxelparts} and \ref{fig:voxelbeforeafter} show the voxelized r
 \centering
 % PLACEHOLDER: Insert figures/fig13_voxel_parts.png
 % Voxel grid slices at 3 heights, colored by part label (0-4)
-\includegraphics[width=0.9\textwidth]{figures/fig13_voxel_parts.png}
+\includegraphics[width=\textwidth]{figures/fig13_voxel_parts.png}
 \caption{Voxelized representation of the reference geometry at three cross-section heights. Part labels are color-coded: exterior wall (blue), interior wall (green), roof (orange), floor (red). The part labels drive the heterogeneous minimum thickness constraints in the part-aware formulation.}
 \label{fig:voxelparts}
 \end{figure}
@@ -1149,7 +1158,7 @@ The effect of SASTO-PA optimization on the voxel grid is shown at a representati
 \centering
 % PLACEHOLDER: Insert figures/fig18_voxel_before_after.png
 % Side-by-side voxel occupancy at z=50: original (left), optimized (right), removal map (center)
-\includegraphics[width=0.9\textwidth]{figures/fig18_voxel_before_after.png}
+\includegraphics[width=\textwidth]{figures/fig18_voxel_before_after.png}
 
 \caption{Voxel grid at $z = 50$ before optimization (left), after SASTO-PA optimization (center), and removal map (right) showing removed voxels colored by part type. Interior wall voxels (green) constitute the majority of removals; exterior wall, roof, and floor voxels are largely preserved.}
 \label{fig:voxelbeforeafter}

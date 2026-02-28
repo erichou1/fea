@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Generate cross-section renderings of 3D house models.
+
+Loads STL part files (exterior_walls, interior_rooms, roof, floor, attic_floor),
+slices them at the Y-midplane with trimesh.slice_plane to produce a clean cut,
+and renders isometric views with per-part coloring.
+
+Requires: trimesh, shapely, rtree, mapbox-earcut
+"""
+
+import os
+import numpy as np
+import trimesh
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+# ── Configuration ──
+PARTS_DIR = r"C:\Users\ericx\workspace\topopt_project\optimization\data\3dwire_parts_combined"
+OUT_DIR   = r"C:\Users\ericx\workspace\topopt_project\figures"
+
+MODEL_IDS = ["00000", "00005", "00010", "00020", "00050", "00100"]
+
+PART_STYLES = {
+    "exterior_walls":  {"color": (0.72, 0.72, 0.72, 1.0), "label": "Exterior Walls"},
+    "interior_rooms":  {"color": (0.45, 0.68, 0.88, 1.0), "label": "Interior Rooms"},
+    "roof":            {"color": (0.82, 0.48, 0.33, 1.0), "label": "Roof"},
+    "floor":           {"color": (0.60, 0.60, 0.55, 1.0), "label": "Floor"},
+    "attic_floor":     {"color": (0.88, 0.78, 0.52, 1.0), "label": "Attic Floor"},
+}
+
+
+def get_global_bounds(model_id):
+    """Get the bounding box across ALL parts of a model."""
+    lo = np.full(3, np.inf)
+    hi = np.full(3, -np.inf)
+    for pname in PART_STYLES:
+        p = os.path.join(PARTS_DIR, f"{model_id}_{pname}.stl")
+        if os.path.exists(p):
+            m = trimesh.load(p, force='mesh')
+            if not m.is_empty:
+                lo = np.minimum(lo, m.bounds[0])
+                hi = np.maximum(hi, m.bounds[1])
+    return lo, hi
+
+
+def add_mesh_to_ax(ax, mesh, color, max_faces=10000):
+    """Add a trimesh to a matplotlib 3D axis."""
+    verts = mesh.vertices
+    faces = mesh.faces
+    if len(faces) > max_faces:
+        idx = np.random.choice(len(faces), max_faces, replace=False)
+        faces = faces[idx]
+    polys = verts[faces]
+    pc = Poly3DCollection(polys, alpha=color[3], linewidths=0.15,
+                          edgecolors=(0.25, 0.25, 0.25, 0.2))
+    pc.set_facecolor(color[:3])
+    ax.add_collection3d(pc)
+
+
+def set_equal_axes(ax, lo, hi):
+    """Set axis limits with equal aspect ratio."""
+    ranges = hi - lo
+    max_range = ranges.max()
+    centers = (lo + hi) / 2.0
+    half = max_range / 2.0 * 1.05
+    ax.set_xlim(centers[0] - half, centers[0] + half)
+    ax.set_ylim(centers[1] - half, centers[1] + half)
+    ax.set_zlim(centers[2] - half * 0.6, centers[2] + half * 0.6)
+    ax.set_box_aspect([1, 1, 0.6])
+    ax.set_axis_off()
+
+
+def render_row(model_id, ax_full, ax_cut):
+    """Render one model: full view + proper cross-section (sliced at Y midplane)."""
+    lo, hi = get_global_bounds(model_id)
+    mid_y = (lo[1] + hi[1]) / 2.0
+
+    for pname, style in PART_STYLES.items():
+        stl_path = os.path.join(PARTS_DIR, f"{model_id}_{pname}.stl")
+        if not os.path.exists(stl_path):
+            continue
+        mesh = trimesh.load(stl_path, force='mesh')
+        if mesh.is_empty:
+            continue
+
+        color = style["color"]
+
+        # Full model
+        add_mesh_to_ax(ax_full, mesh, color)
+
+        # Sliced: keep the Y < mid_y half, cap=True fills the cut face
+        try:
+            sliced = mesh.slice_plane(
+                plane_origin=[0, mid_y, 0],
+                plane_normal=[0, -1, 0],
+                cap=True
+            )
+            if sliced is not None and not sliced.is_empty:
+                add_mesh_to_ax(ax_cut, sliced, color)
+        except Exception:
+            pass
+
+    set_equal_axes(ax_full, lo, hi)
+    # For the cut view, adjust Y bounds to show just the kept half
+    cut_hi = hi.copy()
+    cut_hi[1] = mid_y
+    set_equal_axes(ax_cut, lo, cut_hi)
+
+    ax_full.view_init(elev=25, azim=-55)
+    ax_cut.view_init(elev=25, azim=135)  # look into the cut face
+
+
+def main():
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    valid_ids = []
+    for mid in MODEL_IDS:
+        if os.path.exists(os.path.join(PARTS_DIR, f"{mid}_exterior_walls.stl")):
+            valid_ids.append(mid)
+
+    if not valid_ids:
+        print("ERROR: No valid model IDs found.")
+        return
+
+    n = len(valid_ids)
+    print(f"Rendering {n} models (full + cross-section)...")
+
+    fig = plt.figure(figsize=(14, 5.0 * n))
+
+    for row, mid in enumerate(valid_ids):
+        print(f"  Model {mid} ({row+1}/{n})...")
+        ax_full = fig.add_subplot(n, 2, row * 2 + 1, projection='3d')
+        ax_cut  = fig.add_subplot(n, 2, row * 2 + 2, projection='3d')
+
+        render_row(mid, ax_full, ax_cut)
+
+        ax_full.set_title(f"Model {mid} — Full", fontsize=11,
+                          fontweight='bold', pad=-8)
+        ax_cut.set_title(f"Model {mid} — Cross-Section (front half removed)",
+                         fontsize=11, fontweight='bold', pad=-8)
+
+    # Shared legend
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=v["color"][:3], edgecolor='gray',
+                             label=v["label"]) for v in PART_STYLES.values()]
+    fig.legend(handles=legend_elements, loc='lower center', ncol=5,
+               fontsize=10, frameon=True, fancybox=True,
+               edgecolor='#cccccc', bbox_to_anchor=(0.5, 0.003))
+
+    plt.suptitle("3D House Models — Cross-Section Views",
+                 fontsize=15, fontweight='bold', y=0.997)
+    plt.tight_layout(rect=[0, 0.025, 1, 0.99])
+
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(OUT_DIR, f"fig_cross_sections.{ext}"),
+                    dpi=200, bbox_inches='tight')
+    plt.close(fig)
+    print(f"\nSaved to {OUT_DIR}/fig_cross_sections.png/pdf")
+
+
+if __name__ == "__main__":
+    main()
