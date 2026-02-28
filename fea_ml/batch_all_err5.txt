@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "C:\Users\ericx\workspace\topopt_project\fea_ml\run_batch_all.py", line 39, in <module>
+    sys.stdout.reconfigure(line_buffering=True)
+    ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'reconfigure'

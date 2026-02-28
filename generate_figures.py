@@ -140,10 +140,10 @@ def fig5_per_part():
     ax = axes[0]
     x = np.arange(len(parts))
     width = 0.35
-    bars1 = ax.bar(x - width / 2, original, width, label="Original (B0)",
-                   color="#90caf9", edgecolor="#1565c0", linewidth=0.8)
+    bars1 = ax.bar(x - width / 2, original, width, label="Original ($B_0$)",
+                   color="#1565c0", edgecolor="#0D3B66", linewidth=0.8)
     bars2 = ax.bar(x + width / 2, optimized, width, label="Optimized (SASTO-PA)",
-                   color="#a5d6a7", edgecolor="#2e7d32", linewidth=0.8)
+                   color="#2e7d32", edgecolor="#1B5E20", linewidth=0.8)
     ax.set_xlabel("Structural Part")
     ax.set_ylabel("Volume (voxels)")
     ax.set_title("(a) Voxel Count by Part")
@@ -176,7 +176,7 @@ def fig5_per_part():
 # Figure 6: Efficiency-Integrity Index Comparison
 # ═══════════════════════════════════════════════════════════════════
 def fig6_efficiency():
-    variants = ["B0\n(Baseline)", "SASTO-U\n(Uniform)", "SASTO-PA\n(Part-Aware)"]
+    variants = ["$B_0$\n(Baseline)", "SASTO-U\n(Uniform)", "SASTO-PA\n(Part-Aware)"]
     vol_red = [0.0, 34.3, 45.0]
     iei = [0.0, 0.242, 0.358]
 
@@ -207,11 +207,11 @@ def fig6_efficiency():
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
                     f"{v:.3f}", ha="center", fontweight="bold", fontsize=11)
 
-    # Add "+48%" annotation
-    ax.annotate("", xy=(2, 0.358), xytext=(1, 0.242),
-                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2))
-    ax.text(1.5, 0.31, "+48%", ha="center", fontsize=11, color="#2e7d32",
-            fontweight="bold")
+    # Add "+48%" annotation (offset to avoid overlap)
+    ax.annotate("+48%", xy=(2, 0.365), xytext=(1.7, 0.415),
+                fontsize=12, fontweight="bold", color="#2e7d32", ha="center",
+                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2,
+                                connectionstyle="arc3,rad=-0.15"))
 
     plt.tight_layout()
     for ext in ("png", "pdf"):
@@ -265,7 +265,8 @@ def fig7_uncertainty():
                alpha=0.4, label="VM allow")
     ax.axhline(y=comp_baseline * 1.15 / comp_baseline, color="#1565c0",
                linestyle="--", alpha=0.4)
-    ax.text(0.56, 1.16, "$C_{allow}/C_0 = 1.15$", fontsize=9, color="#1565c0")
+    ax.text(0.82, 1.18, "$C_{allow}/C_0 = 1.15$", fontsize=9, color="#1565c0",
+            bbox=dict(boxstyle='round,pad=0.15', facecolor='white', edgecolor='none', alpha=0.8))
 
     plt.tight_layout()
     for ext in ("png", "pdf"):
@@ -295,9 +296,9 @@ def fig8_batch_adaptation():
     # Annotate phases
     ax.axvline(x=260, color="#c62828", linestyle="--", linewidth=1.5)
     ax.text(130, max(removed) * 0.9, "Phase 1: Erosion\n(260 batches)",
-            ha="center", fontsize=10, color="#1565c0", fontweight="bold")
-    ax.text(265, max(removed) * 0.9, "Phase 2",
-            ha="left", fontsize=9, color="#c62828")
+            ha="center", fontsize=12, color="#1565c0", fontweight="bold")
+    ax.text(270, max(removed) * 0.85, "Phase 2:\nEndgame",
+            ha="left", fontsize=11, color="#c62828", fontweight="bold")
 
     plt.tight_layout()
     for ext in ("png", "pdf"):
@@ -317,8 +318,8 @@ def fig9_ablation():
     ]
     vol_red = [0, 34.3, 45.0]  # 26-conn produces broken meshes so 0 effective
     mesh_ok = [False, True, True]
-    colors = ["#ef9a9a", "#ffe0b2", "#a5d6a7"]
-    edge_colors = ["#c62828", "#e65100", "#2e7d32"]
+    colors = ["#c62828", "#e65100", "#2e7d32"]
+    edge_colors = ["#8B0000", "#BF360C", "#1B5E20"]
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
     bars = ax.bar(configs, vol_red, color=colors, edgecolor=edge_colors,
@@ -391,17 +392,18 @@ def fig10_k_sensitivity():
 def fig11_speedup():
     methods = ["SIMP\n(conservative)", "SIMP\n(aggressive)", "SASTO\n(SASTO-PA)"]
     times_hr = [30.0, 5.0, 159.5 / 3600]
-    colors = ["#ef9a9a", "#ffe0b2", "#a5d6a7"]
+    colors = ["#c62828", "#e65100", "#2e7d32"]
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
     bars = ax.bar(methods, times_hr, color=colors,
-                  edgecolor=["#c62828", "#e65100", "#2e7d32"],
+                  edgecolor=["#8B0000", "#BF360C", "#1B5E20"],
                   linewidth=2, width=0.45)
 
     ax.set_ylabel("Wall-Clock Time (hours)")
     ax.set_title("Runtime Comparison: SIMP vs SASTO")
     ax.set_yscale("log")
-    ax.set_ylim(0.01, 100)
+    ax.set_ylim(0.02, 100)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:g}'))
 
     for bar, t in zip(bars, times_hr):
         if t < 1:
@@ -411,11 +413,12 @@ def fig11_speedup():
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.3,
                 label, ha="center", fontsize=11, fontweight="bold")
 
-    # Speedup annotation
-    ax.annotate(f"100–700×\nspeedup",
-                xy=(2, times_hr[2]), xytext=(1.5, 1),
+    # Speedup annotation (placed above SASTO bar, no arrow overlap)
+    ax.annotate("100\u2013700\u00d7 speedup",
+                xy=(2, times_hr[2]), xytext=(0.6, 0.06),
                 fontsize=12, fontweight="bold", color="#2e7d32",
-                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2),
+                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2,
+                                connectionstyle="arc3,rad=0.2"),
                 ha="center")
 
     plt.tight_layout()

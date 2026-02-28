@@ -550,8 +550,6 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 \end{tabular}
 \end{table}
 
-The training dynamics that produced this ensemble are shown in Figure~\ref{fig:training}; all five members converge to similar final losses despite independent initialization.
-
 \begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig15_training_curves.png
@@ -587,8 +585,6 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \end{tabular}
 \end{table}
 
-The iterative convergence behavior that produced these final values is detailed in Figure~\ref{fig:convergence}.
-
 \begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig4_convergence.png
@@ -610,8 +606,6 @@ To assess generalization beyond the reference case, SASTO-PA was evaluated on 93
 \label{fig:stl}
 \end{figure}
 
-The quantitative outcomes of the large-scale evaluation are summarized in Table~\ref{tab:multigeom}.
-
 \begin{table}[H]
 \centering
 \caption{Aggregate optimization results across 930 test geometries.}
@@ -629,8 +623,6 @@ Median runtime & 50 s & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-Table~\ref{tab:persample} highlights the individual performance extremes within the constraint-satisfying subset.
 
 \begin{table}[H]
 \centering
@@ -657,8 +649,6 @@ Table~\ref{tab:persample} highlights the individual performance extremes within 
 \bottomrule
 \end{tabular}
 \end{table}
-
-The full distribution of per-sample reductions is visualized in Figure~\ref{fig:multigeom}.
 
 \begin{figure}[H]
 \centering
@@ -704,8 +694,6 @@ Floor & 95.7 & 4.3 & 98.2 & 6.2 \\
 \end{tabular}
 \end{table}
 
-The visual breakdown of per-part material retention for the reference case is shown in Figure~\ref{fig:perpart}.
-
 \begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig5_per_part.png
@@ -738,8 +726,6 @@ Post-processing & --- & $+0$ fill, $-19$ shards & 64,292 & $\sim$5 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-The adaptive batch size mechanism that governed Phase~1 erosion is visualized in Figure~\ref{fig:batchadapt}.
 
 \begin{figure}[H]
 \centering
@@ -794,8 +780,6 @@ Max components & 1 & 4 \\
 \end{tabular}
 \end{table}
 
-The visual contrast between the two connectivity schemes is shown in Figure~\ref{fig:connectivity}.
-
 \begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig9_ablation.png or a specific connectivity comparison figure
@@ -837,8 +821,6 @@ $k$ & \textbf{Volume Reduction} & \textbf{Behavior} \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-The trend of decreasing material removal with increasing conservatism is visualized in Figure~\ref{fig:ksensitivity}.
 
 \begin{figure}[H]
 \centering

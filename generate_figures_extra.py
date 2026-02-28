@@ -117,9 +117,12 @@ def fig12_stl_comparison():
             z_min, z_max = centroids_z.min(), centroids_z.max()
             norm_z = (centroids_z - z_min) / (z_max - z_min + 1e-10)
 
-            # Blue-to-gray colormap for architectural look
-            colors = plt.cm.coolwarm(norm_z)
-            colors[:, 3] = 0.85  # slight transparency
+            # Strong blue-to-red diverging colormap (non-pastel)
+            from matplotlib.colors import LinearSegmentedColormap
+            cmap = LinearSegmentedColormap.from_list(
+                'arch', ['#0D3B66', '#1565c0', '#888888', '#c62828', '#8B0000'])
+            colors = cmap(norm_z)
+            colors[:, 3] = 0.92  # near-opaque
 
             poly = Poly3DCollection(triangles, facecolors=colors,
                                     edgecolors='none', linewidths=0.0)
@@ -132,19 +135,21 @@ def fig12_stl_comparison():
             ax.set_zlim(-max_range, max_range)
 
             ax.view_init(elev=elev, azim=azim)
-            ax.set_title(f"{view_name}", fontsize=11)
-            ax.set_xlabel("X (m)", fontsize=8)
-            ax.set_ylabel("Y (m)", fontsize=8)
-            ax.set_zlabel("Z (m)", fontsize=8)
-            ax.tick_params(labelsize=7)
+            ax.set_title(f"{view_name}", fontsize=12, pad=2)
+            ax.set_xlabel("X", fontsize=9, labelpad=1)
+            ax.set_ylabel("Y", fontsize=9, labelpad=1)
+            ax.set_zlabel("Z", fontsize=9, labelpad=1)
+            ax.tick_params(labelsize=8, pad=0)
             ax.grid(True, alpha=0.2)
 
         # Row label
-        axes[row, 0].set_ylabel(f"Y (m)\n\n{label}", fontsize=10)
+        axes[row, 0].text2D(-0.08, 0.5, label, fontsize=10, fontweight='bold',
+                            transform=axes[row, 0].transAxes,
+                            rotation=90, ha='center', va='center')
 
-    plt.suptitle("Figure 12: 3D Geometry Comparison -- Original vs. Optimized (SASTO-PA)",
-                 fontsize=14, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.suptitle("3D Geometry Comparison: Original vs. Optimized (SASTO-PA)",
+                 fontsize=14, fontweight="bold", y=0.99)
+    plt.tight_layout(rect=[0.02, 0, 1, 0.96], h_pad=1.0, w_pad=0.5)
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(OUT_DIR, f"fig12_stl_comparison.{ext}"))
     plt.close(fig)
@@ -330,34 +335,52 @@ def fig14_dataset_distributions():
     ax.set_title("(c) Displacement Distribution")
     ax.legend(fontsize=8, loc='upper left')
 
-    # Panel D: Dataset summary / filtering breakdown
+    # Panel D: Dataset summary — professional table layout
     ax = axes[1, 1]
     ax.axis('off')
+    ax.set_title("(d) Dataset Summary", fontsize=12, pad=12)
 
-    summary_text = (
-        f"Dataset Summary\n"
-        f"{'─' * 40}\n"
-        f"Total simulations:    {len(vm_vals):>8,d}\n"
-        f"Clean samples:        {n_clean:>8,d}\n"
-        f"Rejected samples:     {n_rejected:>8,d}\n"
-        f"Rejection rate:       {n_rejected/len(vm_vals)*100:>7.1f}%\n"
-        f"\n"
-        f"Rejection Criteria:\n"
-        f"  - Displacement > 1.0 m (diverged)\n"
-        f"  - Compliance < 10$^{{-6}}$ J (degenerate)\n"
-        f"  - Von Mises <= 0 Pa (invalid)\n"
-        f"\n"
-        f"Clean Data Statistics:\n"
-        f"  VM stress:  {filt['clean_max_von_mises_median']:.2e} Pa (median)\n"
-        f"  Compliance: {filt['clean_compliance_median']:.4f} J (median)\n"
-        f"  Displacement: {filt['clean_max_displacement_median']:.2e} m (median)\n"
-        f"  Safety factor: {filt['clean_min_safety_factor_median']:.1f}x (median)\n"
-    )
-    ax.text(0.1, 0.95, summary_text, transform=ax.transAxes,
-            fontsize=11, verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round', facecolor='#f5f5f5',
-                      edgecolor='#bdbdbd', alpha=0.9))
-    ax.set_title("(d) Dataset Summary", fontsize=12)
+    # Build table data
+    table_data = [
+        ["Total simulations",  f"{len(vm_vals):,d}"],
+        ["Clean samples",      f"{n_clean:,d}"],
+        ["Rejected samples",   f"{n_rejected:,d}"],
+        ["Rejection rate",     f"{n_rejected/len(vm_vals)*100:.1f}%"],
+        ["", ""],
+        ["VM stress (median)",     f"{filt['clean_max_von_mises_median']:.2e} Pa"],
+        ["Compliance (median)",    f"{filt['clean_compliance_median']:.4f} J"],
+        ["Displacement (median)",  f"{filt['clean_max_displacement_median']:.2e} m"],
+        ["Safety factor (median)", f"{filt['clean_min_safety_factor_median']:.1f}×"],
+    ]
+
+    # Section headers
+    ax.text(0.5, 0.97, "Pipeline Statistics", transform=ax.transAxes,
+            fontsize=12, fontweight='bold', ha='center', va='top', color='#1565c0')
+
+    y_pos = 0.88
+    for label, value in table_data:
+        if label == "" and value == "":
+            # Section divider
+            ax.plot([0.08, 0.92], [y_pos + 0.015, y_pos + 0.015],
+                    transform=ax.transAxes, color='#bdbdbd', linewidth=0.8,
+                    clip_on=False)
+            ax.text(0.5, y_pos - 0.01, "Clean Data Statistics",
+                    transform=ax.transAxes, fontsize=11, fontweight='bold',
+                    ha='center', va='top', color='#2e7d32')
+            y_pos -= 0.06
+            continue
+        ax.text(0.10, y_pos, label, transform=ax.transAxes,
+                fontsize=10.5, va='top', color='#333333')
+        ax.text(0.90, y_pos, value, transform=ax.transAxes,
+                fontsize=10.5, va='top', ha='right', fontweight='bold', color='#111111')
+        y_pos -= 0.07
+
+    # Border around the whole panel
+    from matplotlib.patches import FancyBboxPatch as FBP
+    border = FBP((0.03, 0.01), 0.94, 0.94, transform=ax.transAxes,
+                 boxstyle="round,pad=0.02", facecolor='#FAFAFA',
+                 edgecolor='#999999', linewidth=1.2, zorder=-1)
+    ax.add_patch(border)
 
     plt.suptitle("Figure 14: FEA Training Dataset Distributions (14,293 Simulations)",
                  fontsize=14, fontweight="bold", y=1.01)
