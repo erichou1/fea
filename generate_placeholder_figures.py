@@ -67,10 +67,10 @@ def render_voxels_3d(ax, occ, part_labels=None, alpha=0.95, elev=25, azim=-60,
         p = part_ds[xs[i], ys[i], zs[i]]
         colors.append(part_colors.get(p, part_colors[0]))
 
-    ax.scatter(xs, ys, zs, c=colors, s=5.0, marker='s', linewidths=0, depthshade=True)
+    ax.scatter(xs, ys, zs, c=colors, s=8.0, marker='s', linewidths=0, depthshade=True)
     ax.view_init(elev=elev, azim=azim)
     # Tight limits around occupied region so model fills the panel
-    pad = 2
+    pad = 1
     x_lo, x_hi = xs.min() - pad, xs.max() + pad
     y_lo, y_hi = ys.min() - pad, ys.max() + pad
     z_lo, z_hi = zs.min() - pad, zs.max() + pad
@@ -90,19 +90,19 @@ def render_wireframe_3d(ax, vertices, lines, title=None, elev=25, azim=-60):
     """Render 3D wireframe from vertices and edge indices."""
     for edge in lines:
         v0, v1 = vertices[edge[0]], vertices[edge[1]]
-        ax.plot3D(*zip(v0, v1), color='#333333', linewidth=0.8)
+        ax.plot3D(*zip(v0, v1), color='#333333', linewidth=2.5)
 
     # Plot vertices as dots
     ax.scatter3D(vertices[:, 0], vertices[:, 1], vertices[:, 2],
-                 color='#CC3333', s=8, zorder=5, depthshade=False)
+                 color='#CC3333', s=30, zorder=5, depthshade=False)
 
     ax.view_init(elev=elev, azim=azim)
-    margin = 0.05
     lo = vertices.min(axis=0)
     hi = vertices.max(axis=0)
     ranges = hi - lo
+    pad = ranges * 0.02  # minimal proportional padding
     for i, setter in enumerate([ax.set_xlim, ax.set_ylim, ax.set_zlim]):
-        setter(lo[i] - margin, hi[i] + margin)
+        setter(lo[i] - pad[i], hi[i] + pad[i])
     # Match aspect to data so wireframe fills the panel
     ax.set_box_aspect(ranges / ranges.max() if ranges.max() > 0 else [1, 1, 1])
     ax.set_axis_off()
