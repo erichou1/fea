@@ -67,14 +67,16 @@ def render_voxels_3d(ax, occ, part_labels=None, alpha=0.95, elev=25, azim=-60,
         p = part_ds[xs[i], ys[i], zs[i]]
         colors.append(part_colors.get(p, part_colors[0]))
 
-    ax.scatter(xs, ys, zs, c=colors, s=3.0, marker='s', linewidths=0, depthshade=True)
+    ax.scatter(xs, ys, zs, c=colors, s=5.0, marker='s', linewidths=0, depthshade=True)
     ax.view_init(elev=elev, azim=azim)
     ax.set_xlim(0, occ_ds.shape[0])
     ax.set_ylim(0, occ_ds.shape[1])
     ax.set_zlim(0, occ_ds.shape[2])
     ax.set_axis_off()
+    # Aspect ratio matching the data extents
+    ax.set_box_aspect([occ_ds.shape[0], occ_ds.shape[1], occ_ds.shape[2]])
     if title:
-        ax.set_title(title, fontsize=10, fontweight='bold', pad=-5)
+        ax.set_title(title, fontsize=11, fontweight='bold', pad=-5)
 
 
 def render_wireframe_3d(ax, vertices, lines, title=None, elev=25, azim=-60):
@@ -104,23 +106,23 @@ def generate_pipeline_figure():
     print("Generating fig1_pipeline.png ...")
 
     dot = graphviz.Digraph('pipeline', engine='dot')
-    dot.attr(rankdir='LR', dpi='300',
+    dot.attr(rankdir='LR', dpi='200', size='16,5!',
              fontname='Arial', bgcolor='white',
-             nodesep='0.5', ranksep='0.7', margin='0.3')
+             nodesep='0.6', ranksep='0.9', margin='0.4')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='12',
-             fontcolor='white', penwidth='2.0', margin='0.18,0.12')
-    dot.attr('edge', fontname='Arial', fontsize='10',
-             penwidth='2.0', arrowsize='0.9')
+             fontname='Arial', fontsize='16',
+             fontcolor='white', penwidth='2.5', margin='0.22,0.15')
+    dot.attr('edge', fontname='Arial', fontsize='13',
+             penwidth='2.5', arrowsize='1.1')
 
     # ── Offline cluster ──
     with dot.subgraph(name='cluster_offline') as c:
         c.attr(label='  OFFLINE TRAINING PHASE  ', labelloc='t',
                style='filled,rounded', fillcolor='#EDF2F9',
                color='#0D3B66', fontcolor='#0D3B66',
-               fontsize='14', fontname='Arial',
-               penwidth='2.0')
+               fontsize='18', fontname='Arial',
+               penwidth='2.5')
 
         c.node('wire', '3DWire\nWireframes\n(14,293)',
                fillcolor='#1B5E9E', color='#0A2F5C')
@@ -140,8 +142,8 @@ def generate_pipeline_figure():
         c.attr(label='  ONLINE OPTIMIZATION PHASE  ', labelloc='t',
                style='filled,rounded', fillcolor='#FDF3EA',
                color='#8C3D00', fontcolor='#8C3D00',
-               fontsize='14', fontname='Arial',
-               penwidth='2.0')
+               fontsize='18', fontname='Arial',
+               penwidth='2.5')
 
         c.node('voxel', '128³ Voxel Grid\n+ Part Labels',
                fillcolor='#D46A00', color='#5C2D00')
@@ -180,17 +182,17 @@ def generate_architecture_figure():
     print("Generating fig2_architecture.png ...")
 
     dot = graphviz.Digraph('architecture', engine='dot')
-    dot.attr(rankdir='LR', dpi='300',
+    dot.attr(rankdir='LR', dpi='200', size='16,5!',
              fontname='Arial', bgcolor='white',
-             nodesep='0.35', ranksep='0.55', margin='0.25',
+             nodesep='0.45', ranksep='0.7', margin='0.35',
              label='Surrogate3DResNet Architecture  (Single Ensemble Member, ~8.76M params)',
-             labelloc='t', fontsize='15', labeljust='c')
+             labelloc='t', fontsize='20', labeljust='c')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='11',
-             fontcolor='white', penwidth='1.8', margin='0.14,0.10')
-    dot.attr('edge', fontname='Arial', fontsize='9',
-             penwidth='1.8', arrowsize='0.8')
+             fontname='Arial', fontsize='15',
+             fontcolor='white', penwidth='2.2', margin='0.18,0.13')
+    dot.attr('edge', fontname='Arial', fontsize='12',
+             penwidth='2.2', arrowsize='1.0')
 
     # ── 3D CNN Backbone ──
     with dot.subgraph(name='cluster_cnn') as c:
@@ -278,7 +280,7 @@ def generate_wireframe_pipeline_figure():
     occ = np.load('fea_ml/runs/v3/optimization_128/fixed_occ.npz')['data']
     part = np.load('fea_ml/runs/v3/optimization_128/fixed_part.npz')['data']
 
-    fig = plt.figure(figsize=(15, 4.5))
+    fig = plt.figure(figsize=(18, 7))
 
     # Panel (a): Wireframe
     ax1 = fig.add_subplot(131, projection='3d')
@@ -331,7 +333,7 @@ def generate_model_comparison_figure():
 
     elev, azim = 20, -55
 
-    fig = plt.figure(figsize=(16, 4.5))
+    fig = plt.figure(figsize=(20, 7))
 
     # Panel (a): Wireframe
     ax1 = fig.add_subplot(141, projection='3d')

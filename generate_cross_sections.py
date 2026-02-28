@@ -20,7 +20,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 PARTS_DIR = r"C:\Users\ericx\workspace\topopt_project\optimization\data\3dwire_parts_combined"
 OUT_DIR   = r"C:\Users\ericx\workspace\topopt_project\figures"
 
-MODEL_IDS = ["00000", "00005", "00010", "00020", "00050", "00100"]
+MODEL_IDS = ["00000", "00010", "00050"]
 
 PART_STYLES = {
     "exterior_walls":  {"color": (0.72, 0.72, 0.72, 1.0), "label": "Exterior Walls"},
@@ -60,15 +60,14 @@ def add_mesh_to_ax(ax, mesh, color, max_faces=10000):
 
 
 def set_equal_axes(ax, lo, hi):
-    """Set axis limits with equal aspect ratio."""
+    """Set axis limits proportional to data extents."""
     ranges = hi - lo
-    max_range = ranges.max()
-    centers = (lo + hi) / 2.0
-    half = max_range / 2.0 * 1.05
-    ax.set_xlim(centers[0] - half, centers[0] + half)
-    ax.set_ylim(centers[1] - half, centers[1] + half)
-    ax.set_zlim(centers[2] - half * 0.6, centers[2] + half * 0.6)
-    ax.set_box_aspect([1, 1, 0.6])
+    margin = ranges * 0.05
+    ax.set_xlim(lo[0] - margin[0], hi[0] + margin[0])
+    ax.set_ylim(lo[1] - margin[1], hi[1] + margin[1])
+    ax.set_zlim(lo[2] - margin[2], hi[2] + margin[2])
+    # Proportional aspect — model fills its natural shape
+    ax.set_box_aspect(ranges / ranges.max() if ranges.max() > 0 else [1, 1, 1])
     ax.set_axis_off()
 
 
@@ -103,13 +102,12 @@ def render_row(model_id, ax_full, ax_cut):
             pass
 
     set_equal_axes(ax_full, lo, hi)
-    # For the cut view, adjust Y bounds to show just the kept half
-    cut_hi = hi.copy()
-    cut_hi[1] = mid_y
-    set_equal_axes(ax_cut, lo, cut_hi)
+    # For the cut view, use full bounds so model stays same scale
+    set_equal_axes(ax_cut, lo, hi)
 
-    ax_full.view_init(elev=25, azim=-55)
-    ax_cut.view_init(elev=25, azim=135)  # look into the cut face
+    ax_full.view_init(elev=20, azim=-60)
+    # Cut view: look straight into the exposed interior from the front
+    ax_cut.view_init(elev=15, azim=-5)
 
 
 def main():
@@ -127,7 +125,7 @@ def main():
     n = len(valid_ids)
     print(f"Rendering {n} models (full + cross-section)...")
 
-    fig = plt.figure(figsize=(14, 5.0 * n))
+    fig = plt.figure(figsize=(16, 5.5 * n))
 
     for row, mid in enumerate(valid_ids):
         print(f"  Model {mid} ({row+1}/{n})...")
@@ -136,22 +134,22 @@ def main():
 
         render_row(mid, ax_full, ax_cut)
 
-        ax_full.set_title(f"Model {mid} — Full", fontsize=11,
-                          fontweight='bold', pad=-8)
-        ax_cut.set_title(f"Model {mid} — Cross-Section (front half removed)",
-                         fontsize=11, fontweight='bold', pad=-8)
+        ax_full.set_title(f"Model {mid} — Full Exterior", fontsize=13,
+                          fontweight='bold', pad=-5)
+        ax_cut.set_title(f"Model {mid} — Y-Midplane Section (interior exposed)",
+                         fontsize=13, fontweight='bold', pad=-5)
 
     # Shared legend
     from matplotlib.patches import Patch
     legend_elements = [Patch(facecolor=v["color"][:3], edgecolor='gray',
                              label=v["label"]) for v in PART_STYLES.values()]
     fig.legend(handles=legend_elements, loc='lower center', ncol=5,
-               fontsize=10, frameon=True, fancybox=True,
+               fontsize=11, frameon=True, fancybox=True,
                edgecolor='#cccccc', bbox_to_anchor=(0.5, 0.003))
 
     plt.suptitle("3D House Models — Cross-Section Views",
-                 fontsize=15, fontweight='bold', y=0.997)
-    plt.tight_layout(rect=[0, 0.025, 1, 0.99])
+                 fontsize=16, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.99])
 
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(OUT_DIR, f"fig_cross_sections.{ext}"),

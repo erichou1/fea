@@ -610,8 +610,8 @@ Figure~\ref{fig:crosssections} presents cross-section views of six representativ
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{figures/fig_cross_sections.png}
-\caption{Cross-section views of six representative house geometries. Left: complete model. Right: Y-midplane section revealing interior room layout. Color coding: exterior walls (gray), interior rooms (blue), roof (terracotta), floor (dark gray), attic floor (tan). The structural diversity across models motivates the part-aware thickness constraints used by SASTO-PA.}
+\includegraphics[width=0.95\textwidth]{figures/fig_cross_sections.png}
+\caption{Cross-section views of three representative house geometries. Left: complete exterior model. Right: Y-midplane section revealing interior room layout. Color coding: exterior walls (gray), interior rooms (blue), roof (terracotta), floor (dark gray), attic floor (tan). The structural diversity across models motivates the part-aware thickness constraints used by SASTO-PA.}
 \label{fig:crosssections}
 \end{figure}
 

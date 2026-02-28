@@ -82,7 +82,7 @@ def fig12_stl_comparison():
         ("Top", (90, 0)),
     ]
 
-    fig, axes = plt.subplots(2, 3, figsize=(14, 8),
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11),
                              subplot_kw={'projection': '3d'})
 
     meshes = [orig, opt]
@@ -125,25 +125,26 @@ def fig12_stl_comparison():
                                     edgecolors='none', linewidths=0.0)
             ax.add_collection3d(poly)
 
-            # Set axis limits
-            max_range = np.abs(verts_c).max() * 1.05
-            ax.set_xlim(-max_range, max_range)
-            ax.set_ylim(-max_range, max_range)
-            ax.set_zlim(-max_range, max_range)
+            # Set axis limits using actual data extents for tighter fit
+            extents = np.abs(verts_c).max(axis=0) * 1.05
+            ax.set_xlim(-extents[0], extents[0])
+            ax.set_ylim(-extents[1], extents[1])
+            ax.set_zlim(-extents[2], extents[2])
+            ax.set_box_aspect([extents[0], extents[1], extents[2]])
 
             ax.view_init(elev=elev, azim=azim)
             # Clean: only view title, no axis labels/ticks
             ax.set_axis_off()
-            ax.set_title(f"{view_name}", fontsize=12, fontweight='bold', pad=-8)
+            ax.set_title(f"{view_name}", fontsize=13, fontweight='bold', pad=-5)
 
         # Row label as text2D on first column
-        axes[row, 0].text2D(0.5, -0.02, label, fontsize=10, fontweight='bold',
+        axes[row, 0].text2D(0.5, -0.02, label, fontsize=11, fontweight='bold',
                             transform=axes[row, 0].transAxes,
                             ha='center', va='top')
 
     plt.suptitle("3D Geometry Comparison: Original vs. Optimized (SASTO-PA)",
-                 fontsize=14, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0.02, 1, 0.95], h_pad=0.5, w_pad=0.5)
+                 fontsize=16, fontweight="bold", y=0.98)
+    plt.tight_layout(rect=[0, 0.02, 1, 0.95], h_pad=0.1, w_pad=0.1)
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(OUT_DIR, f"fig12_stl_comparison.{ext}"))
     plt.close(fig)
@@ -815,7 +816,7 @@ def fig19_mesh_convergence():
     compliance = [0.098, 0.105, 0.110, 0.112, 0.113, 0.113]  # J
     n_elements = [2500, 8200, 22000, 45000, 98000, 380000]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
     # Panel A: VM stress convergence
     ax = axes[0]
@@ -856,7 +857,7 @@ def fig19_mesh_convergence():
     ax.legend(fontsize=9)
 
     plt.suptitle("Figure 19: Mesh Convergence Study (50 Representative Geometries)",
-                 fontsize=14, fontweight="bold", y=1.02)
+                 fontsize=15, fontweight="bold", y=1.02)
     plt.tight_layout()
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(OUT_DIR, f"fig19_mesh_convergence.{ext}"),
