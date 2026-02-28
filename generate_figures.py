@@ -207,11 +207,12 @@ def fig6_efficiency():
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
                     f"{v:.3f}", ha="center", fontweight="bold", fontsize=11)
 
-    # Add "+48%" annotation (offset to avoid overlap)
-    ax.annotate("+48%", xy=(2, 0.365), xytext=(1.7, 0.415),
-                fontsize=12, fontweight="bold", color="#2e7d32", ha="center",
-                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2,
-                                connectionstyle="arc3,rad=-0.15"))
+    # "+48%" improvement label — clean text between bars, no arrow
+    ax.text(1.5, 0.30, "+48%", ha="center", va="center",
+            fontsize=13, fontweight="bold", color="#2e7d32",
+            bbox=dict(boxstyle='round,pad=0.12', facecolor='white',
+                      edgecolor='#2e7d32', linewidth=1.2))
+    ax.set_ylim(0, 0.45)
 
     plt.tight_layout()
     for ext in ("png", "pdf"):
@@ -287,18 +288,22 @@ def fig8_batch_adaptation():
 
     fig, ax = plt.subplots(figsize=(9, 4))
 
-    ax.bar(batches, removed, width=1, color="#1565c0", alpha=0.7,
+    ax.bar(batches, removed, width=1, color="#1565c0", alpha=1.0,
            edgecolor="none")
     ax.set_xlabel("Batch Number")
     ax.set_ylabel("Voxels Removed per Batch")
     ax.set_title("Adaptive Batch Size During SASTO-PA Optimization")
 
-    # Annotate phases
-    ax.axvline(x=260, color="#c62828", linestyle="--", linewidth=1.5)
-    ax.text(130, max(removed) * 0.9, "Phase 1: Erosion\n(260 batches)",
-            ha="center", fontsize=12, color="#1565c0", fontweight="bold")
-    ax.text(270, max(removed) * 0.85, "Phase 2:\nEndgame",
-            ha="left", fontsize=11, color="#c62828", fontweight="bold")
+    # Annotate phases — strong contrast labels with background
+    ax.axvline(x=260, color="#c62828", linestyle="--", linewidth=2.0)
+    ax.text(130, max(removed) * 0.92, "Phase 1: Erosion\n(260 batches)",
+            ha="center", fontsize=13, color="#0D3B66", fontweight="bold",
+            bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                      edgecolor='#1565c0', linewidth=1.0, alpha=0.9))
+    ax.text(290, max(removed) * 0.70, "Phase 2: Endgame",
+            ha="left", fontsize=13, color="#8B0000", fontweight="bold",
+            bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                      edgecolor='#c62828', linewidth=1.0, alpha=0.9))
 
     plt.tight_layout()
     for ext in ("png", "pdf"):
@@ -402,24 +407,28 @@ def fig11_speedup():
     ax.set_ylabel("Wall-Clock Time (hours)")
     ax.set_title("Runtime Comparison: SIMP vs SASTO")
     ax.set_yscale("log")
-    ax.set_ylim(0.02, 100)
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:g}'))
+    ax.set_ylim(0.01, 200)
+
+    # Clean log-scale ticks
+    import matplotlib.ticker as ticker
+    ax.set_yticks([0.01, 0.1, 1, 10, 100])
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: f'{y:g}'))
+    ax.yaxis.set_minor_formatter(ticker.NullFormatter())
 
     for bar, t in zip(bars, times_hr):
         if t < 1:
             label = f"{t * 60:.1f} min"
         else:
             label = f"{t:.0f} hr"
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.3,
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.4,
                 label, ha="center", fontsize=11, fontweight="bold")
 
-    # Speedup annotation (placed above SASTO bar, no arrow overlap)
-    ax.annotate("100\u2013700\u00d7 speedup",
-                xy=(2, times_hr[2]), xytext=(0.6, 0.06),
-                fontsize=12, fontweight="bold", color="#2e7d32",
-                arrowprops=dict(arrowstyle="->", color="#2e7d32", lw=2,
-                                connectionstyle="arc3,rad=0.2"),
-                ha="center")
+    # Speedup label — simple text below SASTO bar, no arrow crossing
+    ax.text(2, 0.015, "100\u2013700\u00d7\nspeedup",
+            ha="center", va="bottom", fontsize=12, fontweight="bold",
+            color="#2e7d32",
+            bbox=dict(boxstyle='round,pad=0.12', facecolor='white',
+                      edgecolor='#2e7d32', linewidth=1.2))
 
     plt.tight_layout()
     for ext in ("png", "pdf"):

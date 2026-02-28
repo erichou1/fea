@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import graphviz
 import os
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), 'figures')
@@ -97,197 +98,169 @@ def render_wireframe_3d(ax, vertices, lines, title=None, elev=25, azim=-60):
 
 
 # ============================================================
-# Figure 1: SASTO Pipeline Overview
+# Figure 1: SASTO Pipeline Overview  (Graphviz)
 # ============================================================
 def generate_pipeline_figure():
     print("Generating fig1_pipeline.png ...")
-    fig, ax = plt.subplots(figsize=(14, 5.5))
-    ax.set_xlim(0, 14)
-    ax.set_ylim(0, 5.5)
-    ax.set_axis_off()
 
-    # --- Color palette (saturated, non-pastel) ---
-    BLUE_BG     = '#1B5E9E'   # deep blue for offline
-    BLUE_DARK   = '#0D3B66'   # dark blue for offline header
-    ORANGE_BG   = '#BF5700'   # burnt orange for online
-    ORANGE_DARK = '#8C3D00'   # dark orange for online header
-    GREEN_BG    = '#1E7B3A'   # deep green for output
-    GRAY_TEXT   = '#333333'
+    dot = graphviz.Digraph('pipeline', engine='dot')
+    dot.attr(rankdir='LR', dpi='300',
+             fontname='Arial', bgcolor='white',
+             nodesep='0.5', ranksep='0.7', margin='0.3')
 
-    def draw_box(ax, x, y, w, h, text, facecolor, edgecolor, fontsize=8.5,
-                 fontcolor='white', fontweight='normal'):
-        box = FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.12",
-                             facecolor=facecolor, edgecolor=edgecolor,
-                             linewidth=1.8, zorder=2)
-        ax.add_patch(box)
-        ax.text(x + w/2, y + h/2, text, ha='center', va='center',
-                fontsize=fontsize, color=fontcolor, fontweight=fontweight, zorder=3)
+    dot.attr('node', shape='box', style='filled,rounded',
+             fontname='Arial', fontsize='12',
+             fontcolor='white', penwidth='2.0', margin='0.18,0.12')
+    dot.attr('edge', fontname='Arial', fontsize='10',
+             penwidth='2.0', arrowsize='0.9')
 
-    def draw_arrow(ax, x1, y1, x2, y2, color='#333333', lw=1.8, style='-'):
-        ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                    arrowprops=dict(arrowstyle='->', color=color, lw=lw,
-                                    linestyle=style), zorder=1)
+    # ── Offline cluster ──
+    with dot.subgraph(name='cluster_offline') as c:
+        c.attr(label='  OFFLINE TRAINING PHASE  ', labelloc='t',
+               style='filled,rounded', fillcolor='#EDF2F9',
+               color='#0D3B66', fontcolor='#0D3B66',
+               fontsize='14', fontname='Arial',
+               penwidth='2.0')
 
-    # ---- Phase headers ----
-    ax.text(0.15, 5.15, 'OFFLINE TRAINING PHASE', fontsize=12, fontweight='bold',
-            color=BLUE_DARK, va='center', fontfamily='sans-serif')
-    ax.axhline(y=4.95, xmin=0.01, xmax=0.99, color=BLUE_DARK, linewidth=1.0, alpha=0.4)
+        c.node('wire', '3DWire\nWireframes\n(14,293)',
+               fillcolor='#1B5E9E', color='#0A2F5C')
+        c.node('vol', 'Volumetric\nGeneration\n(4-part STL)',
+               fillcolor='#1B5E9E', color='#0A2F5C')
+        c.node('fea', 'FEA Simulation\n(SfePy, ASCE 7-22)\nσ, u, C',
+               fillcolor='#1B5E9E', color='#0A2F5C')
+        c.node('ensemble', 'Deep Ensemble Training\n(5× Surrogate3DResNet)\n11,178 samples',
+               fillcolor='#0A2F5C', color='#051A33')
 
-    ax.text(0.15, 2.7, 'ONLINE OPTIMIZATION PHASE', fontsize=12, fontweight='bold',
-            color=ORANGE_DARK, va='center', fontfamily='sans-serif')
-    ax.axhline(y=2.5, xmin=0.01, xmax=0.99, color=ORANGE_DARK, linewidth=1.0, alpha=0.4)
+        c.edge('wire', 'vol', color='#0D3B66')
+        c.edge('vol', 'fea', color='#0D3B66')
+        c.edge('fea', 'ensemble', color='#0D3B66')
 
-    # ---- OFFLINE PHASE (top row) ----
-    row_y = 3.7
-    row_h = 1.0
-    boxes_top = [
-        (0.2,  row_y, 2.6, row_h, '3DWire\nWireframes\n(14,293)', BLUE_BG),
-        (3.5,  row_y, 2.6, row_h, 'Volumetric\nGeneration\n(4-part STL)', BLUE_BG),
-        (6.8,  row_y, 2.6, row_h, 'FEA Simulation\n(SfePy, ASCE 7-22)\nσ, u, C', BLUE_BG),
-        (10.2, row_y, 3.5, row_h, 'Deep Ensemble Training\n(5× Surrogate3DResNet)\n11,178 samples', '#0A2F5C'),
-    ]
-    for x, y, w, h, text, fc in boxes_top:
-        draw_box(ax, x, y, w, h, text, fc, '#0A2F5C', fontsize=8.5, fontcolor='white')
+    # ── Online cluster ──
+    with dot.subgraph(name='cluster_online') as c:
+        c.attr(label='  ONLINE OPTIMIZATION PHASE  ', labelloc='t',
+               style='filled,rounded', fillcolor='#FDF3EA',
+               color='#8C3D00', fontcolor='#8C3D00',
+               fontsize='14', fontname='Arial',
+               penwidth='2.0')
 
-    # Arrows between top boxes (straight, no overlap)
-    draw_arrow(ax, 2.8, row_y+row_h/2, 3.5, row_y+row_h/2, color=BLUE_DARK)
-    draw_arrow(ax, 6.1, row_y+row_h/2, 6.8, row_y+row_h/2, color=BLUE_DARK)
-    draw_arrow(ax, 9.4, row_y+row_h/2, 10.2, row_y+row_h/2, color=BLUE_DARK)
+        c.node('voxel', '128³ Voxel Grid\n+ Part Labels',
+               fillcolor='#D46A00', color='#5C2D00')
+        c.node('phase1', 'Phase 1:\nSensitivity Erosion\n(99% removal)',
+               fillcolor='#BF5700', color='#5C2D00')
+        c.node('phase2', 'Phase 2:\nEndgame\n(single voxel)',
+               fillcolor='#BF5700', color='#5C2D00')
+        c.node('phase3', 'Phase 3:\nSwap Refinement',
+               fillcolor='#BF5700', color='#5C2D00')
+        c.node('export', 'Post-Process\n+ STL Export\n(marching cubes)',
+               fillcolor='#1E7B3A', color='#0A4D1E')
 
-    # ---- ONLINE PHASE (bottom row) ----
-    bot_y = 1.0
-    bot_h = 1.2
-    boxes_bot = [
-        (0.2,  bot_y, 2.0, bot_h, '128³ Voxel Grid\n+ Part Labels', '#D46A00'),
-        (2.8,  bot_y, 2.4, bot_h, 'Phase 1:\nSensitivity Erosion\n(99% removal)', ORANGE_BG),
-        (5.8,  bot_y, 2.0, bot_h, 'Phase 2:\nEndgame\n(single voxel)', ORANGE_BG),
-        (8.4,  bot_y, 2.0, bot_h, 'Phase 3:\nSwap Refinement', ORANGE_BG),
-        (11.1, bot_y, 2.7, bot_h, 'Post-Process\n+ STL Export\n(marching cubes)', GREEN_BG),
-    ]
-    for x, y, w, h, text, fc in boxes_bot:
-        ec = '#5C2D00' if fc != GREEN_BG else '#0A4D1E'
-        draw_box(ax, x, y, w, h, text, fc, ec, fontsize=8.5, fontcolor='white')
+        c.edge('voxel', 'phase1', color='#8C3D00')
+        c.edge('phase1', 'phase2', color='#8C3D00')
+        c.edge('phase2', 'phase3', color='#8C3D00')
+        c.edge('phase3', 'export', color='#444444')
 
-    # Arrows between bottom boxes
-    draw_arrow(ax, 2.2, bot_y+bot_h/2, 2.8, bot_y+bot_h/2, color=ORANGE_DARK)
-    draw_arrow(ax, 5.2, bot_y+bot_h/2, 5.8, bot_y+bot_h/2, color=ORANGE_DARK)
-    draw_arrow(ax, 7.8, bot_y+bot_h/2, 8.4, bot_y+bot_h/2, color=ORANGE_DARK)
-    draw_arrow(ax, 10.4, bot_y+bot_h/2, 11.1, bot_y+bot_h/2, color='#333333')
+    # Cross-phase: ensemble → Phase 1
+    dot.edge('ensemble', 'phase1',
+             style='dashed', color='#666666', fontcolor='#333333',
+             label='  Surrogate predictions  ',
+             penwidth='1.5')
 
-    # Connection: ensemble -> Phase 1 (dashed, surrogate predictions)
-    ax.annotate('', xy=(4.0, bot_y+bot_h), xytext=(11.95, row_y),
-                arrowprops=dict(arrowstyle='->', color='#555555', lw=1.5,
-                                linestyle='dashed', connectionstyle='arc3,rad=0.25'),
-                zorder=1)
-    ax.text(8.7, 3.1, 'Surrogate predictions', fontsize=8, ha='center',
-            va='center', color='#333333', style='italic',
-            bbox=dict(boxstyle='round,pad=0.15', facecolor='white',
-                      edgecolor='#999999', linewidth=0.7, alpha=0.9))
-
-    # Key features (below bottom row)
-    features = [
-        (4.0, 0.35, '6-connectivity check'),
-        (7.0, 0.35, 'Conservative μ+kσ bounds'),
-        (9.8, 0.35, 'Adaptive batch (trust region)'),
-    ]
-    for x, y, text in features:
-        ax.text(x, y, text, ha='center', va='center', fontsize=7.5,
-                color='#444444', style='italic',
-                bbox=dict(boxstyle='round,pad=0.15', facecolor='#F0F0F0',
-                          edgecolor='#888888', linewidth=0.6))
-
-    plt.tight_layout(pad=0.5)
-    fig.savefig(os.path.join(FIGURES_DIR, 'fig1_pipeline.png'))
-    fig.savefig(os.path.join(FIGURES_DIR, 'fig1_pipeline.pdf'))
-    plt.close(fig)
+    # Render PNG and PDF
+    output_base = os.path.join(FIGURES_DIR, 'fig1_pipeline')
+    for fmt in ('png', 'pdf'):
+        dot.format = fmt
+        dot.render(output_base, cleanup=True)
     print("  -> Saved fig1_pipeline.png/pdf")
 
 
 # ============================================================
-# Figure 2: Surrogate3DResNet Architecture
+# Figure 2: Surrogate3DResNet Architecture  (Graphviz)
 # ============================================================
 def generate_architecture_figure():
     print("Generating fig2_architecture.png ...")
-    fig, ax = plt.subplots(figsize=(14, 4.5))
-    ax.set_xlim(0, 14)
-    ax.set_ylim(0, 4.5)
-    ax.set_axis_off()
 
-    # --- Color palette (saturated, non-pastel) ---
-    CONV_BLUE   = '#1B4F8A'   # deep blue for conv stages
-    CONV_DARK   = '#0D2E52'   # very dark blue border
-    SE_AMBER    = '#B8600A'   # deep amber for SE blocks
-    POOL_GREEN  = '#1A6B35'   # dark green for pooling
-    FEAT_RED    = '#9D2235'   # deep red for feature branch
-    CONCAT_GRAY = '#4A4A4A'   # dark gray for concat
-    HEAD_GREEN  = '#0D5820'   # dark green for prediction head
+    dot = graphviz.Digraph('architecture', engine='dot')
+    dot.attr(rankdir='LR', dpi='300',
+             fontname='Arial', bgcolor='white',
+             nodesep='0.35', ranksep='0.55', margin='0.25',
+             label='Surrogate3DResNet Architecture  (Single Ensemble Member, ~8.76M params)',
+             labelloc='t', fontsize='15', labeljust='c')
 
-    def draw_box(ax, x, y, w, h, text, fc, ec, fs=9, fc_text='white'):
-        box = FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.08",
-                             facecolor=fc, edgecolor=ec, linewidth=1.5, zorder=2)
-        ax.add_patch(box)
-        ax.text(x + w/2, y + h/2, text, ha='center', va='center',
-                fontsize=fs, color=fc_text, zorder=3)
+    dot.attr('node', shape='box', style='filled,rounded',
+             fontname='Arial', fontsize='11',
+             fontcolor='white', penwidth='1.8', margin='0.14,0.10')
+    dot.attr('edge', fontname='Arial', fontsize='9',
+             penwidth='1.8', arrowsize='0.8')
 
-    ax.text(7, 4.25, 'Surrogate3DResNet Architecture (Single Ensemble Member, ~8.76M params)',
-            fontsize=12, fontweight='bold', ha='center', va='center', color='#222222')
+    # ── 3D CNN Backbone ──
+    with dot.subgraph(name='cluster_cnn') as c:
+        c.attr(label='3D CNN Backbone', labelloc='t',
+               style='filled,rounded', fillcolor='#EDF2F9',
+               color='#0D2E52', fontcolor='#0D2E52',
+               fontsize='12', penwidth='1.5')
 
-    # Stages with decreasing visual height to show downsampling
-    stages = [
-        (0.2,  1.4, 1.3, 2.2, 'Input\n7×128³', '#2B5EA7',  CONV_DARK, 10),
-        (1.8,  1.5, 1.2, 2.0, 'Conv 1\n64×64³\nBN+GELU',   CONV_BLUE, CONV_DARK, 9),
-        (3.3,  1.6, 1.2, 1.8, 'Conv 2\n128×32³\nBN+GELU',  CONV_BLUE, CONV_DARK, 9),
-        (4.8,  1.7, 1.2, 1.6, 'Conv 3\n256×16³\nBN+GELU',  '#163F6E', CONV_DARK, 9),
-        (6.3,  1.8, 1.2, 1.4, 'Conv 4\n512×8³\nBN+GELU',   '#0E2D50', CONV_DARK, 9),
-        (7.8,  1.7, 1.3, 1.6, 'SE-ResBlock\n×3\nSE(r=4)',  SE_AMBER,  '#7A3F06', 9),
-        (9.4,  1.8, 1.3, 1.4, 'Dual Pool\nAvg+Max\n512-d', POOL_GREEN,'#0A4D1E', 9),
-    ]
+        c.node('input', 'Input\n7 × 128³',
+               fillcolor='#2B5EA7', color='#0D2E52')
+        c.node('conv1', 'Conv 1\n64 × 64³\nBN + GELU',
+               fillcolor='#1B4F8A', color='#0D2E52')
+        c.node('conv2', 'Conv 2\n128 × 32³\nBN + GELU',
+               fillcolor='#1B4F8A', color='#0D2E52')
+        c.node('conv3', 'Conv 3\n256 × 16³\nBN + GELU',
+               fillcolor='#163F6E', color='#0D2E52')
+        c.node('conv4', 'Conv 4\n512 × 8³\nBN + GELU',
+               fillcolor='#0E2D50', color='#0D2E52')
 
-    for x, y, w, h, text, fc, ec, fs in stages:
-        draw_box(ax, x, y, w, h, text, fc, ec, fs)
+        c.edge('input', 'conv1', color='#333333')
+        c.edge('conv1', 'conv2', color='#333333')
+        c.edge('conv2', 'conv3', color='#333333')
+        c.edge('conv3', 'conv4', color='#333333')
 
-    # Arrows between stages
-    arrow_pairs = [(1.5, 1.8), (3.0, 3.3), (4.5, 4.8), (6.0, 6.3), (7.5, 7.8), (9.1, 9.4)]
-    for x1, x2 in arrow_pairs:
-        ax.annotate('', xy=(x2, 2.5), xytext=(x1, 2.5),
-                    arrowprops=dict(arrowstyle='->', color='#333333', lw=1.5), zorder=1)
+    # ── SE-ResBlock + Pooling ──
+    with dot.subgraph(name='cluster_se') as c:
+        c.attr(label='SE-Res + Pool', labelloc='t',
+               style='filled,rounded', fillcolor='#FDF3EA',
+               color='#7A3F06', fontcolor='#7A3F06',
+               fontsize='12', penwidth='1.5')
 
-    # Feature vector branch (bottom)
-    draw_box(ax, 0.2, 0.15, 1.3, 0.9, 'Feature\nVector\n10-d', FEAT_RED, '#5A1220', 9)
-    draw_box(ax, 1.8, 0.15, 1.2, 0.9, 'Feature\nMLP\n128-d', FEAT_RED, '#5A1220', 9)
+        c.node('se', 'SE-ResBlock\n× 3\nSE(r=4)',
+               fillcolor='#B8600A', color='#7A3F06')
+        c.node('pool', 'Dual Pool\nAvg + Max\n512-d',
+               fillcolor='#1A6B35', color='#0A4D1E')
 
-    ax.annotate('', xy=(1.8, 0.6), xytext=(1.5, 0.6),
-                arrowprops=dict(arrowstyle='->', color='#333333', lw=1.2), zorder=1)
+        c.edge('se', 'pool', color='#333333')
 
-    # Concat box
-    draw_box(ax, 10.9, 1.3, 0.9, 2.4, '⊕\nConcat\n640-d', CONCAT_GRAY, '#222222', 9)
+    dot.edge('conv4', 'se', color='#333333')
 
-    # Arrows to concat
-    ax.annotate('', xy=(10.9, 2.7), xytext=(10.7, 2.5),
-                arrowprops=dict(arrowstyle='->', color='#333333', lw=1.2), zorder=1)
-    ax.annotate('', xy=(10.9, 1.8), xytext=(3.0, 1.05),
-                arrowprops=dict(arrowstyle='->', color='#555555', lw=1.2,
-                                linestyle='dashed', connectionstyle='arc3,rad=-0.25'),
-                zorder=1)
+    # ── Feature Branch ──
+    with dot.subgraph(name='cluster_feat') as c:
+        c.attr(label='Feature Branch', labelloc='t',
+               style='filled,rounded', fillcolor='#FCEEF1',
+               color='#5A1220', fontcolor='#5A1220',
+               fontsize='12', penwidth='1.5')
 
-    # Prediction head
-    draw_box(ax, 12.1, 1.5, 1.7, 2.0, 'Pred Head\n640→512→256\n+Skip\n→ 3 outputs\n(σ, u, C)',
-             HEAD_GREEN, '#0A4D1E', 8)
+        c.node('feat', 'Feature Vector\n10-d',
+               fillcolor='#9D2235', color='#5A1220')
+        c.node('mlp', 'Feature MLP\n128-d',
+               fillcolor='#9D2235', color='#5A1220')
 
-    ax.annotate('', xy=(12.1, 2.5), xytext=(11.8, 2.5),
-                arrowprops=dict(arrowstyle='->', color='#333333', lw=1.5), zorder=1)
+        c.edge('feat', 'mlp', color='#333333')
 
-    # Dimension annotations (above boxes)
-    dims = ['128³', '64³', '32³', '16³', '8³']
-    dim_xs = [0.85, 2.4, 3.9, 5.4, 6.9]
-    for d, dx in zip(dims, dim_xs):
-        ax.text(dx, 3.85, d, ha='center', va='center', fontsize=7.5,
-                color='#555555', fontweight='bold')
+    # ── Concat + Head ──
+    dot.node('concat', '⊕ Concat\n640-d',
+             fillcolor='#4A4A4A', color='#222222')
+    dot.node('head', 'Prediction Head\n640 → 512 → 256 + Skip\n→ 3 outputs (σ, u, C)',
+             fillcolor='#0D5820', color='#0A4D1E')
 
-    plt.tight_layout(pad=0.3)
-    fig.savefig(os.path.join(FIGURES_DIR, 'fig2_architecture.png'))
-    fig.savefig(os.path.join(FIGURES_DIR, 'fig2_architecture.pdf'))
-    plt.close(fig)
+    dot.edge('pool', 'concat', color='#333333')
+    dot.edge('mlp', 'concat', color='#555555', style='dashed',
+             label='  128-d  ', fontcolor='#555555')
+    dot.edge('concat', 'head', color='#333333')
+
+    # Render
+    output_base = os.path.join(FIGURES_DIR, 'fig2_architecture')
+    for fmt in ('png', 'pdf'):
+        dot.format = fmt
+        dot.render(output_base, cleanup=True)
     print("  -> Saved fig2_architecture.png/pdf")
 
 
