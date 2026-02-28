@@ -192,7 +192,7 @@ Robust topology optimization under uncertain loads and material properties has b
 
 Table~\ref{tab:gaps} summarizes how SASTO addresses specific limitations in the prior literature. No existing work simultaneously provides surrogate-accelerated optimization, formal mesh connectivity guarantees, heterogeneous thickness by structural role, and uncertainty-aware constraint checking for building-scale topology optimization.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Gap analysis: prior methods and the limitations addressed by SASTO.}
 \label{tab:gaps}
@@ -292,7 +292,7 @@ The architecture (Figure~\ref{fig:architecture}) comprises four convolutional st
 
 Training uses the Huber loss (SmoothL1), AdamW optimizer ($\text{lr} = 5\times10^{-4}$), cosine annealing scheduler, exponential moving average (decay 0.999), mixed-precision (AMP), and gradient clipping ($\|\cdot\|_{\max} = 1.0$). Targets are normalized via $\log(1+|y|)$ followed by z-score standardization with 2nd/98th percentile winsorization. Augmentation includes random 90$^\circ$ rotations about the vertical axis, horizontal flips, Gaussian noise ($\sigma = 0.02$), and 10\% channel dropout. Training was performed on four NVIDIA GB200 GPUs. The full hyperparameter specification appears in Appendix~\ref{app:hyperparams}.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig2_architecture.png}
 \caption{Architecture of a single Surrogate3DResNet ensemble member. The 3D CNN encoder progressively reduces spatial resolution from $128^3$ to $8^3$ across four convolutional stages, followed by three squeeze-and-excitation residual blocks. Dual adaptive pooling (average + max) produces a 512-dimensional spatial embedding, concatenated with a 128-dimensional feature vector and passed through a two-layer prediction head with skip connection to produce three structural response scalars.}
@@ -362,7 +362,7 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 
 \textbf{Post-Processing.} Enclosed air pockets of $\leq 50$ voxels are filled, shard voxels with fewer than two face-neighbors are removed, and the final occupancy field is converted to a watertight STL mesh via signed distance field computation, marching cubes extraction \cite{lorensen1987}, and Laplacian smoothing.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig1_pipeline.png}
 \caption{Overview of the SASTO pipeline. The offline phase (top) trains a five-member deep ensemble on 11,178 FEA simulations. The online phase (bottom) applies three-phase sensitivity-guided erosion, using surrogate backpropagation for voxel ranking and conservative ensemble bounds for constraint checking. The output is a watertight, single-component STL mesh suitable for additive manufacturing.}
@@ -423,7 +423,7 @@ D(\phi) = \frac{1}{T}\sum_{j=1}^{T}\frac{\sigma_j(\phi)}{\mu_j(\phi)},
 \end{equation}
 and the disagreement divergence rate as $\Gamma_D(\phi) = [D(\phi) - D_0]/(1-\phi)$, where $D_0 = D(1.0)$ is the baseline disagreement. A value $\Gamma_D \gg 1$ signals that the surrogate is extrapolating into an out-of-distribution regime. For the reference case, $\Gamma_D \approx 0.184$, indicating sub-linear uncertainty growth during optimization.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Principal symbols and their units.}
 \label{tab:symbols}
@@ -474,14 +474,14 @@ A dataset of 14,293 unique single-story house geometries was generated from the 
 
 The wireframe-to-volume pipeline is illustrated in Figure~\ref{fig:wireframe_pipeline}. The distributions of the three FEA target quantities across the full dataset are shown in Figure~\ref{fig:distributions}.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig_wireframe_pipeline.png}
 \caption{Wireframe-to-volume conversion pipeline. A 3DWire building wireframe (a) is extruded into four structural part volumes (b), which are boolean-fused, meshed, and voxelized onto a $128^3$ grid (c). Part labels are preserved throughout, enabling part-aware optimization.}
 \label{fig:wireframe_pipeline}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig14_dataset_distributions.png
 % Histograms of von Mises stress, compliance, displacement across 14,293 simulations
@@ -498,7 +498,7 @@ The retained dataset spans a wide range of structural responses: peak von Mises 
 
 Mesh adequacy was verified via a convergence study on 50 representative geometries (Figure~\ref{fig:meshconvergence}).
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig19_mesh_convergence.png}
 \caption{Mesh convergence study on 50 representative geometries. Peak von Mises stress (left) and compliance (right) as functions of characteristic element size. Convergence ($<2\%$ change) is achieved at element size $\leq 0.15$ m, confirming mesh adequacy for the FEA training data.}
@@ -536,7 +536,7 @@ Table~\ref{tab:surrogate_metrics} reports per-target evaluation metrics on the h
 
 The surrogate achieves strong rank-order fidelity for displacement ($\rho = 0.970$) and compliance ($\rho = 0.948$), and moderate fidelity for peak von~Mises stress ($\rho = 0.737$), which is inherently harder to predict because it depends on local stress concentrations rather than global structural response. Median absolute errors are substantially smaller than the corresponding means (MedAE/MAE $\approx 0.2$--$0.25$), confirming that the high MAPE values are driven by a small fraction of outlier samples rather than systematic bias. The surrogate's adequacy is supported indirectly by optimization performance: all constraints were satisfied throughout 270 optimization batches with conservative ($\mu + k\sigma$) constraint checking, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ indicates sub-linear uncertainty growth during optimization.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Surrogate model evaluation on 1,114 held-out test samples. Targets are inverse-transformed from log space before computing metrics. Spearman~$\rho$ is the primary fidelity metric due to heavy-tailed target distributions (see text). All Spearman $p$-values are $<10^{-100}$.}
 \label{tab:surrogate_metrics}
@@ -552,7 +552,7 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig15_training_curves.png
 % Training and validation loss curves for all 5 ensemble members (M0-M4)
@@ -565,7 +565,7 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 
 Table~\ref{tab:reference} presents the primary optimization results for the reference geometry (Sample 00472, 116,872 voxels). SASTO-PA achieves 45.0\% material reduction in 159.5 seconds while satisfying all structural constraints. The uniform-thickness variant (SASTO-U) achieves 34.3\%, and the part-aware formulation provides an additional 10.7 percentage points by permitting thinner interior partitions. The optimization convergence (volume, stress, compliance versus batch number) is shown in Figure~\ref{fig:convergence}, and a three-dimensional comparison of the original and optimized geometries appears in Figure~\ref{fig:stl}.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Optimization results for the reference geometry (Sample 00472). All constraints are satisfied for both SASTO variants. Bold indicates best performance.}
 \label{tab:reference}
@@ -587,7 +587,7 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig4_convergence.png
 % Three-panel plot: volume fraction, VM stress, compliance vs. batch number, for SASTO-PA and SASTO-U
@@ -597,7 +597,7 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \label{fig:convergence}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig12_stl_comparison.png
 % Side-by-side 3D renderings: original vs SASTO-PA optimized, from front/side/top views
@@ -611,7 +611,7 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 
 To assess generalization beyond the reference case, SASTO-PA was evaluated on 930 diverse house geometries from the held-out test partition. Table~\ref{tab:multigeom} summarizes aggregate statistics. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Aggregate optimization results across 930 test geometries.}
 \label{tab:multigeom}
@@ -629,7 +629,7 @@ Median runtime & 50 s & --- & --- \\
 \end{tabular}
 \end{table}
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Top-5 and bottom-5 constraint-satisfying geometries by volume reduction, illustrating the range of SASTO-PA performance.}
 \label{tab:persample}
@@ -655,7 +655,7 @@ Median runtime & 50 s & --- & --- \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig20_multi_geometry.png
 % Four-panel figure: (a) per-sample volume reductions as bar chart, (b) reduction vs original volume scatter,
@@ -668,7 +668,7 @@ Median runtime & 50 s & --- & --- \\
 
 Three key observations emerge from the large-scale evaluation. First, 313 of 930 geometries (33.7\%) satisfy all conservative constraints at the optimized state. Among these, the mean material reduction is 23.5\% $\pm$ 7.8\%, with a maximum of 45.0\% and a median of 23.3\%. Second, 480 of 930 geometries (51.6\%) achieve meaningful optimization ($>1\%$ reduction), indicating that the surrogate provides useful guidance for the majority of inputs. Third, the remaining 450 geometries (48.4\%) achieve at most 1\% reduction because the surrogate's conservative compliance prediction already exceeds the constraint limit at or near the original geometry, leaving minimal feasible erosion budget. This identifies surrogate accuracy---specifically compliance calibration---as the binding limitation on generalization. Section~\ref{sec:discussion} analyzes this bottleneck in detail.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig_model_comparison.png}
 \caption{Visual comparison of optimization stages for a representative geometry. (a)~The original 3DWire wireframe skeleton encodes only topological connectivity. (b)~The volumetric house model generated from the wireframe, with four structural part types. (c)~The SASTO-U optimized model with uniform minimum thickness. (d)~The SASTO-PA optimized model with part-aware thickness, showing substantially thinner interior partitions while maintaining the structural shell.}
@@ -680,7 +680,7 @@ Three key observations emerge from the large-scale evaluation. First, 313 of 930
 
 The part-aware formulation produces a clear structural hierarchy in material retention, as detailed in Table~\ref{tab:perpart} and visualized in Figure~\ref{fig:perpart}. The majority of material removal comes from interior partition walls, consistent with their non-load-bearing structural role. Across all 313 constraint-satisfying models, exterior walls, roof, and floor retain over 91\% of their original volume, while interior walls are reduced to approximately 45\%, confirming that the part-aware thickness formulation correctly identifies and exploits the structural hierarchy.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Per-part material retention for the reference case and the mean across 313 constraint-satisfying models.}
 \label{tab:perpart}
@@ -699,7 +699,7 @@ Floor & 95.7 & 4.3 & 98.2 & 6.2 \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig5_per_part.png
 % Stacked bar chart showing per-part volume (kept vs removed) for each part type
@@ -713,7 +713,7 @@ Floor & 95.7 & 4.3 & 98.2 & 6.2 \\
 
 The optimization on the reference case proceeded through the three phases summarized in Table~\ref{tab:phases}. Phase~1 erosion accounts for over 99\% of material removal, validating the sensitivity-guided approach. Phases~2 and 3 achieved no additional removal, indicating that Phase~1 already reached the constraint boundary. The adaptive batch size behavior is shown in Figure~\ref{fig:batchadapt}.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Phase-by-phase breakdown of the SASTO-PA optimization on Sample 00472.}
 \label{tab:phases}
@@ -732,7 +732,7 @@ Post-processing & --- & $+0$ fill, $-19$ shards & 64,292 & $\sim$5 \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig8_batch_adaptation.png
 % Plot of batch size vs optimization step, showing halving when constraints are violated
@@ -749,7 +749,7 @@ T_{\mathrm{SIMP}} = N_{\mathrm{iter}} \times t_{\mathrm{FEA}} \approx 200 \times
 \end{equation}
 With SASTO's median runtime of $T_{\mathrm{SASTO}} = 50$ s $\approx 0.83$ min, the speedup ratio is $T_{\mathrm{SIMP}} / T_{\mathrm{SASTO}} = 300/0.83$ to $1{,}800/0.83 \approx 360\text{--}2{,}170\times$. We conservatively report 100--700$\times$ to account for potential solver-specific optimizations (e.g., multigrid preconditioners, reduced-order methods) and the fact that SIMP may converge in fewer iterations for favorable geometries. The wall-clock breakdown is visualized in Figure~\ref{fig:speedup}.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig11_speedup.png
 % Log-scale bar chart: SIMP (estimated range) vs SASTO runtime
@@ -769,7 +769,7 @@ With SASTO's median runtime of $T_{\mathrm{SASTO}} = 50$ s $\approx 0.83$ min, t
 
 Switching from the (26,\,6) foreground/background pairing to the (6,\,26) pairing eliminated all floating mesh fragments. The (26,\,6) configuration produced meshes with thousands of disconnected triangle groups, completely unusable for additive manufacturing toolpath generation. The (6,\,26) pairing guarantees a single connected mesh component in every tested case, confirming Proposition~\ref{prop:mc}. Table~\ref{tab:connectivity} quantifies the effect across 60 constraint-satisfying optimized geometries: 6-connectivity enforcement guarantees topologically connected voxel fields (100\% single-component), which translates to watertight single-component meshes in 90\% of cases after marching cubes extraction. The residual 10\% exhibit minor marching cubes artifacts (mean 1.2 components, maximum 4), all of which are trivially resolved by post-processing. The contrast between the two connectivity schemes is shown in Figure~\ref{fig:connectivity}.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Effect of 6-connectivity enforcement on mesh integrity across 60 optimized geometries. All optimized designs maintain exactly one voxel-level connected component, confirming Proposition~\ref{prop:mc}.}
 \label{tab:connectivity}
@@ -785,7 +785,7 @@ Max components & 1 & 4 \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig9_ablation.png or a specific connectivity comparison figure
 % Show 3D renderings of mesh output under 26-connectivity (many floating fragments) vs 6-connectivity (single component)
@@ -798,7 +798,7 @@ Max components & 1 & 4 \\
 
 On the reference case, the heterogeneous thickness formulation (SASTO-PA) achieves 45.0\% reduction compared to 34.3\% for the uniform formulation (SASTO-U), a 10.7 percentage point improvement. This result is consistent across the large-scale evaluation: across the 313 constraint-satisfying models, interior walls were reduced to 45.3\% $\pm$ 15.0\% of their original volume while load-bearing members (exterior walls, roof, floor) retained over 91\%. The corresponding Efficiency-Integrity Index (Figure~\ref{fig:efficiency}) shows SASTO-PA achieving 48\% higher $\mathcal{I}_{\mathrm{EI}}$ than SASTO-U on the reference case.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/fig6_efficiency.png}
 \caption{Efficiency-Integrity Index comparison. SASTO-PA achieves 48\% higher $\mathcal{I}_{\mathrm{EI}}$ than SASTO-U, indicating superior material utilization per unit of structural demand.}
@@ -810,7 +810,7 @@ On the reference case, the heterogeneous thickness formulation (SASTO-PA) achiev
 
 The uncertainty margin factor $k$ controls the trade-off between material savings and structural conservatism. As summarized in Table~\ref{tab:ksensitivity} and visualized in Figure~\ref{fig:ksensitivity}, reducing $k$ from 1.5 to 1.0 increased material removal from approximately 34\% to 45\% without observed constraint violations, a 32\% relative improvement. Lower values of $k$ accept more surrogate risk for greater savings; the optimal $k$ depends on surrogate fidelity and regulatory safety factor requirements. A systematic sweep with ground-truth FEA re-analysis at each level is critical future work.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Sensitivity of volume reduction to the uncertainty margin factor $k$.}
 \label{tab:ksensitivity}
@@ -827,7 +827,7 @@ $k$ & \textbf{Volume Reduction} & \textbf{Behavior} \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig10_k_sensitivity.png
 % Plot of volume reduction vs k, showing decreasing reduction with increasing k
@@ -843,7 +843,7 @@ $k$ & \textbf{Volume Reduction} & \textbf{Behavior} \\
 
 The five-member deep ensemble provides epistemic uncertainty estimates through prediction disagreement. Table~\ref{tab:uq} summarizes the ensemble statistics at the baseline geometry. The coefficient of variation (CV) ranges from 17\% to 31\%, reflecting genuine model epistemic uncertainty on out-of-distribution optimized geometries. The conservative constraint check ($\mu + k\sigma$, $k = 1.0$) adds a buffer proportional to this uncertainty, providing an implicit robustness mechanism.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
 \caption{Ensemble prediction uncertainty at the baseline geometry (Sample 00472).}
 \label{tab:uq}
@@ -861,7 +861,7 @@ Compliance (J) & 0.122 & 0.024 & 19.4 \\
 
 As material is removed, the optimized geometry progressively diverges from the training distribution of unoptimized houses. The constraint penalty prevents accepting configurations where uncertainty exceeds the budget margin, providing an implicit robustness mechanism. The evolution of ensemble uncertainty during optimization is shown in Figure~\ref{fig:uncertainty}.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig7_uncertainty.png
 % Multi-panel plot: normalized stress, compliance, displacement vs volume fraction, with ensemble Â±1Ïƒ bands
@@ -1139,7 +1139,7 @@ Mesh scale & 10.0 m / 128 voxels = 0.0781 m/voxel \\
 
 Figures~\ref{fig:voxelparts} and \ref{fig:voxelbeforeafter} show the voxelized representation of the design domain and the before/after comparison at a representative cross-section height.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig13_voxel_parts.png
 % Voxel grid slices at 3 heights, colored by part label (0-4)
@@ -1148,7 +1148,7 @@ Figures~\ref{fig:voxelparts} and \ref{fig:voxelbeforeafter} show the voxelized r
 \label{fig:voxelparts}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 % PLACEHOLDER: Insert figures/fig18_voxel_before_after.png
 % Side-by-side voxel occupancy at z=50: original (left), optimized (right), removal map (center)
