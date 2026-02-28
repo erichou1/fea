@@ -481,20 +481,18 @@ The wireframe-to-volume pipeline is illustrated in Figure~\ref{fig:wireframe_pip
 \label{fig:wireframe_pipeline}
 \end{figure}
 
-\begin{figure}[H]
-\centering
-% PLACEHOLDER: Insert figures/fig14_dataset_distributions.png
-% Histograms of von Mises stress, compliance, displacement across 14,293 simulations
-\includegraphics[width=0.9\textwidth]{figures/fig14_dataset_distributions.png}
-\caption{Distributions of the three FEA target quantities across 14,293 house simulations: peak von Mises stress (left), maximum displacement (center), and compliance (right). The heavy-tailed distributions motivate the log-transform normalization used during surrogate training.}
-\label{fig:distributions}
-\end{figure}
-
 \subsection{Data Filtering}
 
 Of the 14,293 simulations, 3,115 (21.8\%) were rejected based on three criteria: maximum displacement exceeding 1.0~m (indicating a diverged or numerically unstable solver), compliance below $10^{-6}$~J (degenerate geometry producing near-zero strain energy), or peak von Mises stress $\leq 0$~Pa (invalid result from mesh pathologies). The remaining 11,178 simulations were split into 8,943 training, 1,121 validation, and 1,114 test samples using family-aware random splitting: samples generated from the same base wireframe (i.e., differing only in wall thickness or roof parameter variations) are kept in the same partition to prevent data leakage from near-duplicate geometries.
 
 The retained dataset spans a wide range of structural responses: peak von Mises stress ranges from $5.5 \times 10^3$ to $4.2 \times 10^8$~Pa (4.9 orders of magnitude), maximum displacement from $2.8 \times 10^{-7}$ to $0.97$~m, and compliance from $1.1 \times 10^{-4}$ to $5.4 \times 10^3$~J (7.7 orders of magnitude). These heavy-tailed distributions (Figure~\ref{fig:distributions}) motivate the log-transform normalization used during surrogate training (\S\ref{sec:surrogate}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/fig14_dataset_distributions.png}
+\caption{Distributions of the three FEA target quantities across 14,293 house simulations: peak von Mises stress (left), maximum displacement (center), and compliance (right). The heavy-tailed distributions motivate the log-transform normalization used during surrogate training.}
+\label{fig:distributions}
+\end{figure}
 
 Mesh adequacy was verified via a convergence study on 50 representative geometries (Figure~\ref{fig:meshconvergence}).
 
@@ -563,7 +561,7 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 
 \subsection{Reference Case Optimization (Sample 00472)}
 
-Table~\ref{tab:reference} presents the primary optimization results for the reference geometry (Sample 00472, 116,872 voxels). SASTO-PA achieves 45.0\% material reduction in 159.5 seconds while satisfying all structural constraints. The uniform-thickness variant (SASTO-U) achieves 34.3\%, and the part-aware formulation provides an additional 10.7 percentage points by permitting thinner interior partitions. The optimization convergence (volume, stress, compliance versus batch number) is shown in Figure~\ref{fig:convergence}, and a three-dimensional comparison of the original and optimized geometries appears in Figure~\ref{fig:stl}.
+Table~\ref{tab:reference} presents the primary optimization results for the reference geometry (Sample 00472, 116,872 voxels). SASTO-PA achieves 45.0\% material reduction in 159.5 seconds while satisfying all structural constraints. The uniform-thickness variant (SASTO-U) achieves 34.3\%, and the part-aware formulation provides an additional 10.7 percentage points by permitting thinner interior partitions. The optimization convergence (volume, stress, compliance versus batch number) is shown in Figure~\ref{fig:convergence}.
 
 \begin{table}[H]
 \centering
@@ -597,19 +595,16 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \label{fig:convergence}
 \end{figure}
 
+\subsection{Multi-Geometry Generalization ($N = 930$)}
+
+To assess generalization beyond the reference case, SASTO-PA was evaluated on 930 diverse house geometries from the held-out test partition. Table~\ref{tab:multigeom} summarizes aggregate statistics. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}. A three-dimensional comparison of the original and optimized geometries for the reference case appears in Figure~\ref{fig:stl}.
+
 \begin{figure}[H]
 \centering
-% PLACEHOLDER: Insert figures/fig12_stl_comparison.png
-% Side-by-side 3D renderings: original vs SASTO-PA optimized, from front/side/top views
 \includegraphics[width=0.9\textwidth]{figures/fig12_stl_comparison.png}
-
 \caption{Three-dimensional comparison of the original (left) and SASTO-PA optimized (right) geometries for Sample 00472, shown from front, side, and top viewpoints. Interior partition walls are substantially thinned while the exterior shell, roof, and floor maintain near-original thickness.}
 \label{fig:stl}
 \end{figure}
-
-\subsection{Multi-Geometry Generalization ($N = 930$)}
-
-To assess generalization beyond the reference case, SASTO-PA was evaluated on 930 diverse house geometries from the held-out test partition. Table~\ref{tab:multigeom} summarizes aggregate statistics. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}.
 
 \begin{table}[H]
 \centering
@@ -1147,6 +1142,8 @@ Figures~\ref{fig:voxelparts} and \ref{fig:voxelbeforeafter} show the voxelized r
 \caption{Voxelized representation of the reference geometry at three cross-section heights. Part labels are color-coded: exterior wall (blue), interior wall (green), roof (orange), floor (red). The part labels drive the heterogeneous minimum thickness constraints in the part-aware formulation.}
 \label{fig:voxelparts}
 \end{figure}
+
+The effect of SASTO-PA optimization on the voxel grid is shown at a representative cross-section height in Figure~\ref{fig:voxelbeforeafter}.
 
 \begin{figure}[H]
 \centering
