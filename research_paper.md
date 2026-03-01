@@ -56,8 +56,14 @@
 \newlength{\figfull}\setlength{\figfull}{\textwidth}           % Full-width: multi-panel, flowcharts, wide 3D views
 \newlength{\figmed}\setlength{\figmed}{0.85\textwidth}         % Medium: dual-panel charts, distribution grids
 \newlength{\figcompact}\setlength{\figcompact}{0.7\textwidth}  % Compact: single-panel plots, bar charts
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+\usepackage[ruled,lined,linesnumbered]{algorithm2e}
+\SetKwInOut{Input}{Input}
+\SetKwInOut{Output}{Output}
+\SetKwComment{Comment}{$\triangleright$\ }{}
+\SetKwFor{For}{for}{do}{end}
+\SetKwIF{If}{ElseIf}{Else}{if}{then}{else if}{else}{end}
+\SetKwBlock{While}{while}{end}
+\DontPrintSemicolon
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{multirow}
@@ -377,45 +383,43 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 \begin{algorithm}[!htbp]
 \caption{Surrogate-Accelerated Sensitivity Topology Optimization (SASTO)}
 \label{alg:sasto}
-\begin{algorithmic}[1]
-\Require Occupancy $\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraints
-\Ensure Optimized occupancy $\boldsymbol{\rho}^*$
-\Statex
-\State $\boldsymbol{\rho} \leftarrow \boldsymbol{\rho}_0$
-\State $C_0 \leftarrow \Call{EnsemblePredict}{\boldsymbol{\rho}_0}$ \Comment{Baseline compliance}
-\Statex
-\Statex \textbf{--- Phase 1: Sensitivity-guided erosion ---}
-\For{$\text{layer} = 1, \ldots, L_{\max}$}
-    \State $\text{DT} \leftarrow \Call{DistanceTransform}{\boldsymbol{\rho}}$
-    \State $\text{Cand} \leftarrow$ interior surface voxels with $\text{DT}[\text{nbr}] \geq t_{\min}(p)$
-    \If{$\text{layer} \bmod 3 = 0$}
-        \State $s_i \leftarrow \frac{1}{M}\sum_{m} \nabla_{\rho_i}\!\bigl[f_m^{(C)} + \alpha\, f_m^{(\sigma)}\bigr]$ \Comment{Backprop sensitivity}
-    \EndIf
-    \State Sort Cand by descending $s_i$
-    \State $B \leftarrow B_0$
-    \While{Cand $\neq \varnothing$}
-        \State Select batch of $B$ 6-simple-point voxels from Cand
-        \State Tentatively remove batch from $\boldsymbol{\rho}$
-        \State $(\mu,\,\sigma) \leftarrow \Call{EnsemblePredict}{\boldsymbol{\rho}}$
-        \If{$\mu + k\sigma$ satisfies all constraints}
-            \State Commit removal
-        \Else
-            \State Undo removal
-            \State $B \leftarrow \max\!\bigl(B_{\min},\,\lfloor B/2 \rfloor\bigr)$
-        \EndIf
-    \EndWhile
-\EndFor
-\Statex
-\Statex \textbf{--- Phase 2: Fine-grained endgame ---}
-\State Repeat Phase 1 with $B \in \{5,\, 1\}$
-\Statex
-\Statex \textbf{--- Phase 3: Swap refinement ---}
-\State Swap thick interior voxels ($\text{DT} \geq 3$) with removed neighbors if volume decreases
-\Statex
-\Statex \textbf{--- Post-processing ---}
-\State Fill enclosed air pockets ($\leq 50$ voxels); remove shards ($< 2$ face-neighbors)
-\State $\boldsymbol{\rho}^* \leftarrow$ SDF $\longrightarrow$ Marching Cubes $\longrightarrow$ Laplacian Smooth $\longrightarrow$ STL
-\end{algorithmic}
+\Input{Occupancy grid $\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraint set}
+\Output{Optimized occupancy $\boldsymbol{\rho}^*$}
+\BlankLine
+$\boldsymbol{\rho} \leftarrow \boldsymbol{\rho}_0$\;
+$C_0 \leftarrow \textsc{EnsemblePredict}(\boldsymbol{\rho}_0)$ \Comment*[r]{baseline compliance}
+\BlankLine
+\tcc{Phase 1: Sensitivity-guided erosion}
+\For{$\mathrm{layer} = 1, \ldots, L_{\max}$}{
+  $\mathrm{DT} \leftarrow \textsc{DistanceTransform}(\boldsymbol{\rho})$\;
+  $\mathrm{Cand} \leftarrow$ interior surface voxels with $\mathrm{DT}[\mathrm{nbr}] \geq t_{\min}(p)$\;
+  \If{$\mathrm{layer} \bmod 3 = 0$}{
+    $s_i \leftarrow \frac{1}{M}\sum_{m} \nabla_{\rho_i}\!\bigl[f_m^{(C)} + \alpha\, f_m^{(\sigma)}\bigr]$ \Comment*[r]{backprop sensitivity}
+  }
+  Sort $\mathrm{Cand}$ by descending $s_i$\;
+  $B \leftarrow B_0$\;
+  \While{$\mathrm{Cand} \neq \varnothing$}{
+    Select batch of $B$ 6-simple-point voxels from $\mathrm{Cand}$\;
+    Tentatively remove batch from $\boldsymbol{\rho}$\;
+    $(\mu,\,\sigma) \leftarrow \textsc{EnsemblePredict}(\boldsymbol{\rho})$\;
+    \eIf{$\mu + k\sigma$ satisfies all constraints}{
+      Commit removal\;
+    }{
+      Undo removal\;
+      $B \leftarrow \max\!\bigl(B_{\min},\,\lfloor B/2 \rfloor\bigr)$\;
+    }
+  }
+}
+\BlankLine
+\tcc{Phase 2: Fine-grained endgame}
+Repeat Phase~1 with $B \in \{5,\, 1\}$\;
+\BlankLine
+\tcc{Phase 3: Swap refinement}
+Swap thick interior voxels ($\mathrm{DT} \geq 3$) with removed neighbors if volume decreases\;
+\BlankLine
+\tcc{Post-processing}
+Fill enclosed air pockets ($\leq 50$ voxels); remove shards ($< 2$ face-neighbors)\;
+$\boldsymbol{\rho}^* \leftarrow \text{SDF} \rightarrow \text{Marching Cubes} \rightarrow \text{Laplacian Smooth} \rightarrow \text{STL}$\;
 \end{algorithm}
 
 \subsection{Efficiency-Integrity Index}
