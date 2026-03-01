@@ -299,7 +299,7 @@ Training uses the Huber loss (SmoothL1), AdamW optimizer ($\text{lr} = 5\times10
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\figmed]{figures/fig2_architecture.png}
+\includegraphics[width=\figfull]{figures/fig2_architecture.png}
 \caption{Architecture of a single Surrogate3DResNet ensemble member. The 3D CNN encoder progressively reduces spatial resolution from $128^3$ to $8^3$ across four convolutional stages, followed by three squeeze-and-excitation residual blocks. Dual adaptive pooling (average + max) produces a 512-dimensional spatial embedding, concatenated with a 128-dimensional feature vector and passed through a two-layer prediction head with skip connection to produce three structural response scalars.}
 \label{fig:architecture}
 \end{figure}
@@ -369,7 +369,7 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\figmed]{figures/fig1_pipeline.png}
+\includegraphics[width=\figfull]{figures/fig1_pipeline.png}
 \caption{Overview of the SASTO pipeline. The offline phase (top) trains a five-member deep ensemble on 11,178 FEA simulations. The online phase (bottom) applies three-phase sensitivity-guided erosion, using surrogate backpropagation for voxel ranking and conservative ensemble bounds for constraint checking. The output is a watertight, single-component STL mesh suitable for additive manufacturing.}
 \label{fig:pipeline}
 \end{figure}

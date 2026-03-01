@@ -117,7 +117,7 @@ def generate_pipeline_figure():
     print("Generating fig1_pipeline.png ...")
 
     dot = graphviz.Digraph('pipeline', engine='dot')
-    dot.attr(rankdir='TB', dpi='300', size='10,14!',
+    dot.attr(rankdir='LR', dpi='300', size='18,6!',
              fontname='Arial', bgcolor='white',
              nodesep='0.8', ranksep='1.0', margin='0.5')
 
@@ -193,7 +193,7 @@ def generate_architecture_figure():
     print("Generating fig2_architecture.png ...")
 
     dot = graphviz.Digraph('architecture', engine='dot')
-    dot.attr(rankdir='TB', dpi='300', size='12,14!',
+    dot.attr(rankdir='LR', dpi='300', size='18,6!',
              fontname='Arial', bgcolor='white',
              nodesep='0.6', ranksep='0.8', margin='0.45',
              label='Surrogate3DResNet Architecture  (Single Ensemble Member, ~8.76M params)',
