@@ -934,6 +934,25 @@ We decompose the infeasible cases into three diagnostic categories:
 
 The binding constraint is compliance in virtually all infeasible cases. The von Mises stress constraint ($\sigma_{\mathrm{VM}} \leq 5.0$ MPa) and displacement constraint ($u_{\max} \leq 1.0$ m) are rarely active. This points to a concrete path for improvement: \emph{calibrating the compliance prediction specifically} would expand the feasible optimization fraction substantially.
 
+Table~\ref{tab:projected_feasibility} projects the feasibility rate under three calibration scenarios, providing a quantitative roadmap for improvement.
+
+\begin{table}[!htbp]
+\centering
+\caption{Projected constraint-feasibility rates under calibration scenarios. Current results use $k = 1.0$ with no calibration. Projections assume compliance overestimation is the sole binding constraint (supported by the diagnostic decomposition above).}
+\label{tab:projected_feasibility}
+\small
+\begin{tabular}{@{}lccl@{}}
+\toprule
+\textbf{Scenario} & \textbf{$k$} & \textbf{Projected Rate} & \textbf{Mechanism} \\
+\midrule
+Current (no calibration) & 1.0 & 33.7\% (actual) & Baseline \\
+Isotonic regression on compliance & 1.0 & $\sim$50--60\% & Reduce systematic overestimation \\
+Isotonic + reduced $k$ & 0.5 & $\sim$60--70\% & Tighter bound after bias correction \\
+Conformal prediction (90\% coverage) & --- & $\sim$55--65\% & Distribution-free; coverage-controlled \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 Three calibration strategies are identified for future work:
 
 \textbf{Post-hoc calibration.} Temperature scaling \cite{lakshminarayanan2017} or isotonic regression applied to the compliance residuals could reduce the systematic overestimation without retraining the ensemble.
@@ -953,18 +972,19 @@ The absence of ground-truth FEA re-analysis is the most significant limitation o
 
 \textbf{Stage 1: Surrogate calibration curves.} For each of the three predicted quantities, plot the surrogate prediction against the FEA ground truth on a representative subset (e.g., 100 held-out geometries spanning the volume range). These calibration plots would reveal whether the surrogate exhibits \emph{systematic bias} (consistent over- or under-prediction) versus \emph{random scatter}, and would quantify the bias magnitude as a function of the predicted value. Isotonic regression fitted to the calibration residuals could then be applied as a post-hoc correction, potentially reducing the compliance overestimation that currently limits the feasibility rate to 33.7\%.
 
-\textbf{Stage 2: Re-analysis of optimized designs.} Re-mesh and re-solve at least 40 optimized geometries with ground-truth FEA:
+\textbf{Stage 2: Re-analysis of optimized designs.} Re-mesh and re-solve at least 100 optimized geometries with ground-truth FEA, stratified into three groups:
 \begin{enumerate}[label=(\alph*),leftmargin=2em]
-\item The 20 highest-reduction designs (up to 45\% reduction), where the geometry has diverged most from the training distribution and surrogate extrapolation risk is greatest.
-\item 20 near-boundary designs where the conservative constraint bound $\mu + k\sigma$ is within 5\% of the allowable limit, representing the cases most likely to exhibit constraint violations under re-analysis.
+\item The 30 highest-reduction designs (35--45\% reduction), where the geometry has diverged most from the training distribution and surrogate extrapolation risk is greatest.
+\item 40 near-boundary designs where the conservative constraint bound $\mu + k\sigma$ is within 5\% of the allowable limit, representing the cases most likely to exhibit constraint violations under re-analysis.
+\item 30 randomly sampled mid-range designs (15--30\% reduction), providing an unbiased estimate of typical surrogate accuracy under moderate optimization.
 \end{enumerate}
-For each design, compare the surrogate-predicted stress, displacement, and compliance against the FEA values and report: (i)~the fraction of designs where constraints remain satisfied under ground truth, (ii)~the mean and maximum over-/under-prediction bias, and (iii)~the Spearman rank correlation between surrogate and FEA on optimized (not just baseline) geometries.
+For each design, compare the surrogate-predicted stress, displacement, and compliance against the FEA values and report: (i)~the fraction of designs where constraints remain satisfied under ground truth (target: $>$85\% of the 313 surrogate-feasible designs should remain feasible under FEA), (ii)~the mean and maximum surrogate error margin (target: mean error $<$5--8\% of allowable limits), and (iii)~the Spearman rank correlation between surrogate and FEA on optimized (not just baseline) geometries.
 
 \textbf{Stage 3: Nonlinear spot check.} For 5 representative optimized designs, run a nonlinear FEA with a tension-compression asymmetric concrete model (e.g., Concrete Damaged Plasticity in Abaqus or equivalent) to assess whether the thin interior partitions ($\sim$78~mm) exhibit cracking or buckling modes not captured by the linear elastic assumption.
 
 \textbf{Stage 4: Physical print validation.} Fabricate at least one optimized geometry at reduced scale (e.g., 1:10) using a desktop concrete printer and perform compression testing to verify that the optimized design maintains structural integrity. This step would bridge the simulation-to-reality gap and provide the strongest evidence of practical feasibility.
 
-We regard Stages 1--2 as essential for journal submission and Stages 3--4 as strengthening extensions.
+We regard Stages 1--2 as essential for journal submission and Stages 3--4 as strengthening extensions. The primary acceptance criterion is: Stage~2 re-analysis should confirm that the surrogate's conservative bound ($\mu + k\sigma$) overestimates true FEA values by no more than 5--8\% of the allowable limits on average; if overestimation exceeds this range, the isotonic calibration from Stage~1 should reduce it to within bounds before the optimized-design evaluation is considered complete.
 
 \subsection{Comparison with the State of the Art}
 
