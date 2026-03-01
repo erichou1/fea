@@ -378,32 +378,43 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 \caption{Surrogate-Accelerated Sensitivity Topology Optimization (SASTO)}
 \label{alg:sasto}
 \begin{algorithmic}[1]
-\Require Occupancy $\rho_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraints
-\Ensure Optimized occupancy $\rho^*$
-\State $\rho := \rho_0$;\ \ $C_0 :=$ \textsc{EnsemblePredict}$(\rho_0)$ \Comment{baseline compliance}
-\For{layer $= 1, \ldots, L_{\max}$} \Comment{\textbf{Phase 1: Sensitivity erosion}}
-    \State $\mathrm{DT} :=$ \textsc{DistanceTransform}$(\rho)$
-    \State Candidates $:=$ interior surface voxels with $\mathrm{DT}[\text{neighbor}] \geq t_{\min}(p)$
-    \If{layer $\bmod 3 = 0$}
-        \State $s_i := \frac{1}{M}\sum_m \nabla_{\rho_i}\bigl[f_m^{(C)} + \alpha f_m^{(\sigma)}\bigr]$ \Comment{backprop sensitivity}
+\Require Occupancy $\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraints
+\Ensure Optimized occupancy $\boldsymbol{\rho}^*$
+\Statex
+\State $\boldsymbol{\rho} \leftarrow \boldsymbol{\rho}_0$
+\State $C_0 \leftarrow \Call{EnsemblePredict}{\boldsymbol{\rho}_0}$ \Comment{Baseline compliance}
+\Statex
+\Statex \textbf{--- Phase 1: Sensitivity-guided erosion ---}
+\For{$\text{layer} = 1, \ldots, L_{\max}$}
+    \State $\text{DT} \leftarrow \Call{DistanceTransform}{\boldsymbol{\rho}}$
+    \State $\text{Cand} \leftarrow$ interior surface voxels with $\text{DT}[\text{nbr}] \geq t_{\min}(p)$
+    \If{$\text{layer} \bmod 3 = 0$}
+        \State $s_i \leftarrow \frac{1}{M}\sum_{m} \nabla_{\rho_i}\!\bigl[f_m^{(C)} + \alpha\, f_m^{(\sigma)}\bigr]$ \Comment{Backprop sensitivity}
     \EndIf
-    \State Sort candidates by descending $s_i$;\ \ $B := B_0$
-    \While{candidates remain}
-        \State Select batch of $B$ 6-simple-point voxels; tentatively remove from $\rho$
-        \State $(\mu,\,\sigma) :=$ \textsc{EnsemblePredict}$(\rho)$
+    \State Sort Cand by descending $s_i$
+    \State $B \leftarrow B_0$
+    \While{Cand $\neq \varnothing$}
+        \State Select batch of $B$ 6-simple-point voxels from Cand
+        \State Tentatively remove batch from $\boldsymbol{\rho}$
+        \State $(\mu,\,\sigma) \leftarrow \Call{EnsemblePredict}{\boldsymbol{\rho}}$
         \If{$\mu + k\sigma$ satisfies all constraints}
             \State Commit removal
         \Else
-            \State Undo removal;\ \ $B := \max(B_{\min},\,\lfloor B/2 \rfloor)$
+            \State Undo removal
+            \State $B \leftarrow \max\!\bigl(B_{\min},\,\lfloor B/2 \rfloor\bigr)$
         \EndIf
     \EndWhile
 \EndFor
-\State \Comment{\textbf{Phase 2: Fine-grained endgame}}
-\State Repeat Phase 1 loop with $B \in \{5,\,1\}$
-\State \Comment{\textbf{Phase 3: Swap refinement}}
-\State Swap thick interior voxels ($\mathrm{DT} \geq 3$) with removed neighbors if volume decreases
-\State Fill enclosed air pockets of $\leq 50$ voxels; remove shards with $< 2$ face-neighbors
-\State $\rho^* :=$ SDF~$\rightarrow$~marching cubes~$\rightarrow$~Laplacian smooth~$\rightarrow$~STL
+\Statex
+\Statex \textbf{--- Phase 2: Fine-grained endgame ---}
+\State Repeat Phase 1 with $B \in \{5,\, 1\}$
+\Statex
+\Statex \textbf{--- Phase 3: Swap refinement ---}
+\State Swap thick interior voxels ($\text{DT} \geq 3$) with removed neighbors if volume decreases
+\Statex
+\Statex \textbf{--- Post-processing ---}
+\State Fill enclosed air pockets ($\leq 50$ voxels); remove shards ($< 2$ face-neighbors)
+\State $\boldsymbol{\rho}^* \leftarrow$ SDF $\longrightarrow$ Marching Cubes $\longrightarrow$ Laplacian Smooth $\longrightarrow$ STL
 \end{algorithmic}
 \end{algorithm}
 
