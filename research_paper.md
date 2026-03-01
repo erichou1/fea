@@ -477,13 +477,20 @@ A dataset of 14,293 unique single-story house geometries was generated from the 
 \item \textbf{Voxelization.} The tetrahedral mesh is voxelized onto a $128^3$ regular grid using trimesh \cite{trimesh2019}, with each voxel assigned the part label of the enclosing tetrahedron. The voxel size (ranging from 0.016 to 0.078~m/voxel depending on building scale) is recorded in per-sample metadata to enable physical-units post-processing during optimization.
 \end{enumerate}
 
-The wireframe-to-volume pipeline is illustrated in Figure~\ref{fig:wireframe_pipeline}. The distributions of the three FEA target quantities across the full dataset are shown in Figure~\ref{fig:distributions}.
+The wireframe-to-volume pipeline is illustrated in Figure~\ref{fig:wireframe_pipeline}. Figure~\ref{fig:crosssections} shows cross-section views of representative house geometries, revealing the interior room layout, wall thicknesses, and part-label diversity that motivate the part-aware optimization strategy. The distributions of the three FEA target quantities across the full dataset are shown in Figure~\ref{fig:distributions}.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_wireframe_pipeline.png}
 \caption{Wireframe-to-volume conversion pipeline. A 3DWire building wireframe (a) is extruded into four structural part volumes (b), which are boolean-fused, meshed, and voxelized onto a $128^3$ grid (c). Part labels are preserved throughout, enabling part-aware optimization.}
 \label{fig:wireframe_pipeline}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figmed]{figures/fig_cross_sections.png}
+\caption{Cross-section views of three representative house geometries. Left: complete exterior model. Right: Y-midplane section revealing interior room layout. Color coding: exterior walls (gray), interior rooms (blue), roof (terracotta), floor (dark gray), attic floor (tan). The structural diversity across models motivates the part-aware thickness constraints used by SASTO-PA.}
+\label{fig:crosssections}
 \end{figure}
 
 \subsection{Data Filtering}
@@ -539,6 +546,15 @@ Table~\ref{tab:surrogate_metrics} reports per-target evaluation metrics on the h
 
 The surrogate achieves strong rank-order fidelity for displacement ($\rho = 0.970$) and compliance ($\rho = 0.948$), and moderate fidelity for peak von~Mises stress ($\rho = 0.737$), which is inherently harder to predict because it depends on local stress concentrations rather than global structural response. Median absolute errors are substantially smaller than the corresponding means (MedAE/MAE $\approx 0.2$--$0.25$), confirming that the high MAPE values are driven by a small fraction of outlier samples rather than systematic bias. The surrogate's adequacy is supported indirectly by optimization performance: all constraints were satisfied throughout 270 optimization batches with conservative ($\mu + k\sigma$) constraint checking, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ indicates sub-linear uncertainty growth during optimization.
 
+\begin{figure}[!htbp]
+\centering
+% PLACEHOLDER: Insert figures/fig15_training_curves.png
+% Training and validation loss curves for all 5 ensemble members (M0-M4)
+\includegraphics[width=\figmed]{figures/fig15_training_curves.png}
+\caption{Training (solid) and validation (dashed) loss convergence for the five deep ensemble members (M0--M4). All members converge to similar final loss values despite independent random initialization, with early stopping triggered between epochs 120 and 170. The consistent convergence behavior supports the ensemble diversity hypothesis.}
+\label{fig:training}
+\end{figure}
+
 \begin{table}[!htbp]
 \centering
 \caption{Surrogate model evaluation on 1,114 held-out test samples. Targets are inverse-transformed from log space before computing metrics. Spearman~$\rho$ is the primary fidelity metric due to heavy-tailed target distributions (see text). All Spearman $p$-values are $<10^{-100}$.}
@@ -554,15 +570,6 @@ Compliance (J) & $6.01 \times 10^{-2}$ & $1.16 \times 10^{-2}$ & 18.5 & 0.030 & 
 \bottomrule
 \end{tabular}
 \end{table}
-
-\begin{figure}[!htbp]
-\centering
-% PLACEHOLDER: Insert figures/fig15_training_curves.png
-% Training and validation loss curves for all 5 ensemble members (M0-M4)
-\includegraphics[width=\figmed]{figures/fig15_training_curves.png}
-\caption{Training (solid) and validation (dashed) loss convergence for the five deep ensemble members (M0--M4). All members converge to similar final loss values despite independent random initialization, with early stopping triggered between epochs 120 and 170. The consistent convergence behavior supports the ensemble diversity hypothesis.}
-\label{fig:training}
-\end{figure}
 
 \subsection{Reference Case Optimization (Sample 00472)}
 
@@ -602,22 +609,17 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 
 \subsection{Multi-Geometry Generalization ($N = 930$)}
 
-To assess generalization beyond the reference case, SASTO-PA was evaluated on 930 diverse house geometries from the held-out test partition. Table~\ref{tab:multigeom} summarizes aggregate statistics. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}. A three-dimensional comparison of the original and optimized geometries for the reference case appears in Figure~\ref{fig:stl}.
+To assess generalization beyond the reference case, SASTO-PA was evaluated on 930 diverse house geometries from the held-out test partition. Table~\ref{tab:multigeom} summarizes aggregate statistics. The full multi-geometry results are visualized in Figure~\ref{fig:multigeom}.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=\figfull]{figures/fig12_stl_comparison.png}
-\caption{Three-dimensional comparison of the original (left) and SASTO-PA optimized (right) geometries for Sample 00472, shown from front, side, and top viewpoints. Interior partition walls are substantially thinned while the exterior shell, roof, and floor maintain near-original thickness.}
-\label{fig:stl}
-\end{figure}
+% PLACEHOLDER: Insert figures/fig20_multi_geometry.png
+% Four-panel figure: (a) per-sample volume reductions as bar chart, (b) reduction vs original volume scatter,
+% (c) runtime distribution histogram, (d) per-part retention for 7 constraint-OK models
+\includegraphics[width=\figmed]{figures/fig20_multi_geometry.png}
 
-Figure~\ref{fig:crosssections} presents cross-section views of six representative house geometries from the dataset. Each model is sliced at the Y-midplane, revealing the interior room layout, wall thicknesses, and the relationship between exterior shell and interior partition walls. These cross-sections illustrate the structural diversity across the 14,293-sample dataset and motivate the part-aware optimization strategy: interior partitions (blue) vary widely in thickness and configuration, while exterior walls (gray), roof (terracotta), and floor (dark gray) form a consistent structural shell.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\figmed]{figures/fig_cross_sections.png}
-\caption{Cross-section views of three representative house geometries. Left: complete exterior model. Right: Y-midplane section revealing interior room layout. Color coding: exterior walls (gray), interior rooms (blue), roof (terracotta), floor (dark gray), attic floor (tan). The structural diversity across models motivates the part-aware thickness constraints used by SASTO-PA.}
-\label{fig:crosssections}
+\caption{Multi-geometry optimization results ($N = 930$). (a) Volume reduction per sample, colored by constraint satisfaction. (b) Reduction versus original volume, showing no strong correlation with geometry size. (c) Runtime distribution. (d) Per-part material retention for the 313 constraint-satisfying models: exterior walls (91.6\%), interior walls (45.3\%), roof (96.8\%), and floor (98.2\%).}
+\label{fig:multigeom}
 \end{figure}
 
 \begin{table}[!htbp]
@@ -664,24 +666,20 @@ Median runtime & 50 s & --- & --- \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[!htbp]
-\centering
-% PLACEHOLDER: Insert figures/fig20_multi_geometry.png
-% Four-panel figure: (a) per-sample volume reductions as bar chart, (b) reduction vs original volume scatter,
-% (c) runtime distribution histogram, (d) per-part retention for 7 constraint-OK models
-\includegraphics[width=\figmed]{figures/fig20_multi_geometry.png}
-
-\caption{Multi-geometry optimization results ($N = 930$). (a) Volume reduction per sample, colored by constraint satisfaction. (b) Reduction versus original volume, showing no strong correlation with geometry size. (c) Runtime distribution. (d) Per-part material retention for the 313 constraint-satisfying models: exterior walls (91.6\%), interior walls (45.3\%), roof (96.8\%), and floor (98.2\%).}
-\label{fig:multigeom}
-\end{figure}
-
-Three key observations emerge from the large-scale evaluation. First, 313 of 930 geometries (33.7\%) satisfy all conservative constraints at the optimized state. Among these, the mean material reduction is 23.5\% $\pm$ 7.8\%, with a maximum of 45.0\% and a median of 23.3\%. Second, 480 of 930 geometries (51.6\%) achieve meaningful optimization ($>1\%$ reduction), indicating that the surrogate provides useful guidance for the majority of inputs. Third, the remaining 450 geometries (48.4\%) achieve at most 1\% reduction because the surrogate's conservative compliance prediction already exceeds the constraint limit at or near the original geometry, leaving minimal feasible erosion budget. This identifies surrogate accuracy---specifically compliance calibration---as the binding limitation on generalization. Section~\ref{sec:discussion} analyzes this bottleneck in detail.
+Three key observations emerge from the large-scale evaluation. First, 313 of 930 geometries (33.7\%) satisfy all conservative constraints at the optimized state. Among these, the mean material reduction is 23.5\% $\pm$ 7.8\%, with a maximum of 45.0\% and a median of 23.3\%. Second, 480 of 930 geometries (51.6\%) achieve meaningful optimization ($>1\%$ reduction), indicating that the surrogate provides useful guidance for the majority of inputs. Third, the remaining 450 geometries (48.4\%) achieve at most 1\% reduction because the surrogate's conservative compliance prediction already exceeds the constraint limit at or near the original geometry, leaving minimal feasible erosion budget. This identifies surrogate accuracy---specifically compliance calibration---as the binding limitation on generalization. Section~\ref{sec:discussion} analyzes this bottleneck in detail. The visual progression from input wireframe through all optimization stages is shown in Figure~\ref{fig:model_comparison}, and a three-dimensional before/after comparison for the reference case appears in Figure~\ref{fig:stl}.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_model_comparison.png}
 \caption{Visual comparison of optimization stages for a representative geometry. (a)~The original 3DWire wireframe skeleton encodes only topological connectivity. (b)~The volumetric house model generated from the wireframe, with four structural part types. (c)~The SASTO-U optimized model with uniform minimum thickness. (d)~The SASTO-PA optimized model with part-aware thickness, showing substantially thinner interior partitions while maintaining the structural shell.}
 \label{fig:model_comparison}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig12_stl_comparison.png}
+\caption{Three-dimensional comparison of the original (left) and SASTO-PA optimized (right) geometries for Sample 00472, shown from front, side, and top viewpoints. Interior partition walls are substantially thinned while the exterior shell, roof, and floor maintain near-original thickness.}
+\label{fig:stl}
 \end{figure}
 
 \subsection{Per-Part Material Retention}
