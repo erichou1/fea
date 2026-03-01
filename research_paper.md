@@ -56,14 +56,8 @@
 \newlength{\figfull}\setlength{\figfull}{\textwidth}           % Full-width: multi-panel, flowcharts, wide 3D views
 \newlength{\figmed}\setlength{\figmed}{0.85\textwidth}         % Medium: dual-panel charts, distribution grids
 \newlength{\figcompact}\setlength{\figcompact}{0.7\textwidth}  % Compact: single-panel plots, bar charts
-\usepackage[ruled,lined,linesnumbered]{algorithm2e}
-\SetKwInOut{Input}{Input}
-\SetKwInOut{Output}{Output}
-\SetKwComment{Comment}{$\triangleright$\ }{}
-\SetKwFor{For}{for}{do}{end}
-\SetKwIF{If}{ElseIf}{Else}{if}{then}{else if}{else}{end}
-\SetKwBlock{While}{while}{end}
-\DontPrintSemicolon
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{multirow}
@@ -383,43 +377,41 @@ SASTO operates in three phases, as outlined in Algorithm~\ref{alg:sasto} and ill
 \begin{algorithm}[!htbp]
 \caption{Surrogate-Accelerated Sensitivity Topology Optimization (SASTO)}
 \label{alg:sasto}
-\Input{Occupancy grid $\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraint set}
-\Output{Optimized occupancy $\boldsymbol{\rho}^*$}
-\BlankLine
-$\boldsymbol{\rho} \leftarrow \boldsymbol{\rho}_0$\;
-$C_0 \leftarrow \textsc{EnsemblePredict}(\boldsymbol{\rho}_0)$ \Comment*[r]{baseline compliance}
-\BlankLine
-\tcc{Phase 1: Sensitivity-guided erosion}
-\For{$\mathrm{layer} = 1, \ldots, L_{\max}$}{
-  $\mathrm{DT} \leftarrow \textsc{DistanceTransform}(\boldsymbol{\rho})$\;
-  $\mathrm{Cand} \leftarrow$ interior surface voxels with $\mathrm{DT}[\mathrm{nbr}] \geq t_{\min}(p)$\;
-  \If{$\mathrm{layer} \bmod 3 = 0$}{
-    $s_i \leftarrow \frac{1}{M}\sum_{m} \nabla_{\rho_i}\!\bigl[f_m^{(C)} + \alpha\, f_m^{(\sigma)}\bigr]$ \Comment*[r]{backprop sensitivity}
-  }
-  Sort $\mathrm{Cand}$ by descending $s_i$\;
-  $B \leftarrow B_0$\;
-  \While{$\mathrm{Cand} \neq \varnothing$}{
-    Select batch of $B$ 6-simple-point voxels from $\mathrm{Cand}$\;
-    Tentatively remove batch from $\boldsymbol{\rho}$\;
-    $(\mu,\,\sigma) \leftarrow \textsc{EnsemblePredict}(\boldsymbol{\rho})$\;
-    \eIf{$\mu + k\sigma$ satisfies all constraints}{
-      Commit removal\;
-    }{
-      Undo removal\;
-      $B \leftarrow \max\!\bigl(B_{\min},\,\lfloor B/2 \rfloor\bigr)$\;
-    }
-  }
-}
-\BlankLine
-\tcc{Phase 2: Fine-grained endgame}
-Repeat Phase~1 with $B \in \{5,\, 1\}$\;
-\BlankLine
-\tcc{Phase 3: Swap refinement}
-Swap thick interior voxels ($\mathrm{DT} \geq 3$) with removed neighbors if volume decreases\;
-\BlankLine
-\tcc{Post-processing}
-Fill enclosed air pockets ($\leq 50$ voxels); remove shards ($< 2$ face-neighbors)\;
-$\boldsymbol{\rho}^* \leftarrow \text{SDF} \rightarrow \text{Marching Cubes} \rightarrow \text{Laplacian Smooth} \rightarrow \text{STL}$\;
+\small
+\textbf{Input:} Occupancy grid~$\boldsymbol{\rho}_0$, part labels, trained ensemble $\{f_1,\ldots,f_M\}$, constraint set. \\
+\textbf{Output:} Optimized occupancy~$\boldsymbol{\rho}^*$.
+\vspace{4pt}
+\hrule
+\vspace{6pt}
+\begin{enumerate}[leftmargin=*, labelindent=0pt, itemsep=3pt]
+
+  \item[\textbf{0.}] \textbf{Initialize.}  Set the working grid $\boldsymbol{\rho}$ to the input occupancy~$\boldsymbol{\rho}_0$ and record the baseline compliance~$C_0$ by querying the ensemble.
+
+  \item[] \textit{--- Phase~1: Sensitivity-Guided Erosion ---}
+
+  \item[\textbf{1.}] \textbf{Build candidate set.}  For each erosion layer, compute a distance transform of~$\boldsymbol{\rho}$ and collect all interior surface voxels whose nearest neighbor depth exceeds the part-dependent minimum thickness~$t_{\min}(p)$.
+
+  \item[\textbf{2.}] \textbf{Rank by sensitivity.}  Every third layer, back-propagate through the ensemble to obtain per-voxel sensitivity scores $s_i = \frac{1}{M}\sum_m \nabla_{\rho_i}[f_m^{(C)} + \alpha\, f_m^{(\sigma)}]$. Sort candidates in descending order of~$s_i$.
+
+  \item[\textbf{3.}] \textbf{Batched removal with adaptive sizing.}  Select a batch of~$B$ topology-preserving (6-simple-point) voxels and tentatively remove them. Query the ensemble for the predicted mean~$\mu$ and uncertainty~$\sigma$. If the conservative bound $\mu + k\sigma$ satisfies all constraints, commit the removal; otherwise, undo and halve the batch size down to~$B_{\min}$. Repeat until no candidates remain.
+
+  \item[\textbf{4.}] \textbf{Iterate.}  Repeat Steps 1--3 for up to $L_{\max}$ erosion layers.
+
+  \item[] \textit{--- Phase~2: Fine-Grained Endgame ---}
+
+  \item[\textbf{5.}] \textbf{Small-batch pass.}  Re-run Phase~1 with batch sizes $B \in \{5, 1\}$ to remove individual voxels that the coarse pass could not resolve.
+
+  \item[] \textit{--- Phase~3: Swap Refinement ---}
+
+  \item[\textbf{6.}] \textbf{Interior swap.}  For each thick interior voxel (distance transform $\geq 3$), attempt to swap it with a previously removed surface neighbor; accept the swap only if total volume decreases.
+
+  \item[] \textit{--- Post-Processing ---}
+
+  \item[\textbf{7.}] \textbf{Clean up.}  Fill small enclosed air pockets ($\leq 50$~voxels) and remove shard voxels with fewer than two face-connected neighbors.
+
+  \item[\textbf{8.}] \textbf{Mesh extraction.}  Convert the optimized voxel grid to a signed distance field, extract an isosurface via Marching Cubes, apply Laplacian smoothing, and export as a watertight STL.
+
+\end{enumerate}
 \end{algorithm}
 
 \subsection{Efficiency-Integrity Index}
