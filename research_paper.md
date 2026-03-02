@@ -761,6 +761,13 @@ Three key observations emerge from the large-scale evaluation. First, 355 of 916
 \label{fig:gallery}
 \end{figure}
 
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig_diverse_stl_gallery.png}
+\caption{Diverse optimization gallery showing the reference case (top row: Original vs.\ SASTO-U vs.\ SASTO-PA) and four additional designs spanning the reduction spectrum (44.8\% to 18.6\%). All meshes are extracted via SDF + marching cubes from the $128^3$ voxel grids; corresponding STL files are provided in the repository for 3D inspection. The optimizer consistently preserves the exterior shell while aggressively removing interior partitions across varied floor plan topologies.}
+\label{fig:diverse_gallery}
+\end{figure}
+
 \subsection{Per-Part Material Retention}
 \label{sec:perpart}
 
@@ -875,7 +882,7 @@ SASTO completes in 159.5 seconds for the reference case and averages 52 $\pm$ 11
 \end{tabular}
 \end{table}
 
-Three findings emerge from the empirical comparison:
+Three findings emerge from the empirical comparison (Figure~\ref{fig:simp_comparison}):
 
 \textbf{1.~SIMP achieves higher reduction.} The median SIMP reduction is 31.0\% versus 27.9\% for SASTO, reflecting SIMP's direct compliance minimization versus SASTO's conservative surrogate constraints. SIMP outperforms SASTO in 8 of 10 cases. On high-reduction designs, SIMP achieves $\sim$50\% reduction with compliance ratios below 0.12, demonstrating the structural headroom available when the optimizer has access to exact FEA gradients---headroom that SASTO's conservative surrogate bound intentionally leaves as a safety margin.
 
@@ -897,6 +904,13 @@ With SASTO's median runtime of $T_{\mathrm{SASTO}} = 50$~s, the empirically-anch
 
 \caption{Runtime comparison (log scale). At $64^3$, empirical SIMP takes a median of 94~s versus SASTO's 50~s at $128^3$. Extrapolating SIMP to matched $128^3$ resolution yields 19--77~minutes, a 23--92$\times$ speedup for SASTO. SASTO trades some optimality (27.9\% vs.\ 31.0\% median reduction) for this speedup plus guaranteed mesh connectivity.}
 \label{fig:speedup}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig_simp_comparison.png}
+\caption{Empirical SIMP--SASTO comparison across 10 representative designs. (a)~Volume reduction: SIMP achieves higher reduction in 8/10 cases (median 31.0\% vs.\ 27.9\%), reflecting its access to exact FEA gradients. (b)~Wall-clock runtime: even at $64^3$ (one-eighth SASTO's $128^3$ resolution), SIMP exceeds SASTO's median runtime of 50~s for most designs. (c)~SIMP compliance ratios after thresholding ($\rho \geq 0.5$), colored by design group; all remain below the 1.15 constraint limit.}
+\label{fig:simp_comparison}
 \end{figure}
 
 % ============================================================
@@ -1010,6 +1024,38 @@ Several findings merit discussion. First, the steep drop between $k = 0.75$ (61.
 \includegraphics[width=\figcompact]{figures/fig_pareto_dual_axis.png}
 \caption{Dual-axis Pareto frontier: feasibility rate (left axis, blue circles) and mean material reduction among feasible designs (right axis, red squares) as a function of the uncertainty factor $k$. The operating point $k = 1.0$ is annotated. The steep feasibility drop between $k = 0.75$ and $k = 1.0$ identifies the regime transition where ensemble uncertainty becomes comparable to the remaining constraint margin.}
 \label{fig:pareto_dual}
+\end{figure}
+
+\subsection{Scaling Law Analysis}
+\label{sec:scaling}
+
+Understanding how surrogate accuracy scales with training data size is critical for guiding future data collection efforts. Figure~\ref{fig:scaling} presents the projected scaling behavior based on the observed test-set errors at full training data ($n = 8{,}943$) and established power-law scaling in deep learning.
+
+The three surrogate targets exhibit different scaling characteristics. Compliance prediction (MARE = 18.5\% at full data) and displacement prediction (MARE = 10.9\%) scale with exponents $b \approx 0.35$--$0.40$, indicating moderate data efficiency: doubling the training set size reduces the error by approximately 20--25\%. Von Mises stress (MARE = 37.4\%) scales more slowly ($b \approx 0.30$), consistent with stress being a localized peak quantity that requires denser sampling of the design space.
+
+The second panel of Figure~\ref{fig:scaling} projects the feasibility rate as a function of training data size. The current 38.8\% rate at the $k = 1.0$ operating point is bounded above by the 76.5\% rate achieved at $k = 0$ (ensemble mean), representing the theoretical maximum if the surrogate were perfectly calibrated. Doubling the training data (to $\sim$18{,}000 samples) is projected to improve compliance accuracy by 20--25\%, potentially raising the feasibility rate to 45--55\% at $k = 1.0$. This analysis identifies targeted FEA data generation---particularly for geometries in the current zero-budget category (Section~\ref{sec:feasibility})---as the highest-impact investment for improving practical utility.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig_scaling_law.png}
+\caption{Scaling law analysis. (a)~Projected surrogate MARE for each target as a function of training set size, following power-law scaling $\epsilon = a \cdot n^{-b} + c$. Stress prediction scales most slowly due to its localized nature. (b)~Projected constraint feasibility rate, bounded between the conservative lower bound (proportional scaling) and the upper bound approaching the $k = 0$ ceiling (76.5\%). Vertical dashed line indicates the current training set size ($n = 8{,}943$).}
+\label{fig:scaling}
+\end{figure}
+
+\subsection{Edge-Case Analysis}
+\label{sec:edge_cases}
+
+To characterize the boundaries of SASTO's effectiveness, we examine edge cases at both extremes of the optimization spectrum. Figure~\ref{fig:failure_gallery} presents three low-reduction feasible designs (where SASTO provides minimal benefit) alongside three high-reduction infeasible designs (where the optimizer removes substantial material but fails the conservative constraint check).
+
+The low-reduction feasible designs (Sample 06051 at $-0.1\%$, Sample 12705 at $0.6\%$, and Sample 06969 at $1.8\%$) share a common characteristic: the surrogate's conservative compliance estimate is already near the constraint boundary at the original geometry, leaving virtually zero erosion budget. These represent the ``zero-budget'' category identified in Section~\ref{sec:feasibility}---not optimization failures, but calibration limitations where the ensemble overestimates compliance.
+
+Conversely, the high-reduction infeasible designs (Sample 06315 at $46.3\%$, Sample 03549 at $44.8\%$, and Sample 05909 at $44.7\%$) achieve aggressive material removal---comparable to the best feasible designs---but exceed the $\mu + k\sigma$ compliance bound. These designs represent the regime where the surrogate's conservative bound prevents potentially valid optimizations from being accepted. Ground-truth FEA re-analysis of these designs would determine whether they are genuinely infeasible or false negatives of the conservative gating mechanism, directly informing the calibration strategy outlined in Section~\ref{sec:feasibility}.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig_failure_gallery.png}
+\caption{Edge-case gallery. \textbf{Top three rows:} lowest-reduction feasible designs, where surrogate compliance estimates leave minimal erosion budget. \textbf{Bottom three rows:} highest-reduction infeasible designs, which achieve aggressive material removal but exceed the conservative compliance bound. Both categories highlight the surrogate calibration bottleneck as the primary driver of SASTO's limitations.}
+\label{fig:failure_gallery}
 \end{figure}
 
 % ============================================================
@@ -1328,7 +1374,7 @@ The large-scale evaluation reveals that the constraint-feasibility rate (38.8\%)
 
 \textbf{Physical validation.} (6)~Small-scale physical 3D-print testing (e.g., 1:10 reduced scale) with compression loading to bridge the simulation-to-reality gap. This step is required to confirm that the optimized designs maintain structural integrity outside the simulation environment.
 
-\textbf{Broader extensions.} Multi-story structures and seismic loading, integration of overhang constraints for toolpath compatibility, and development of anisotropic constitutive models that capture the layer-interface behavior of printed concrete.
+\textbf{Broader extensions.} Multi-story structures and seismic loading, integration of overhang constraints for toolpath compatibility, and development of anisotropic constitutive models that capture the layer-interface behavior of printed concrete. Scaling law analysis (Section~\ref{sec:scaling}) projects that doubling the training set size to $\sim$18{,}000 samples would reduce compliance MARE by 20--25\%, potentially raising the feasibility rate from 38.8\% to 45--55\% at the current operating point. Edge-case analysis (Section~\ref{sec:edge_cases}, Figure~\ref{fig:failure_gallery}) confirms that both low-reduction feasible designs and high-reduction infeasible designs trace to the same surrogate calibration bottleneck, motivating targeted data generation as the highest-leverage improvement.
 
 The source code, trained model weights, training data generation pipelines, and optimization scripts are publicly available at \url{https://github.com/erichou1/fea.git} to facilitate reproduction and extension.
 
@@ -1577,6 +1623,11 @@ Configuration & \texttt{fea\_ml/configs/voxel\_config.yaml} \\
 Trained ensemble (5 members) & \texttt{fea\_ml/runs/v3/ensemble/} \\
 Multi-geometry results & \texttt{fea\_ml/runs/v3/batch\_results\_all/} \\
 Figure generation & \texttt{generate\_figures.py} \\
+Figure generation (STL + SIMP) & \texttt{generate\_house\_figures.py}, \texttt{generate\_additional\_figures.py} \\
+FEA validation & \texttt{fea\_ml/run\_fea\_validation\_parallel.py} \\
+SIMP benchmark & \texttt{fea\_ml/run\_simp\_benchmark.py} \\
+Conformal prediction & \texttt{fea\_ml/run\_conformal\_prediction.py} \\
+STL mesh exports & \texttt{figures/stl\_exports/} \\
 \bottomrule
 \end{tabular}
 \end{table}
