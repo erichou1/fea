@@ -213,39 +213,44 @@ def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
 def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
                   color_by='cutout', alpha=0.95, target_faces=10000,
                   title=None, title_size=13, part_labels=None):
-    """Render a cutout view — clip mesh at *cut_frac* to reveal interior.
+    """Render a cutout view — use trimesh.slice_plane for a clean planar cut.
     If *part_labels* is provided, faces are coloured by structural part."""
     render_m = decimate_mesh(mesh, target_faces)
-    verts = render_m.vertices.copy()
-    faces = render_m.faces
+
+    # --- clean planar slice (no shards) ---
+    axis_map = {'x': 0, 'y': 1, 'z': 2}
+    axis_idx = axis_map[cut_axis]
+    v_min = render_m.vertices[:, axis_idx].min()
+    v_max = render_m.vertices[:, axis_idx].max()
+    cut_val = v_min + cut_frac * (v_max - v_min)
+
+    plane_origin = np.zeros(3)
+    plane_origin[axis_idx] = cut_val
+    plane_normal = np.zeros(3)
+    plane_normal[axis_idx] = -1.0          # keep the +axis half
+
+    try:
+        sliced = render_m.slice_plane(plane_origin, plane_normal)
+    except Exception:
+        return
+    if sliced is None or len(sliced.faces) == 0:
+        return
+
+    verts = sliced.vertices.copy()
+    faces = sliced.faces
 
     # Part colours in original voxel space (before centering)
     if part_labels is not None:
         centroids_orig = verts[faces].mean(axis=1)
-        all_colors = get_part_face_colors(centroids_orig, part_labels, alpha)
+        colors = get_part_face_colors(centroids_orig, part_labels, alpha)
     else:
-        all_colors = None
+        colors = None
 
-    center = verts.mean(axis=0)
+    center = render_m.vertices.mean(axis=0)
     verts -= center
 
-    axis_map = {'x': 0, 'y': 1, 'z': 2}
-    axis_idx = axis_map[cut_axis]
-    v_min = verts[:, axis_idx].min()
-    v_max = verts[:, axis_idx].max()
-    cut_val = v_min + cut_frac * (v_max - v_min)
-
-    centroids = verts[faces].mean(axis=1)
-    mask = centroids[:, axis_idx] > cut_val
-    faces = faces[mask]
-
-    if len(faces) == 0:
-        return
-
     triangles = verts[faces]
-    if all_colors is not None:
-        colors = all_colors[mask]
-    else:
+    if colors is None:
         colors = get_colors(faces, triangles, color_by, alpha)
 
     edge_colors = colors.copy()
@@ -337,7 +342,7 @@ def export_stl_files():
             continue
 
         base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.0)
 
         base_mesh.export(str(STL_DIR / f"{sid}_original.stl"))
         opt_mesh.export(str(STL_DIR / f"{sid}_optimized.stl"))
@@ -373,8 +378,8 @@ def generate_cross_section_figure():
     FACES = 5000
     print("  Pre-decimating meshes...")
     base_mesh = decimate_mesh(voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4), FACES)
-    v12_mesh = decimate_mesh(voxels_to_mesh_clean(v12_occ.copy(), blur_sigma=0.1), FACES)
-    v11_mesh = decimate_mesh(voxels_to_mesh_clean(v11_occ.copy(), blur_sigma=0.1), FACES)
+    v12_mesh = decimate_mesh(voxels_to_mesh_clean(v12_occ.copy(), blur_sigma=0.0), FACES)
+    v11_mesh = decimate_mesh(voxels_to_mesh_clean(v11_occ.copy(), blur_sigma=0.0), FACES)
     print(f"  Decimated to: {len(base_mesh.faces)}, {len(v12_mesh.faces)}, {len(v11_mesh.faces)} faces")
 
     # LARGE figure to fill page
@@ -473,7 +478,7 @@ def generate_diverse_stl_gallery():
 
         # Low blur for optimised mesh → visible holes / thinning
         base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.0)
 
         # Load part labels
         part_labels = None
@@ -565,9 +570,9 @@ def generate_failure_gallery():
         if base_occ is None or opt_occ is None:
             continue
 
-        # Low blur for optimised mesh → visible holes / thinning
+        # No blur for optimised mesh → visible holes / thinning
         base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.0)
 
         # Load part labels
         part_labels_local = None

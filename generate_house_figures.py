@@ -218,38 +218,46 @@ def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
 def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
                   color_by='cutout', alpha=0.95, target_faces=10000,
                   title=None, title_size=13, part_labels=None):
-    """Render interior cutout — clip mesh at 50 % to expose the inside.
+    """Render interior cutout — use trimesh.slice_plane for a clean planar cut.
     If *part_labels* is provided, faces are coloured by structural part."""
     render_m = decimate_mesh(mesh, target_faces)
-    verts = render_m.vertices.copy()
-    faces = render_m.faces
+
+    # --- clean planar slice (no shards) ---
+    axis_map = {'x': 0, 'y': 1, 'z': 2}
+    axis_idx = axis_map[cut_axis]
+    v_min = render_m.vertices[:, axis_idx].min()
+    v_max = render_m.vertices[:, axis_idx].max()
+    cut_val = v_min + cut_frac * (v_max - v_min)
+
+    # plane_normal points in +axis direction; slice_plane keeps the side the
+    # normal points AWAY from, i.e. the side > cut_val
+    plane_origin = np.zeros(3)
+    plane_origin[axis_idx] = cut_val
+    plane_normal = np.zeros(3)
+    plane_normal[axis_idx] = -1.0          # keep the +axis half
+
+    try:
+        sliced = render_m.slice_plane(plane_origin, plane_normal)
+    except Exception:
+        return
+    if sliced is None or len(sliced.faces) == 0:
+        return
+
+    verts = sliced.vertices.copy()
+    faces = sliced.faces
 
     # Part colours in original voxel space (before centering)
     if part_labels is not None:
         centroids_orig = verts[faces].mean(axis=1)
-        all_colors = get_part_face_colors(centroids_orig, part_labels, alpha)
+        colors = get_part_face_colors(centroids_orig, part_labels, alpha)
     else:
-        all_colors = None
+        colors = None
 
-    center = verts.mean(axis=0)
+    center = render_m.vertices.mean(axis=0)   # use full-mesh center for consistency
     verts -= center
 
-    axis_map = {'x': 0, 'y': 1, 'z': 2}
-    axis_idx = axis_map[cut_axis]
-    v_min = verts[:, axis_idx].min()
-    v_max = verts[:, axis_idx].max()
-    cut_val = v_min + cut_frac * (v_max - v_min)
-
-    centroids = verts[faces].mean(axis=1)
-    mask = centroids[:, axis_idx] > cut_val
-    faces = faces[mask]
-    if len(faces) == 0:
-        return
-
     triangles = verts[faces]
-    if all_colors is not None:
-        colors = all_colors[mask]
-    else:
+    if colors is None:
         colors = get_colors(len(faces), triangles, color_by, alpha)
 
     edge_colors = colors.copy()
@@ -260,7 +268,9 @@ def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
                             edgecolors=edge_colors, linewidths=0.15)
     ax.add_collection3d(poly)
 
-    extents = np.abs(verts).max(axis=0) * 1.05
+    # Use full-mesh extents so camera framing matches sibling panels
+    full_verts = render_m.vertices - center
+    extents = np.abs(full_verts).max(axis=0) * 1.05
     ax.set_xlim(-extents[0], extents[0])
     ax.set_ylim(-extents[1], extents[1])
     ax.set_zlim(-extents[2], extents[2])
@@ -276,8 +286,8 @@ def load_sample_meshes(sample_id):
 
     Returns (base_mesh, opt_mesh, part_labels).
     *part_labels* is the 3-D integer part-label grid (or None).
-    The optimized mesh uses blur_sigma=0.1 so that voxel-level
-    optimisation (holes, thinned walls) is clearly visible.
+    The optimized mesh uses blur_sigma=0.0 (no smoothing) so that
+    voxel-level optimisation (holes, thinned walls) is clearly visible.
     """
     # Baseline
     base_path = DATA_DIR / sample_id / "occ.npz"
@@ -298,7 +308,7 @@ def load_sample_meshes(sample_id):
         part_labels = np.load(part_path)['data']
 
     base_mesh = voxels_to_mesh(base_occ, blur_sigma=0.4)
-    opt_mesh = voxels_to_mesh(opt_occ, blur_sigma=0.1)
+    opt_mesh = voxels_to_mesh(opt_occ, blur_sigma=0.0)
     return base_mesh, opt_mesh, part_labels
 
 
@@ -408,8 +418,8 @@ def generate_type_comparison():
 
     # Low blur for optimized meshes → preserves holes / thinned walls
     base_mesh = voxels_to_mesh(base_occ, blur_sigma=0.4)
-    v11_mesh = voxels_to_mesh(v11_occ, blur_sigma=0.1)
-    v12_mesh = voxels_to_mesh(v12_occ, blur_sigma=0.1)
+    v11_mesh = voxels_to_mesh(v11_occ, blur_sigma=0.0)
+    v12_mesh = voxels_to_mesh(v12_occ, blur_sigma=0.0)
 
     # Pre-decimate once
     FACES = 5000
