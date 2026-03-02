@@ -36,6 +36,21 @@ DATA_DIR = FEA_ML / "data" / "runs_real_128"
 OPT_DIR = FEA_ML / "runs" / "v3" / "optimization_128"
 SIMP_JSON = FEA_ML / "runs" / "v3" / "simp_benchmark.json"
 
+# Part labels (from fea_ml/fea_ml/geometry/voxelize.py)
+PART_EMPTY = 0
+PART_EXTERIOR = 1   # exterior wall
+PART_INTERIOR = 2   # interior wall
+PART_ROOF = 3
+PART_FLOOR = 4
+
+# RGBA colours per structural part
+PART_COLORS = {
+    PART_EXTERIOR: [0.27, 0.51, 0.71, 1.0],   # Steel blue
+    PART_INTERIOR: [1.00, 0.50, 0.31, 1.0],    # Coral/orange
+    PART_ROOF:     [0.42, 0.56, 0.14, 1.0],    # Olive green
+    PART_FLOOR:    [0.44, 0.50, 0.56, 1.0],    # Slate gray
+}
+
 # Larger base font sizes
 plt.rcParams.update({
     "font.family": "serif",
@@ -84,7 +99,7 @@ def voxels_to_mesh_clean(occ, blur_sigma=0.6, add_floor=True, keep_largest=True)
     verts -= 1.0
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
 
-    if keep_largest:
+    if keep_largest and len(mesh.faces) < 500000:
         components = mesh.split()
         if len(components) > 1:
             mesh = max(components, key=lambda c: len(c.faces))
@@ -114,7 +129,7 @@ def decimate_mesh(mesh, target_faces=10000):
 
 
 def get_colors(faces, triangles, color_by, alpha):
-    """Generate face colors for rendering."""
+    """Generate face colors (flat mode — used when no part labels available)."""
     n = len(faces)
     if color_by == 'height':
         centroids_z = triangles.mean(axis=1)[:, 2]
@@ -139,18 +154,42 @@ def get_colors(faces, triangles, color_by, alpha):
     return colors
 
 
+def get_part_face_colors(centroids_voxel, part_labels, alpha=0.95):
+    """Map face centroids (in voxel coordinate space) to per-part RGBA colours."""
+    shape = np.array(part_labels.shape)
+    coords = np.clip(np.round(centroids_voxel).astype(int), 0, shape - 1)
+    labels = part_labels[coords[:, 0], coords[:, 1], coords[:, 2]]
+
+    colors = np.full((len(labels), 4), [0.55, 0.55, 0.55, alpha])
+    for label_val, rgba in PART_COLORS.items():
+        mask = labels == label_val
+        if mask.any():
+            colors[mask] = rgba
+    colors[:, 3] = alpha
+    return colors
+
+
 def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
-                target_faces=10000, title=None, title_size=13):
-    """Render a trimesh on a matplotlib 3D axis using decimation (solid, no dots)."""
+                target_faces=10000, title=None, title_size=13, part_labels=None):
+    """Render a trimesh on a matplotlib 3D axis.  If *part_labels* is
+    provided, faces are coloured by structural part; otherwise uses *color_by*."""
     render_m = decimate_mesh(mesh, target_faces)
     verts = render_m.vertices.copy()
     faces = render_m.faces
+
+    # Part colours in original voxel space (before centering)
+    if part_labels is not None:
+        centroids_orig = verts[faces].mean(axis=1)
+        colors = get_part_face_colors(centroids_orig, part_labels, alpha)
+    else:
+        colors = None
 
     center = verts.mean(axis=0)
     verts -= center
 
     triangles = verts[faces]
-    colors = get_colors(faces, triangles, color_by, alpha)
+    if colors is None:
+        colors = get_colors(faces, triangles, color_by, alpha)
 
     edge_colors = colors.copy()
     edge_colors[:, :3] *= 0.85
@@ -173,12 +212,19 @@ def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
 
 def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
                   color_by='cutout', alpha=0.95, target_faces=10000,
-                  title=None, title_size=13):
-    """Render a cutout view - clip half the mesh to reveal interior structure.
-    Like a building cross-section showing the inside of optimized walls."""
+                  title=None, title_size=13, part_labels=None):
+    """Render a cutout view — clip mesh at *cut_frac* to reveal interior.
+    If *part_labels* is provided, faces are coloured by structural part."""
     render_m = decimate_mesh(mesh, target_faces)
     verts = render_m.vertices.copy()
     faces = render_m.faces
+
+    # Part colours in original voxel space (before centering)
+    if part_labels is not None:
+        centroids_orig = verts[faces].mean(axis=1)
+        all_colors = get_part_face_colors(centroids_orig, part_labels, alpha)
+    else:
+        all_colors = None
 
     center = verts.mean(axis=0)
     verts -= center
@@ -197,7 +243,10 @@ def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
         return
 
     triangles = verts[faces]
-    colors = get_colors(faces, triangles, color_by, alpha)
+    if all_colors is not None:
+        colors = all_colors[mask]
+    else:
+        colors = get_colors(faces, triangles, color_by, alpha)
 
     edge_colors = colors.copy()
     edge_colors[:, :3] *= 0.80
@@ -287,8 +336,8 @@ def export_stl_files():
         if base_occ is None or opt_occ is None:
             continue
 
-        base_mesh = voxels_to_mesh_clean(base_occ.copy())
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy())
+        base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
 
         base_mesh.export(str(STL_DIR / f"{sid}_original.stl"))
         opt_mesh.export(str(STL_DIR / f"{sid}_optimized.stl"))
@@ -313,12 +362,19 @@ def generate_cross_section_figure():
     n_u = int(v12_occ.sum())
     n_pa = int(v11_occ.sum())
 
-    # Pre-decimate meshes ONCE (avoid repeated expensive decimation per subplot)
+    # Load part labels for the reference case
+    part_labels = None
+    part_path = OPT_DIR / "fixed_part.npz"
+    if part_path.exists():
+        part_labels = np.load(part_path)['data']
+
+    # Pre-decimate meshes ONCE
+    # Low blur for optimised meshes preserves holes / thinned walls
     FACES = 5000
     print("  Pre-decimating meshes...")
-    base_mesh = decimate_mesh(voxels_to_mesh_clean(base_occ.copy()), FACES)
-    v12_mesh = decimate_mesh(voxels_to_mesh_clean(v12_occ.copy()), FACES)
-    v11_mesh = decimate_mesh(voxels_to_mesh_clean(v11_occ.copy()), FACES)
+    base_mesh = decimate_mesh(voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4), FACES)
+    v12_mesh = decimate_mesh(voxels_to_mesh_clean(v12_occ.copy(), blur_sigma=0.1), FACES)
+    v11_mesh = decimate_mesh(voxels_to_mesh_clean(v11_occ.copy(), blur_sigma=0.1), FACES)
     print(f"  Decimated to: {len(base_mesh.faces)}, {len(v12_mesh.faces)}, {len(v11_mesh.faces)} faces")
 
     # LARGE figure to fill page
@@ -339,20 +395,23 @@ def generate_cross_section_figure():
         # Row 1: Isometric view
         ax = fig.add_subplot(3, 3, col + 1, projection='3d')
         render_mesh(ax, mesh, elev=25, azim=-60, color_by=cmode,
-                    title=col_labels[col], title_size=15, target_faces=99999)
+                    title=col_labels[col], title_size=15, target_faces=99999,
+                    part_labels=part_labels)
 
         # Row 2: Front elevation
         ax = fig.add_subplot(3, 3, 3 + col + 1, projection='3d')
         render_mesh(ax, mesh, elev=5, azim=-90, color_by=cmode,
                     title="Front Elevation" if col == 0 else "Front",
-                    title_size=14, target_faces=99999)
+                    title_size=14, target_faces=99999,
+                    part_labels=part_labels)
 
-        # Row 3: Interior cutout (the view showing inside of optimized walls)
+        # Row 3: Interior cutout — vertical half-cut, part-coloured
         ax = fig.add_subplot(3, 3, 6 + col + 1, projection='3d')
-        render_cutout(ax, mesh, cut_axis='y', cut_frac=0.4,
+        render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5,
                       elev=15, azim=-25, color_by=cmode,
                       title="Interior Cutout" if col == 0 else "Cutout",
-                      title_size=14, target_faces=99999)
+                      title_size=14, target_faces=99999,
+                      part_labels=part_labels)
 
     # Row labels
     row_names = ["Isometric\nView", "Front\nElevation", "Interior\nCutout"]
@@ -412,33 +471,40 @@ def generate_diverse_stl_gallery():
         n_base = int(base_occ.sum())
         n_opt = int(opt_occ.sum())
 
-        base_mesh = voxels_to_mesh_clean(base_occ.copy())
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy())
+        # Low blur for optimised mesh → visible holes / thinning
+        base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
+
+        # Load part labels
+        part_labels = None
+        part_path = DATA_DIR / sid / "part.npz"
+        if part_path.exists():
+            part_labels = np.load(part_path)['data']
 
         # Pre-decimate once per design (avoid repeated expensive operation)
         FACES = 5000
         base_mesh = decimate_mesh(base_mesh, FACES)
         opt_mesh = decimate_mesh(opt_mesh, FACES)
 
-        # Col 1: Original
+        # Col 1: Original — coloured by structural part
         ax1 = fig.add_subplot(4, 3, row * 3 + 1, projection='3d')
         t1 = "Original" if row == 0 else ""
-        render_mesh(ax1, base_mesh, color_by='original',
+        render_mesh(ax1, base_mesh, color_by='original', part_labels=part_labels,
                     title=f"{t1}\n{n_base:,} vox" if row == 0 else f"{n_base:,} vox",
                     title_size=13, target_faces=99999)
 
-        # Col 2: Optimized
+        # Col 2: Optimized — coloured by part (holes/thinning visible)
         ax2 = fig.add_subplot(4, 3, row * 3 + 2, projection='3d')
         t2 = "Optimized" if row == 0 else ""
-        render_mesh(ax2, opt_mesh, color_by='height',
+        render_mesh(ax2, opt_mesh, color_by='height', part_labels=part_labels,
                     title=f"{t2}\n{n_opt:,} vox ($-${red:.1f}%)" if row == 0 else f"{n_opt:,} vox ($-${red:.1f}%)",
                     title_size=13, target_faces=99999)
 
-        # Col 3: Interior cutout of optimized
+        # Col 3: Interior cutout — clean vertical half-cut, part-coloured
         ax3 = fig.add_subplot(4, 3, row * 3 + 3, projection='3d')
         t3 = "Interior Cutout" if row == 0 else ""
-        render_cutout(ax3, opt_mesh, cut_axis='y', cut_frac=0.4,
-                      elev=15, azim=-25,
+        render_cutout(ax3, opt_mesh, cut_axis='y', cut_frac=0.5,
+                      elev=15, azim=-25, part_labels=part_labels,
                       title=f"{t3}\nSample {sid}" if row == 0 else f"Sample {sid}",
                       title_size=13, target_faces=99999)
 
@@ -499,8 +565,15 @@ def generate_failure_gallery():
         if base_occ is None or opt_occ is None:
             continue
 
-        base_mesh = voxels_to_mesh_clean(base_occ.copy())
-        opt_mesh = voxels_to_mesh_clean(opt_occ.copy())
+        # Low blur for optimised mesh → visible holes / thinning
+        base_mesh = voxels_to_mesh_clean(base_occ.copy(), blur_sigma=0.4)
+        opt_mesh = voxels_to_mesh_clean(opt_occ.copy(), blur_sigma=0.1)
+
+        # Load part labels
+        part_labels_local = None
+        part_path = DATA_DIR / sid / "part.npz"
+        if part_path.exists():
+            part_labels_local = np.load(part_path)['data']
 
         # Pre-decimate once per design
         FACES = 4000
@@ -511,18 +584,18 @@ def generate_failure_gallery():
         status_sym = "PASS" if feas else "FAIL"
 
         ax1 = fig.add_subplot(6, 3, row * 3 + 1, projection='3d')
-        render_mesh(ax1, base_mesh, color_by='original',
+        render_mesh(ax1, base_mesh, color_by='original', part_labels=part_labels_local,
                     title=f"Original ({n_base:,})" if row == 0 else f"{n_base:,} vox",
                     title_size=12, target_faces=99999)
 
         ax2 = fig.add_subplot(6, 3, row * 3 + 2, projection='3d')
-        render_mesh(ax2, opt_mesh, color_by=cmode,
+        render_mesh(ax2, opt_mesh, color_by=cmode, part_labels=part_labels_local,
                     title=f"Optimized ({red:+.1f}%, {status_sym})",
                     title_size=12, target_faces=99999)
 
         ax3 = fig.add_subplot(6, 3, row * 3 + 3, projection='3d')
-        render_cutout(ax3, opt_mesh, cut_axis='y', cut_frac=0.4,
-                      elev=15, azim=-25,
+        render_cutout(ax3, opt_mesh, cut_axis='y', cut_frac=0.5,
+                      elev=15, azim=-25, part_labels=part_labels_local,
                       title=f"Interior ({sid})",
                       title_size=12, target_faces=99999)
 

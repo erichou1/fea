@@ -661,7 +661,7 @@ $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \end{tabular}
 
 \medskip
-\noindent {\footnotesize $^\dagger$\emph{Compliance, conservative} reports the ensemble upper bound $\mu_C + k\sigma_C$ ($k = 1.0$). For the baseline, this equals $0.098 + 1.0 \times 0.024 = 0.122$~J. The allowable compliance $C_{\text{allow}} = 1.15 \times C_0$ uses the same conservative estimate as $C_0$, yielding $C_{\text{allow}} = 0.140$~J. SASTO-PA's final value (0.146~J) satisfies a \emph{per-sample adaptive} threshold: during erosion, the baseline response is re-evaluated at reduced volume fractions, increasing the effective allowable to $\sim$0.151~J at the final volume fraction. The constraint is satisfied at every batch.}
+\noindent {\footnotesize $^\dagger$\emph{Compliance, conservative} reports the ensemble upper bound $\mu_C + k\sigma_C$ ($k = 1.0$). For the baseline, this equals $0.098 + 1.0 \times 0.024 = 0.122$~J. The allowable compliance $C_{\text{allow}} = 1.15 \times C_0$ uses the same conservative estimate as $C_0$, yielding $C_{\text{allow}} = 0.140$~J. SASTO-PA's surrogate-predicted conservative compliance reaches 0.146~J at the final batch, which exceeds this fixed bound. However, the independent same-method FEA re-analysis (Section~\ref{sec:fea_reanalysis}) confirms a ground-truth compliance ratio of 1.004 for this design---well within the $1.15\times$ limit---indicating that the apparent violation is an artefact of surrogate overestimation rather than a true constraint breach. The constraint is satisfied at every erosion batch according to the surrogate's own conservative estimate when evaluated against the batch-specific baseline prediction.}
 \end{table}
 
 \begin{figure}[!htbp]
@@ -760,21 +760,21 @@ Three key observations emerge from the large-scale evaluation. First, 355 of 916
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_optimized_gallery.png}
-\caption{Gallery of four SASTO-PA optimized houses spanning the full volume reduction range, from high-reduction designs ($>$40\%) to moderate designs ($\sim$18\%). Each row shows: original geometry (left), optimized geometry colored by height (center), and an interior cutout view (right). The cutout reveals how interior walls are thinned while the exterior shell and roof are preserved.}
+\caption{Gallery of four SASTO-PA optimized houses spanning the full volume reduction range, from high-reduction designs ($>$40\%) to moderate designs ($\sim$18\%). Each row shows: original geometry (left), optimized geometry (center), and a vertical half-cut interior view (right). All renders are coloured by structural part: exterior walls (blue), interior walls (orange), roof (green), floor (gray). The reduced-blur mesh extraction preserves voxel-level material removal, making thinned walls and holes clearly visible.}
 \label{fig:gallery}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_diverse_stl_gallery.png}
-\caption{SASTO-PA optimization gallery: original (left), optimized (center), and interior cutout (right) for four designs spanning 18--45\% material reduction. The cutout views expose the interior room layout, showing how partition walls are thinned. All meshes are single-component watertight geometries exported as STL files in the repository.}
+\caption{SASTO-PA optimization gallery: original (left), optimized (center), and vertical half-cut interior view (right) for four designs spanning 18--45\% material reduction. Faces are coloured by structural part (exterior walls blue, interior walls orange, roof green, floor gray), clearly showing how partition walls are thinned while the load-bearing shell is preserved. All meshes are single-component watertight geometries exported as STL files in the repository.}
 \label{fig:diverse_gallery}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_cross_section_comparison.png}
-\caption{Cross-section comparison of optimization types for the reference case (Sample 00472). Three views (isometric, front elevation, interior cutout) reveal how SASTO-U and SASTO-PA differ in interior wall treatment. The interior cutout view clips the mesh at 40\% depth to expose the room layout, showing that SASTO-PA aggressively thins interior partitions to 1-voxel minimum while SASTO-U retains 2-voxel walls throughout. Both variants preserve the exterior shell and roof structure.}
+\caption{Cross-section comparison of optimization types for the reference case (Sample 00472). Three views (isometric, front elevation, interior cutout) reveal how SASTO-U and SASTO-PA differ in interior wall treatment. The vertical half-cut exposes the room layout; faces are coloured by structural part (exterior walls blue, interior walls orange, roof green, floor gray). SASTO-PA aggressively thins interior partitions to 1-voxel minimum while SASTO-U retains 2-voxel walls throughout. Both variants preserve the exterior shell and roof structure.}
 \label{fig:cross_section_comparison}
 \end{figure}
 
@@ -1064,7 +1064,7 @@ Conversely, the high-reduction infeasible designs (Sample 06315 at $46.3\%$, Sam
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_failure_gallery.png}
-\caption{Edge-case gallery showing original (left), optimized (center), and interior cutout (right) views. \textbf{Top three rows:} lowest-reduction feasible designs, where surrogate compliance estimates leave minimal erosion budget. \textbf{Bottom three rows:} highest-reduction infeasible designs, which achieve aggressive material removal but exceed the conservative compliance bound. Both categories highlight the surrogate calibration bottleneck as the primary driver of SASTO's limitations.}
+\caption{Edge-case gallery showing original (left), optimized (center), and vertical half-cut interior view (right). Faces are coloured by structural part (exterior walls blue, interior walls orange, roof green, floor gray). \textbf{Top three rows:} lowest-reduction feasible designs, where surrogate compliance estimates leave minimal erosion budget. \textbf{Bottom three rows:} highest-reduction infeasible designs, which achieve aggressive material removal but exceed the conservative compliance bound. Both categories highlight the surrogate calibration bottleneck as the primary driver of SASTO's limitations.}
 \label{fig:failure_gallery}
 \end{figure}
 
@@ -1245,11 +1245,11 @@ Independent same-method FEA re-analysis on all 355 constraint-satisfying optimiz
 \end{enumerate}
 A preliminary surrogate-level stratified sample has been selected (Section~\ref{sec:feasibility}); among these 100 designs, 47 currently satisfy conservative constraints and the mean volume reduction is 19.8\%. For each design, the FEA re-analysis should compare the surrogate-predicted stress, displacement, and compliance against the FEA values and report: (i)~the fraction of designs where constraints remain satisfied under ground truth (target: $>$85\% of the 355 surrogate-feasible designs should remain feasible under FEA), (ii)~the mean and maximum surrogate error margin (target: mean error $<$5--8\% of allowable limits), and (iii)~the Spearman rank correlation between surrogate and FEA on optimized (not just baseline) geometries.
 
-\textbf{Stage 3: Nonlinear spot check.} For 5 representative optimized designs, run a nonlinear FEA with a tension-compression asymmetric concrete model (e.g., Concrete Damaged Plasticity in Abaqus or equivalent) to assess whether the thin interior partitions ($\sim$78~mm) exhibit cracking or buckling modes not captured by the linear elastic assumption.
+\textbf{Stage 3: Nonlinear spot check (planned).} For 5 representative optimized designs, a nonlinear FEA with a tension-compression asymmetric concrete model (e.g., Concrete Damaged Plasticity in Abaqus or equivalent) would assess whether the thin interior partitions ($\sim$78~mm) exhibit cracking or buckling modes not captured by the linear elastic assumption.
 
-\textbf{Stage 4: Physical print validation.} Fabricate at least one optimized geometry at reduced scale (e.g., 1:10) using a desktop concrete printer and perform compression testing to verify that the optimized design maintains structural integrity. This step would bridge the simulation-to-reality gap and provide the strongest evidence of practical feasibility.
+\textbf{Stage 4: Physical print validation (planned).} Fabricate at least one optimized geometry at reduced scale (e.g., 1:10) using a desktop concrete printer and perform compression testing to verify that the optimized design maintains structural integrity. This step would bridge the simulation-to-reality gap and provide the strongest evidence of practical feasibility.
 
-We regard Stages 1--2 as essential for journal submission and Stages 3--4 as strengthening extensions. Stage~1 calibration diagnostics have been completed on the held-out test set (Table~\ref{tab:residuals}), confirming mild conservative bias. Stage~2 matched-method FEA validation on 100 stratified designs is reported below.
+Stages 1--2 have been completed and are reported below. Stage~1 calibration diagnostics on the held-out test set (Table~\ref{tab:residuals}) confirmed mild conservative bias. Stage~2 matched-method FEA validation on all 355 constraint-satisfying designs yielded a 100\% survival rate (Section~\ref{sec:fea_reanalysis}). Stages 3--4 remain as strengthening extensions for future work.
 
 \subsubsection{Same-Method FEA Validation on 100 Designs}
 \label{sec:fea_reanalysis}
@@ -1350,7 +1350,7 @@ where $k = 4$ for a plate with both vertical edges restrained (connected to perp
 
 \textbf{Boundary condition idealization.} The FEA training and validation data uses a fixed-face boundary condition at the minimum-$x$ face (one vertical side wall fully restrained), modeling a cantilever-type loading scenario rather than a foundation-supported building. This idealization was chosen because it provides a consistent, reproducible structural test with well-defined stress gradients---a standard benchmark in structural topology optimization \cite{bendsoe2003}. Real houses rest on foundations with gravity as the primary load path; the cantilever condition produces a different stress distribution pattern (bending-dominated rather than compression-dominated) and exercises the structure more aggressively than foundation fixity. Crucially, the same boundary condition is used across all training, optimization, and validation simulations, so all comparative results (relative compliance ratios, volume reductions, ranking correlations) remain internally valid. However, absolute stress and displacement magnitudes should not be interpreted as predictions for foundation-supported buildings, and production deployment would require re-training under realistic boundary conditions (e.g., fixed ground plane with soil--structure interaction via Winkler springs). This is identified as future work.
 
-\textbf{Gaussian uncertainty assumption (mitigated).} The $\mu + k\sigma$ bound implicitly assumes approximately Gaussian residuals. Conformal calibration reveals heavier tails ($k_{\text{conformal}} = 1.90$ for 84.1\% compliance coverage vs.\ nominal $k = 1.0$), reducing true one-sided coverage to $\sim$65--75\%. This is fully mitigated by two factors: (1)~conformal certification on $n = 355$ designs establishes $P(\text{violation}) \leq 0.28\%$ regardless of the residual distribution (Section~\ref{sec:conformal}), and (2)~the surrogate's systematic conservatism ($\sim$3$\times$ compliance ratio overestimate relative to voxel FEA) provides an implicit buffer far exceeding the formal uncertainty correction.
+\textbf{Gaussian uncertainty assumption (mitigated).} The $\mu + k\sigma$ bound implicitly assumes approximately Gaussian residuals. Conformal calibration reveals heavier tails ($k_{\text{conformal}} = 1.90$ for 84.1\% compliance coverage vs.\ nominal $k = 1.0$), reducing true one-sided coverage to $\sim$65--75\%. This is substantially mitigated by two factors: (1)~conformal calibration on $n = 355$ designs establishes $P(\text{violation}) \leq 0.28\%$ regardless of the residual distribution (Section~\ref{sec:conformal}), and (2)~the surrogate's systematic conservatism ($\sim$3$\times$ compliance ratio overestimate relative to voxel FEA) provides an implicit buffer far exceeding the formal uncertainty correction. We note that this mitigation applies only within the same linear-elastic, cantilever-BC physics model; nonlinear failure modes and anisotropy remain unaddressed (see Stages~3--4 in Section~\ref{sec:validation}).
 
 \subsection{Surrogate Limitations}
 
@@ -1378,9 +1378,9 @@ Table~\ref{tab:ledger} maps each major claim to its supporting evidence and boun
 \toprule
 \textbf{ID} & \textbf{Claim} & \textbf{Evidence} & \textbf{BCs} & \textbf{Caveats} \\
 \midrule
-C1 & 23.5\% $\pm$ 7.8\% mean reduction (355/916) & Table~\ref{tab:ksensitivity}, Fig.~\ref{fig:reduction_dist} & $k{=}1.0$, cantilever BC & Surrogate constraint; not FEA-verified at every $k$ \\
+C1 & 23.5\% $\pm$ 7.8\% mean reduction (355/916) & Table~\ref{tab:ksensitivity}, Fig.~\ref{fig:batchadapt} & $k{=}1.0$, cantilever BC & Surrogate constraint; not FEA-verified at every $k$ \\
 \addlinespace
-C2 & 23--92$\times$ speedup vs SIMP & Table~\ref{tab:simp}, Fig.~\ref{fig:simp_comparison} & 64$^3$ SIMP vs 128$^3$ SASTO & Resolution mismatch; extrapolated \\
+C2 & 23--92$\times$ speedup vs SIMP & Table~\ref{tab:simp_benchmark}, Fig.~\ref{fig:simp_comparison} & 64$^3$ SIMP vs 128$^3$ SASTO & Resolution mismatch; extrapolated \\
 \addlinespace
 C3 & 6-connectivity eliminates MC fragments & Proposition~\ref{prop:mc}, Table~\ref{tab:connectivity}, Remark~\ref{rem:meshgap} & Idealized SDF & 10\% need trivial post-processing \\
 \addlinespace
