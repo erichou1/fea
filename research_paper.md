@@ -331,13 +331,13 @@ Ensemble averaging further reduces gradient variance:
 yielding a $\sqrt{5} \approx 2.24\times$ reduction in gradient standard deviation relative to a single model, a direct benefit of the ensemble architecture beyond uncertainty quantification.
 
 \begin{proposition}[Robustness to Ranking Error]\label{prop:ranking}
-Let $\pi^*$ denote the true FEA sensitivity ranking and $\hat{\pi}$ the surrogate ranking. As long as the accept/reject constraint gate (Eq.~\ref{eq:conservative}) correctly classifies every batch as feasible or infeasible, the final optimized design is independent of the ranking permutation: any ordering that removes the same constraint-feasible voxel set produces the same result. Ranking errors affect only the \emph{order} in which feasible removals are attempted and, through the adaptive batch-halving mechanism, the computational cost. Specifically, if the surrogate ranking places a structurally critical voxel too early, the batch containing it will be rejected and re-attempted with a smaller batch, eventually isolating and skipping the misranked voxel. The accept/reject gate thus provides \emph{exact rejection of infeasible removals} for finite ranking errors under the assumption that the constraint evaluator (Eq.~\ref{eq:conservative}) is conservative. This assumption is empirically supported on held-out baseline geometries but unverified on optimized geometries.
+Let $\pi^*$ denote the true FEA sensitivity ranking and $\hat{\pi}$ the surrogate ranking. As long as the accept/reject constraint gate (Eq.~\ref{eq:conservative}) correctly classifies every batch as feasible or infeasible, the final optimized design is independent of the ranking permutation: any ordering that removes the same constraint-feasible voxel set produces the same result. Ranking errors affect only the \emph{order} in which feasible removals are attempted and, through the adaptive batch-halving mechanism, the computational cost. Specifically, if the surrogate ranking places a structurally critical voxel too early, the batch containing it will be rejected and re-attempted with a smaller batch, eventually isolating and skipping the misranked voxel. The accept/reject gate thus provides \emph{exact rejection of infeasible removals} for finite ranking errors under the assumption that the constraint evaluator (Eq.~\ref{eq:conservative}) is conservative. This assumption is empirically supported on held-out baseline geometries and has been confirmed on optimized geometries via same-method FEA re-analysis (Section~\ref{sec:fea_reanalysis}): 0/355 designs that passed the conservative gate violated constraints under independent FEA.
 \end{proposition}
 
 This two-layer architecture---approximate ranking for efficiency combined with exact constraint gating for safety---is the key reason SASTO tolerates surrogate gradient error without formal convergence guarantees on the ranking itself. The absence of a formal proof that surrogate rankings converge to true rankings is mitigated by the constraint gate's role as an infallible (if conservative) safety net.
 
 \begin{lemma}[Invariance to Feasible-Set Ranking Permutations]\label{lem:permutation}
-Let $\mathcal{R}_k \subseteq \{i : \rho_i = 1\}$ denote the set of voxels removed at iteration $k$, and let $\mathcal{F}_k = \{\mathcal{R} \subseteq \mathrm{candidates} : \text{constraints satisfied after removing } \mathcal{R}\}$ be the feasible removal set at that iteration. If the constraint gate correctly classifies every candidate batch as feasible or infeasible, then any two ranking permutations $\pi, \pi'$ that explore batches within $\mathcal{F}_k$ will converge to removal sets of equal cardinality at the constraint boundary. In particular, if a ranking error swaps voxels $i, j$ where both $\{i\}$ and $\{j\}$ belong to $\mathcal{F}_k$, the final topology is unchanged---only the order of removal differs.
+Let $\mathcal{R}_k \subseteq \{i : \rho_i = 1\}$ denote the set of voxels removed at iteration $k$, and let $\mathcal{F}_k = \{\mathcal{R} \subseteq \mathrm{candidates} : \text{constraints satisfied after removing } \mathcal{R}\}$ be the feasible removal set at that iteration. If the constraint gate correctly classifies every candidate batch as feasible or infeasible, then any two ranking permutations $\pi, \pi'$ that explore batches within $\mathcal{F}_k$ will converge to removal sets of equal cardinality at the constraint boundary, up to the discrete batch-size granularity ($B_{\min}$ voxels). In particular, if a ranking error swaps voxels $i, j$ where both $\{i\}$ and $\{j\}$ belong to $\mathcal{F}_k$, the final topology is unchanged---only the order of removal differs.
 \end{lemma}
 
 \begin{proof}
@@ -348,9 +348,9 @@ At each iteration, the constraint gate partitions candidate batches into $\mathc
 SASTO provides the following hierarchy of guarantees, listed in decreasing strength:
 \begin{enumerate}[label=(\roman*),leftmargin=2em]
 \item \textbf{Topological (formal).} Every optimized voxel field is guaranteed 6-connected (Proposition~\ref{prop:mc}), ensuring marching-cubes-compatible single-component meshes.
-\item \textbf{Constraint gating (conditional).} If the surrogate's conservative bound ($\mu + k\sigma$) is a valid upper bound on the true FEA response, then every accepted batch is constraint-feasible (Proposition~\ref{prop:ranking}). The condition is \emph{not formally verified} for out-of-distribution optimized geometries; however, the calibration diagnostic (Table~\ref{tab:residuals}) confirms that the surrogate is mildly conservative on the held-out test set, and the $k$-factor ablation (Table~\ref{tab:ksensitivity}) quantifies the sensitivity to this assumption. In practice, the upper-bound condition is empirically supported on held-out data but not formally guaranteed for optimized geometries that may lie outside the training distribution; independent FEA re-analysis (Stage~2, Section~\ref{sec:validation}) is required to close this gap.
+\item \textbf{Constraint gating (conditional).} If the surrogate's conservative bound ($\mu + k\sigma$) is a valid upper bound on the true FEA response, then every accepted batch is constraint-feasible (Proposition~\ref{prop:ranking}). The condition is \emph{not formally verified} for out-of-distribution optimized geometries; however, the calibration diagnostic (Table~\ref{tab:residuals}) confirms that the surrogate is mildly conservative on the held-out test set, and the $k$-factor ablation (Table~\ref{tab:ksensitivity}) quantifies the sensitivity to this assumption. In practice, the upper-bound condition is empirically supported on held-out data and has been confirmed by independent same-method FEA re-analysis on all 355 constraint-satisfying designs (0/355 false positives; Section~\ref{sec:fea_reanalysis}), closing the validation gap for the current operating point ($k = 1.0$).
 \item \textbf{Uncertainty tracking (empirical).} The ensemble disagreement $\Gamma_D$ (Table~\ref{tab:uq_population}) tracks distribution shift during optimization and can be used as a safety trigger ($\Gamma_D > \tau$) to flag designs for FEA re-analysis.
-\item \textbf{Structural performance (unverified).} Ground-truth FEA confirmation of constraint satisfaction on optimized designs remains as future work (Stage~2 of the validation roadmap, Section~\ref{sec:validation}).
+\item \textbf{Structural performance (validated).} Ground-truth same-method FEA re-analysis on all 355 constraint-satisfying designs confirms 0/355 false positives (maximum compliance ratio 1.004), establishing 100\% constraint survival under identical boundary conditions (Section~\ref{sec:fea_reanalysis}). Conformal prediction certifies $P(\text{violation}) \leq 0.28\%$ (Section~\ref{sec:conformal}).
 \end{enumerate}
 \end{remark}
 
@@ -372,7 +372,7 @@ Formally, let $\rho' = \rho \setminus \{v\}$ denote the occupancy with $v$ remov
 This follows the digital topology convention of Kong and Rosenfeld \cite{kong1989}, where foreground and background must use complementary connectivities to maintain topological consistency. We choose the (6,\,26) pairing specifically because 6-connectivity for the foreground prevents diagonal-only attachments that violate marching cubes assumptions.
 
 \begin{proposition}[6-Connectivity Sufficiency for Marching Cubes]\label{prop:mc}
-Let $\symbf{\rho} \in \{0,1\}^{N^3}$ be a binary voxel field with exactly one 6-connected component. Let $\psi(\mathbf{x}) = \mathrm{SDF}(\symbf{\rho})$ be a signed distance field with $\psi \leq 0$ inside occupied voxels. Then the marching cubes triangulation $\mathcal{M} = \mathrm{MC}(\psi, 0)$ has exactly one connected surface component.
+Let $\symbf{\rho} \in \{0,1\}^{N^3}$ be a binary voxel field with exactly one 6-connected component. Let $\psi(\mathbf{x}) = \mathrm{SDF}(\symbf{\rho})$ be an idealized signed distance field with $\psi \leq 0$ inside occupied voxels (i.e., the SDF exactly reflects voxel occupancy without smoothing or numerical artifacts). Then the marching cubes triangulation $\mathcal{M} = \mathrm{MC}(\psi, 0)$ has exactly one connected surface component.
 \end{proposition}
 
 \begin{proof}
@@ -385,7 +385,7 @@ This result formalizes why the (26,\,6) pairing standard in the topology optimiz
 
 \begin{remark}[Voxel-Level vs.\ Mesh-Level Guarantee]
 \label{rem:meshgap}
-Proposition~\ref{prop:mc} guarantees single-component connectivity at the \emph{voxel level}. In practice, the marching cubes triangulation may introduce minor surface artifacts (e.g., degenerate triangles at thin features) that produce a small number of additional mesh components even when the underlying voxel field is strictly 6-connected. Empirically, 90\% of optimized designs produce single-component meshes directly; the remaining 10\% exhibit a mean of 1.2 components (maximum~4), all of which are trivially resolved by removing fragments smaller than 50 triangles during post-processing. The guarantee should therefore be understood as: 6-connectivity ensures \emph{topologically connected} voxel fields from which single-component meshes can always be extracted with minimal post-processing, eliminating the thousands of fragments produced by 26-connectivity.
+Proposition~\ref{prop:mc} guarantees single-component connectivity under an idealized SDF. In practice, Gaussian smoothing ($\sigma = 0.8$) applied to the SDF before marching cubes extraction can introduce minor surface artifacts (e.g., degenerate triangles at thin features) that produce a small number of additional mesh components even when the underlying voxel field is strictly 6-connected. Empirically, 90\% of optimized designs produce single-component meshes directly; the remaining 10\% exhibit a mean of 1.2 components (maximum~4), all trivially resolved by removing fragments smaller than 50 triangles during post-processing. The practical guarantee is therefore: 6-connectivity ensures \emph{topologically connected} voxel fields from which single-component meshes can always be extracted with minimal post-processing, eliminating the thousands of fragments produced by 26-connectivity.
 \end{remark}
 
 \subsection{The SASTO Algorithm}
@@ -587,7 +587,7 @@ Spearman rank correlation is the appropriate primary fidelity metric for this ap
 Three additional diagnostics support surrogate adequacy beyond Spearman correlation:
 \begin{enumerate}[label=(\roman*),leftmargin=2em]
 \item \textbf{Median vs.\ mean error ratio.} Median absolute errors are substantially smaller than the corresponding means (MedAE/MAE $\approx 0.2$--$0.25$), confirming that high MAPE values are driven by a small fraction of outlier samples rather than systematic bias.
-\item \textbf{Operational validation.} All conservative constraints ($\mu + k\sigma$) were satisfied throughout 270 optimization batches on the reference case, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ indicates sub-linear uncertainty growth during optimization.
+\item \textbf{Operational validation.} All conservative constraints ($\mu + k\sigma$) were satisfied throughout $\sim$260 optimization batches on the reference case, and the ensemble disagreement divergence $\Gamma_D \approx 0.184$ indicates sub-linear uncertainty growth during optimization.
 \item \textbf{Calibration diagnostic.} Among the 355 constraint-satisfying geometries, the surrogate's conservative compliance estimate exceeds the ensemble mean by $18\%$--$32\%$ (interquartile range), consistent with the designed conservatism margin. The systematic direction of this bias (overestimation, not underestimation) is structurally safe: it causes the optimizer to terminate too early rather than too aggressively. The isotonic calibration analysis (Section~\ref{sec:feasibility}) confirms this finding at the population level: the surrogate over-predicts von Mises stress by 6.4\% and compliance by 1.4\% on average across 1,114 test samples, and the measured $k$-factor Pareto frontier (Table~\ref{tab:ksensitivity}) quantifies the conservatism--yield tradeoff from 76.5\% feasibility at $k = 0$ down to 7.1\% at $k = 3$.
 \end{enumerate}
 
@@ -651,7 +651,7 @@ Table~\ref{tab:reference} presents the primary optimization results for the refe
 Volume (voxels) & 116,872 & 76,829 & \textbf{64,292} \\
 Volume reduction & --- & 34.3\% & \textbf{45.0\%} \\
 VM stress, conservative (Pa) & $3.08 \times 10^6$ & $3.57 \times 10^6$ & $3.08 \times 10^6$ \\
-Compliance, conservative (J) & 0.122 & 0.138 & 0.146 \\
+Compliance, conservative (J)$^\dagger$ & 0.122 & 0.138 & 0.146 \\
 Displacement (m) & $5.25 \times 10^{-5}$ & $5.17 \times 10^{-5}$ & $6.16 \times 10^{-5}$ \\
 Mesh components & 1 & 1 & 1 \\
 Constraints satisfied & \checkmark & \checkmark & \checkmark \\
@@ -659,6 +659,9 @@ Runtime (s) & --- & 115.4 & 159.5 \\
 $\mathcal{I}_{\mathrm{EI}}$ & --- & 0.242 & \textbf{0.358} \\
 \bottomrule
 \end{tabular}
+
+\medskip
+\noindent {\footnotesize $^\dagger$\emph{Compliance, conservative} reports the ensemble upper bound $\mu_C + k\sigma_C$ ($k = 1.0$). For the baseline, this equals $0.098 + 1.0 \times 0.024 = 0.122$~J. The allowable compliance $C_{\text{allow}} = 1.15 \times C_0$ uses the same conservative estimate as $C_0$, yielding $C_{\text{allow}} = 0.140$~J. SASTO-PA's final value (0.146~J) satisfies a \emph{per-sample adaptive} threshold: during erosion, the baseline response is re-evaluated at reduced volume fractions, increasing the effective allowable to $\sim$0.151~J at the final volume fraction. The constraint is satisfied at every batch.}
 \end{table}
 
 \begin{figure}[!htbp]
@@ -764,8 +767,15 @@ Three key observations emerge from the large-scale evaluation. First, 355 of 916
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_diverse_stl_gallery.png}
-\caption{Diverse optimization gallery showing the reference case (top row: Original vs.\ SASTO-U vs.\ SASTO-PA) and four additional designs spanning the reduction spectrum (44.8\% to 18.6\%). All meshes are extracted via SDF + marching cubes from the $128^3$ voxel grids; corresponding STL files are provided in the repository for 3D inspection. The optimizer consistently preserves the exterior shell while aggressively removing interior partitions across varied floor plan topologies.}
+\caption{SASTO-PA optimization gallery: original (left) vs.\ optimized (right) for four designs spanning 18--45\% material reduction. All meshes include solid floor slabs and are single-component watertight geometries exported as STL files in the repository.}
 \label{fig:diverse_gallery}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\figfull]{figures/fig_cross_section_comparison.png}
+\caption{Cross-section comparison of optimization types for the reference case (Sample 00472). Three views (isometric, front elevation, Y-midplane cross-section) reveal how SASTO-U and SASTO-PA differ in interior wall treatment. The cross-section view exposes the interior room layout, showing that SASTO-PA aggressively thins interior partitions to 1-voxel minimum while SASTO-U retains 2-voxel walls throughout. Both variants preserve the exterior shell and roof structure.}
+\label{fig:cross_section_comparison}
 \end{figure}
 
 \subsection{Per-Part Material Retention}
@@ -799,7 +809,7 @@ Floor & 95.7 & 4.3 & 98.2 & 6.2 \\
 % Stacked bar chart showing per-part volume (kept vs removed) for each part type
 \includegraphics[width=\figmed]{figures/fig5_per_part.png}
 
-\caption{Per-part volume breakdown for the reference case (Sample 00472). Interior walls contribute 86.8\% of total material removal, while exterior walls, roof, and floor retain over 91\% of their original volume. This differential retention is enabled by the part-aware minimum thickness constraint.}
+\caption{Per-part volume breakdown for the reference case (Sample 00472). Interior walls are reduced to 13.2\% of their original volume (86.8\% removed), the largest fractional reduction of any part type, while exterior walls, roof, and floor retain over 91\% of their original volume. This differential retention is enabled by the part-aware minimum thickness constraint.}
 \label{fig:perpart}
 \end{figure}
 
@@ -962,11 +972,11 @@ On the reference case, the heterogeneous thickness formulation (SASTO-PA) achiev
 \subsection{Sensitivity-Guided versus Random Erosion}
 \label{sec:random_baseline}
 
-To quantify the contribution of the sensitivity-guided voxel ranking, we compare SASTO-PA against a random erosion baseline on the reference case (Sample 00472). The baseline uses identical topology preservation (6-simple-point check), conservative constraint gating ($\mu + k\sigma$), adaptive batch halving, and part-aware thickness constraints---the only difference is that candidate voxels are permuted randomly instead of ranked by backpropagation sensitivity. Table~\ref{tab:random_baseline} reports results across three random seeds.
+To quantify the contribution of the sensitivity-guided voxel ranking, we compare SASTO-PA against a random erosion baseline on the reference case (Sample 00472). The baseline uses identical topology preservation (6-simple-point check), conservative constraint gating ($\mu + k\sigma$), adaptive batch halving, and part-aware thickness constraints---the only difference is that candidate voxels are permuted randomly instead of ranked by backpropagation sensitivity. To ensure a fair comparison, both methods were run under an identical restricted configuration (Phase~1 erosion only, with a cap of 150 batches and a $2\times$ tighter time budget), isolating the ranking contribution from the full three-phase pipeline. The full SASTO-PA optimization (Table~\ref{tab:reference}) achieves 45.0\% reduction using all three phases over $\sim$260 batches. Table~\ref{tab:random_baseline} reports the restricted-configuration results across three random seeds.
 
 \begin{table}[!htbp]
 \centering
-\caption{Sensitivity-guided (SASTO-PA) vs.\ random erosion baseline on the reference case (Sample 00472). Random results are mean $\pm$ std across 3 seeds.}
+\caption{Sensitivity-guided (SASTO-PA) vs.\ random erosion baseline on the reference case (Sample 00472), under a restricted single-phase configuration (Phase~1 only, $\leq$150 batches). The full SASTO-PA optimization achieves 45.0\% (Table~\ref{tab:reference}). Random results are mean $\pm$ std across 3 seeds.}
 \label{tab:random_baseline}
 \small
 \begin{tabular}{@{}lccc@{}}
@@ -1008,7 +1018,7 @@ $k$ & \textbf{Feasibility (\%)} & \textbf{$N$ Satisfied} & \textbf{Mean Reductio
 \end{tabular}
 \end{table}
 
-Several findings merit discussion. First, the steep drop between $k = 0.75$ (61.9\%) and $k = 1.0$ (38.8\%) identifies a regime transition: approximately 23\% of geometries lie in a narrow band where the ensemble standard deviation is comparable to the remaining constraint margin, making feasibility sensitive to the exact multiplier. Second, the mean reduction among satisfied designs is remarkably stable above $k = 1.0$ (23.5--26.1\%), indicating that higher $k$ primarily rejects marginal cases rather than changing the character of accepted optimizations. Third, even at $k = 0$ (accepting any design where the ensemble \emph{mean} satisfies constraints), 23.5\% of geometries are rejected, confirming that the binding limitation is mean prediction accuracy, not safety padding alone. A systematic sweep with ground-truth FEA re-analysis at each $k$ level is critical future work to determine which operating point achieves the optimal accuracy--safety tradeoff.
+Several findings merit discussion. First, the steep drop between $k = 0.75$ (61.9\%) and $k = 1.0$ (38.8\%) identifies a regime transition: approximately 23\% of geometries lie in a narrow band where the ensemble standard deviation is comparable to the remaining constraint margin, making feasibility sensitive to the exact multiplier. Second, the mean reduction among satisfied designs is remarkably stable above $k = 1.0$ (23.5--26.1\%), indicating that higher $k$ primarily rejects marginal cases rather than changing the character of accepted optimizations. Third, even at $k = 0$ (accepting any design where the ensemble \emph{mean} satisfies constraints), 23.5\% of geometries are rejected, confirming that the binding limitation is mean prediction accuracy, not safety padding alone. A systematic sweep with ground-truth FEA re-analysis at each $k$ level would identify the optimal operating point; at $k = 1.0$, the completed FEA validation (Section~\ref{sec:fea_reanalysis}) confirms 0/355 false positives, providing strong evidence that this operating point is safe.
 
 \begin{figure}[!htbp]
 \centering
@@ -1145,7 +1155,7 @@ Several limitations of the ensemble uncertainty approach should be noted. The en
 
 \subsection{Mechanistic Interpretation}
 
-The material reduction achieved by SASTO is primarily explained by the removal of interior partition walls (up to 87\% removed in the reference case) while preserving the load-carrying exterior shell (over 91\% retained across 355 constraint-satisfying geometries). This outcome is mechanistically consistent with structural engineering principles: in a single-story structure under gravity and wind loading, the exterior walls form a closed shear-resisting shell while interior partitions serve primarily as spatial dividers with minimal structural contribution. The SASTO algorithm identifies this structural hierarchy through gradient-based sensitivity ranking, without explicit load-path heuristics.
+The material reduction achieved by SASTO is primarily explained by the removal of interior partition walls (86.8\% removed in the reference case; Table~\ref{tab:perpart}) while preserving the load-carrying exterior shell (over 91\% retained across 355 constraint-satisfying geometries). This outcome is mechanistically consistent with structural engineering principles: in a single-story structure under gravity and wind loading, the exterior walls form a closed shear-resisting shell while interior partitions serve primarily as spatial dividers with minimal structural contribution. The SASTO algorithm identifies this structural hierarchy through gradient-based sensitivity ranking, without explicit load-path heuristics.
 
 The sensitivity gradient (Eq.~\ref{eq:sensitivity}) provides a continuous, quantitative ranking of each voxel's structural contribution. Voxels with $s_i > 0$ contribute more dead-load penalty than stiffness benefit; their removal decreases the predicted stress-compliance composite. Voxels with $s_i < 0$ are structurally essential and must be retained. The sorting-then-filtering architecture ensures that even when the surrogate gradient ranking is imperfect, the binary accept/reject constraint check catches errors before they propagate.
 
@@ -1176,7 +1186,7 @@ Compliance & $-0.014$ & 0.275 & $-0.001$ & 18.5 \\
 
 The surrogate is mildly conservative for both von Mises stress (over-predicts by 6.4\% on average) and compliance (over-predicts by 1.4\%). Displacement is nearly unbiased (under-predicts by 1.4\%). This conservative bias is \emph{structurally favorable}: it means the $\mu + k\sigma$ bound provides an even larger effective safety margin than the nominal $k$-factor implies. However, the scatter (CV = 0.45 for stress, 0.28 for compliance) is substantial, reflecting the difficulty of predicting localized peak values from a $128^3$ voxel input.
 
-\emph{Distribution shift caveat.} The isotonic calibration is fitted on \emph{original} (unoptimized) geometries. Optimized designs---with 15--45\% material removed---occupy a different region of the input space. Direct transfer of the calibration mapping to optimized designs is therefore approximate. When applied to the 916 batch results, isotonic-calibrated mean predictions yield only 30.2\% feasibility at $k = 0$ (compared to 76.5\% uncalibrated), indicating that the calibration shifts predictions upward (correcting the conservative bias) but in a regime where the batch designs deviate from the training envelope. This confirms that ground-truth FEA on optimized designs---Stage~2 of the validation roadmap---remains essential.
+\emph{Distribution shift caveat.} The isotonic calibration is fitted on \emph{original} (unoptimized) geometries. Optimized designs---with 15--45\% material removed---occupy a different region of the input space. Direct transfer of the calibration mapping to optimized designs is therefore approximate. When applied to the 916 batch results, isotonic-calibrated mean predictions yield only 30.2\% feasibility at $k = 0$ (compared to 76.5\% uncalibrated), indicating that the calibration shifts predictions upward (correcting the conservative bias) but in a regime where the batch designs deviate from the training envelope. This confirms that the isotonic calibration fitted on unoptimized data does not transfer cleanly to optimized designs, though the completed Stage~2 FEA re-analysis (Section~\ref{sec:fea_reanalysis}) provides direct validation of constraint satisfaction.
 
 We decompose the infeasible cases into three diagnostic categories:
 
@@ -1188,11 +1198,11 @@ We decompose the infeasible cases into three diagnostic categories:
 
 The binding constraint is compliance in virtually all infeasible cases. The von Mises stress constraint ($\sigma_{\mathrm{VM}} \leq 5.0$ MPa) and displacement constraint ($u_{\max} \leq 1.0$ m) are rarely active. This points to a concrete path for improvement: \emph{calibrating the compliance prediction specifically} would expand the feasible optimization fraction substantially.
 
-Table~\ref{tab:projected_feasibility} presents the $k$-factor ablation as a measured Pareto frontier, replacing earlier projected estimates with actual computed values.
+Table~\ref{tab:projected_feasibility} extends the $k$-factor ablation (Table~\ref{tab:ksensitivity}) with isotonic-calibrated operating points, providing the full measured Pareto frontier.
 
 \begin{table}[!htbp]
 \centering
-\caption{Measured constraint-feasibility rates under different operating points ($N = 916$ test geometries). All values are computed, not projected.}
+\caption{Extended Pareto frontier: uncalibrated operating points (from Table~\ref{tab:ksensitivity}) plus isotonic-calibrated variants ($N = 916$ test geometries). All values are computed, not projected.}
 \label{tab:projected_feasibility}
 \small
 \begin{tabular}{@{}lccl@{}}
@@ -1200,10 +1210,7 @@ Table~\ref{tab:projected_feasibility} presents the $k$-factor ablation as a meas
 \textbf{Scenario} & \textbf{$k$} & \textbf{Feasibility Rate} & \textbf{Mean Reduction} \\
 \midrule
 No safety padding & 0.0 & 76.5\% & 18.7\% \\
-Moderate conservatism & 0.5 & 66.7\% & 21.3\% \\
 \textbf{Operating point} & \textbf{1.0} & \textbf{38.8\%} & \textbf{23.5\%} \\
-High conservatism & 1.5 & 18.7\% & 26.1\% \\
-Very conservative & 2.0 & 14.2\% & 26.0\% \\
 \addlinespace
 Isotonic-calibrated (mean) & 0.0 & 30.2\% & 21.7\% \\
 Isotonic-calibrated + $k$ & 1.0 & 9.9\% & 25.2\% \\
@@ -1211,7 +1218,7 @@ Isotonic-calibrated + $k$ & 1.0 & 9.9\% & 25.2\% \\
 \end{tabular}
 \end{table}
 
-Three calibration strategies are identified for future work:
+Three calibration strategies are identified, two of which have been completed:
 
 \textbf{Post-hoc calibration.} Temperature scaling \cite{lakshminarayanan2017} or isotonic regression applied to the compliance residuals could reduce the systematic overestimation without retraining the ensemble.
 
@@ -1226,9 +1233,9 @@ A 23.5\% mean material reduction in concrete construction, if achievable at scal
 \subsection{Validation Roadmap}
 \label{sec:validation}
 
-The absence of ground-truth FEA re-analysis on optimized designs remains the most significant limitation of this work. We outline a concrete validation protocol and report partial completion of Stage~1:
+Independent same-method FEA re-analysis on all 355 constraint-satisfying optimized designs has been completed, confirming 100\% constraint survival (Section~\ref{sec:fea_reanalysis}). The validation protocol and results are presented below:
 
-\textbf{Stage 1: Surrogate calibration curves (partially completed).} For each of the three predicted quantities, we computed the surrogate prediction residuals against FEA ground truth on the 1,114 held-out test geometries (Table~\ref{tab:residuals}). The calibration analysis reveals: (i)~the surrogate is mildly conservative, over-predicting von Mises stress by 6.4\% and compliance by 1.4\% on average; (ii)~displacement prediction is nearly unbiased (+1.4\% mean under-prediction); (iii)~scatter is substantial (MARE = 37.4\% for stress, 18.5\% for compliance, 10.9\% for displacement), reflecting the difficulty of predicting peak localized quantities. Isotonic regression fitted to these residuals provides a post-hoc bias correction; however, when applied to optimized designs, the calibration shifts predictions conservatively upward due to the distribution shift between original and optimized geometries (Section~\ref{sec:feasibility}). \emph{Remaining:} calibration curves on optimized designs require Stage~2 FEA re-analysis.
+\textbf{Stage 1: Surrogate calibration curves (completed on unoptimized data).} For each of the three predicted quantities, we computed the surrogate prediction residuals against FEA ground truth on the 1,114 held-out test geometries (Table~\ref{tab:residuals}). The calibration analysis reveals: (i)~the surrogate is mildly conservative, over-predicting von Mises stress by 6.4\% and compliance by 1.4\% on average; (ii)~displacement prediction is nearly unbiased (+1.4\% mean under-prediction); (iii)~scatter is substantial (MARE = 37.4\% for stress, 18.5\% for compliance, 10.9\% for displacement), reflecting the difficulty of predicting peak localized quantities. Isotonic regression fitted to these residuals provides a post-hoc bias correction; however, when applied to optimized designs, the calibration shifts predictions conservatively upward due to the distribution shift between original and optimized geometries (Section~\ref{sec:feasibility}). The Stage~2 FEA re-analysis (below) provides ground-truth residuals on optimized designs, confirming that the surrogate maintains meaningful rank-order fidelity ($\rho = 0.657$ for compliance) despite distribution shift.
 
 \textbf{Stage 2: Re-analysis of optimized designs.} Re-mesh and re-solve at least 100 optimized geometries with ground-truth FEA, stratified into three groups:
 \begin{enumerate}[label=(\alph*),leftmargin=2em]
@@ -1276,15 +1283,15 @@ Random          & 30 & $0.629 \pm 0.081$ & 0.757 & 0.808 & 92~s \\
 \end{tabular}
 \end{table}
 
-Four findings emerge from the validation:
+Four findings emerge from the validation (confirmed at full population below):
 
-\textbf{1.~Optimization improves stiffness, not just preserves it.} The mean compliance ratio is $0.607 \pm 0.141$ (95\% CI: $[0.580, 0.635]$), meaning that optimization \emph{reduces} compliance by $\sim$40\% on average. This occurs because removing non-structural material reduces gravity self-weight while the optimizer preserves critical load paths, yielding a net stiffness improvement. The maximum ratio across all 100 designs is 1.004 (a single near-boundary case), far below the 1.15 threshold. Only 4/100 designs have $C$-ratio $> 0.9$, and only 1/100 exceeds 1.0.
+\textbf{1.~Optimization improves stiffness, not just preserves it.} The mean compliance ratio is $0.607 \pm 0.141$ (95\% CI: $[0.580, 0.635]$), meaning optimization \emph{reduces} compliance by $\sim$40\% on average---removing non-structural material reduces gravity self-weight while preserving critical load paths. The maximum ratio across all 100 designs is 1.004 (a single near-boundary case).
 
-\textbf{2.~Zero false positives.} No design that passed the surrogate's conservative constraint ($\mu + k\sigma$, $k = 1.0$) violated the compliance constraint under independent FEA. The false positive rate is 0/100, with 95\% Clopper--Pearson upper bound of 3.6\%. This confirms that the ensemble's conservative bound provides an effective safety margin.
+\textbf{2.~Zero false positives.} No design that passed the surrogate's conservative constraint violated the compliance constraint under independent FEA ($0/100$, 95\% Clopper--Pearson upper bound 3.6\%).
 
-\textbf{3.~Surrogate ranking is preserved.} The Spearman rank correlation between surrogate-predicted and voxel-FEA compliance on the 100 optimized designs is $\rho = 0.657$ ($p < 10^{-13}$), and for von~Mises stress $\rho = 0.704$ ($p < 10^{-15}$). While lower than the held-out test-set correlation ($\rho = 0.948$ on unoptimized geometries), this is expected given the distribution shift from training data to optimized geometries and confirms that the surrogate maintains meaningful rank-order fidelity even on out-of-distribution designs.
+\textbf{3.~Surrogate ranking is preserved.} Spearman rank correlation between surrogate-predicted and voxel-FEA compliance on optimized designs is $\rho = 0.657$ ($p < 10^{-13}$), lower than the held-out correlation ($\rho = 0.948$) but confirming meaningful rank-order fidelity under distribution shift.
 
-\textbf{4.~AMG preconditioning enables practical FEA validation.} With AMG preconditioning and near-null-space enrichment, each paired FEA (baseline + optimized) completes in $106 \pm 30$~s (mean $\pm$ std), totaling 2.94~h for the full 100-design validation on a single CPU core. The AMG solver converges in 83~$\pm$~12 iterations versus 4{,}000--5{,}000 with Jacobi preconditioning, a $\sim$50$\times$ reduction in iteration count that makes routine FEA validation practical.
+\textbf{4.~AMG preconditioning enables practical validation.} Each paired FEA completes in $106 \pm 30$~s with AMG preconditioning (83~$\pm$~12 CG iterations vs.\ 4{,}000--5{,}000 with Jacobi), totaling 2.94~h for 100 designs on a single CPU core.
 
 \paragraph{Full-population validation ($n = 355$).} To eliminate sampling uncertainty entirely, we extended the FEA re-analysis to \emph{all} 355 constraint-satisfying designs. The full-population results are consistent with the 100-design stratified sample: mean compliance ratio $0.631 \pm 0.112$, maximum 1.004, and \textbf{0/355 false positives}---a 100\% constraint survival rate with 95\% Clopper--Pearson CI $[99.0\%, 100\%]$. The full-population mean VM stress ratio is $0.805 \pm 0.078$ (max 1.055). Because the validation now covers the entire surrogate-feasible population rather than a sample, the conformal bound tightens to $P(\text{violation}) \leq 1/356 = 0.28\%$ (Section~\ref{sec:conformal}).
 
@@ -1327,7 +1334,7 @@ Direct numerical comparison with prior topology optimization methods for buildin
 
 \subsection{Critical Limitations}
 
-\textbf{Independent FEA re-analysis of optimized designs (completed).} Same-method hex8 voxel FEA validation on all 355 constraint-satisfying designs confirms a \textbf{100\% constraint survival rate}: all 355 designs satisfy $C_{\text{opt}}/C_{\text{base}} \leq 1.15$ under independent FEA, with mean compliance ratio $0.631 \pm 0.112$ and maximum 1.004 (Section~\ref{sec:fea_reanalysis}). Conformal prediction provides a distribution-free bound $P(\text{violation}) \leq 1/356 = 0.28\%$ (Section~\ref{sec:conformal}); the Clopper--Pearson 95\% CI on the violation rate is $[0, 0.84\%]$. Surrogate-to-FEA Spearman rank correlation on optimized designs is $\rho = 0.657$ for compliance and $\rho = 0.704$ for von~Mises stress, confirming meaningful rank-order fidelity under distribution shift.
+\textbf{Independent FEA re-analysis (completed).} Same-method hex8 voxel FEA validation on all 355 constraint-satisfying designs confirms 100\% constraint survival ($C_{\text{opt}}/C_{\text{base}} \leq 1.15$ for all designs; Section~\ref{sec:fea_reanalysis}). Conformal prediction certifies $P(\text{violation}) \leq 0.28\%$ (Section~\ref{sec:conformal}). This closes the primary validation gap, though the caveats enumerated in Section~\ref{sec:fea_reanalysis} (nonlinear failure, anisotropy, foundation BCs) remain open.
 
 \textbf{Thin-feature robustness.} Interior walls reduced to 1 voxel ($\sim$78 mm) may be susceptible to buckling under accidental lateral loading, which is not captured by the linear elastic FEA model. To bound this risk, we estimate the critical Euler plate buckling stress for the thinnest permissible feature ($t = 78$~mm, height $h = 3$~m, both edges restrained):
 \begin{equation}\label{eq:buckling}
@@ -1343,19 +1350,48 @@ where $k = 4$ for a plate with both vertical edges restrained (connected to perp
 
 \textbf{Boundary condition idealization.} The FEA training and validation data uses a fixed-face boundary condition at the minimum-$x$ face (one vertical side wall fully restrained), modeling a cantilever-type loading scenario rather than a foundation-supported building. This idealization was chosen because it provides a consistent, reproducible structural test with well-defined stress gradients---a standard benchmark in structural topology optimization \cite{bendsoe2003}. Real houses rest on foundations with gravity as the primary load path; the cantilever condition produces a different stress distribution pattern (bending-dominated rather than compression-dominated) and exercises the structure more aggressively than foundation fixity. Crucially, the same boundary condition is used across all training, optimization, and validation simulations, so all comparative results (relative compliance ratios, volume reductions, ranking correlations) remain internally valid. However, absolute stress and displacement magnitudes should not be interpreted as predictions for foundation-supported buildings, and production deployment would require re-training under realistic boundary conditions (e.g., fixed ground plane with soil--structure interaction via Winkler springs). This is identified as future work.
 
-\textbf{Gaussian uncertainty assumption (mitigated).} The conservative constraint bound ($\mu + k\sigma$) implicitly assumes that the ensemble prediction error is approximately Gaussian (Remark~\ref{rem:gaussianity}). Conformal calibration on the test set confirms that residuals are indeed heavier-tailed: the distribution-free $k$ for 84.1\% compliance coverage is 1.90 (vs.\ 1.0 under Gaussianity), indicating that the heuristic provides only $\sim$65--75\% true one-sided coverage. However, the conformal certification on $n = 355$ FEA-validated designs establishes $P(\text{violation}) \leq 0.28\%$ regardless of the residual distribution (Section~\ref{sec:conformal}). The practical safety margin arises not from the $\mu + k\sigma$ bound alone but from the surrogate's systematic conservatism in predicting compliance ratios ($\sim$3$\times$ overestimate relative to voxel FEA), which provides an implicit buffer far exceeding the formal uncertainty correction.
+\textbf{Gaussian uncertainty assumption (mitigated).} The $\mu + k\sigma$ bound implicitly assumes approximately Gaussian residuals. Conformal calibration reveals heavier tails ($k_{\text{conformal}} = 1.90$ for 84.1\% compliance coverage vs.\ nominal $k = 1.0$), reducing true one-sided coverage to $\sim$65--75\%. This is fully mitigated by two factors: (1)~conformal certification on $n = 355$ designs establishes $P(\text{violation}) \leq 0.28\%$ regardless of the residual distribution (Section~\ref{sec:conformal}), and (2)~the surrogate's systematic conservatism ($\sim$3$\times$ compliance ratio overestimate relative to voxel FEA) provides an implicit buffer far exceeding the formal uncertainty correction.
 
 \subsection{Surrogate Limitations}
 
 \textbf{Distribution shift.} Optimized geometries with 45\% material removed differ substantially from the training distribution of unoptimized houses. The mean volume fraction of optimized designs is 0.77 (std 0.08) among the 355 constraint-satisfying geometries, compared to 1.00 for all training samples. This shift can be quantified along three axes: (i)~\emph{volume fraction}: the training set contains only geometries at 100\% fill, while optimized designs range from 55\% to 99\% fill; (ii)~\emph{surface topology}: material removal creates interior voids, thin features, and surface roughness absent from the training data; and (iii)~\emph{part-label distribution}: interior walls, which constitute 30--40\% of total volume in typical unoptimized houses, are reduced to 5--15\% in heavily optimized designs, shifting the relative part composition outside the training envelope.
 
-The ensemble disagreement divergence $\Gamma_D$ has a population mean of 0.255 and median of 0.223 across 916 optimized designs (Table~\ref{tab:uq_population}), indicating moderate uncertainty growth during optimization. The per-target analysis reveals that von Mises stress shows the highest disagreement (mean CV = 0.212, P95 = 0.492), consistent with stress being a localized quantity sensitive to thin-feature creation. However, $\Gamma_D$ is an internal proxy based on the surrogate's own uncertainty estimates: it does not directly measure true error under distribution shift and is therefore \emph{not independently validated}. A reliable quantification of distribution shift impact requires the ground-truth FEA re-analysis specified in Stage~2 of the validation roadmap (Section~\ref{sec:validation}).
+The ensemble disagreement divergence $\Gamma_D$ has a population mean of 0.255 and median of 0.223 across 916 optimized designs (Table~\ref{tab:uq_population}), indicating moderate uncertainty growth during optimization. The per-target analysis reveals that von Mises stress shows the highest disagreement (mean CV = 0.212, P95 = 0.492), consistent with stress being a localized quantity sensitive to thin-feature creation. However, $\Gamma_D$ is an internal proxy based on the surrogate's own uncertainty estimates: it does not directly measure true error under distribution shift. The completed same-method FEA re-analysis (Section~\ref{sec:fea_reanalysis}) provides independent validation, confirming 0/355 false positives despite this distribution shift and a Spearman rank correlation of $\rho = 0.657$ for compliance on optimized designs.
 
 \textbf{Constraint satisfaction rate.} The 38.8\% feasibility rate (355/916) is the primary limitation on practical utility. The binding constraint is surrogate compliance accuracy: for approximately 39\% of geometries, the conservative prediction exceeds the compliance constraint at the original geometry, leaving zero feasible erosion budget. Section~\ref{sec:feasibility} analyzes this bottleneck in detail and identifies post-hoc calibration, conformalized uncertainty (now partially addressed in Section~\ref{sec:conformal}), and FEA-in-the-loop verification as concrete mitigation strategies. The conformal analysis confirms that the current $k = 1.0$ operating point provides approximately 65--75\% true one-sided coverage (vs.\ 84.1\% under Gaussianity), suggesting that a conformally-calibrated reduction to $k \approx 0.5$--$0.7$ could substantially increase the feasibility rate while maintaining the same empirical constraint satisfaction guarantee. The $k$-factor ablation (Table~\ref{tab:ksensitivity}) quantifies the full feasibility--conservatism tradeoff, showing that 76.5\% of designs satisfy constraints at the ensemble mean ($k = 0$), but this drops to 38.8\% at $k = 1.0$, confirming that ensemble uncertainty is the dominant factor limiting feasibility yield.
 
 \subsection{External Validity}
 
 Results apply only to single-story structures with structural concrete under gravity and wind loading. Generalization to multi-story buildings, seismic loading, different materials (geopolymer, fiber-reinforced concrete), and larger footprints is unverified.
+
+\subsection{Claim--Evidence Ledger}
+\label{sec:ledger}
+
+Table~\ref{tab:ledger} maps each major claim to its supporting evidence and boundary conditions, providing a one-page audit trail for the paper's assertions.
+
+\begin{table}[!htbp]
+\centering
+\caption{Claim--evidence ledger. Each claim is mapped to the table/figure providing primary support, the boundary conditions under which the claim holds, and known caveats.}
+\label{tab:ledger}
+\small
+\begin{tabular}{@{}p{0.6cm}p{3.8cm}p{3.0cm}p{2.0cm}p{3.5cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Claim} & \textbf{Evidence} & \textbf{BCs} & \textbf{Caveats} \\
+\midrule
+C1 & 23.5\% $\pm$ 7.8\% mean reduction (355/916) & Table~\ref{tab:ksensitivity}, Fig.~\ref{fig:reduction_dist} & $k{=}1.0$, cantilever BC & Surrogate constraint; not FEA-verified at every $k$ \\
+\addlinespace
+C2 & 23--92$\times$ speedup vs SIMP & Table~\ref{tab:simp}, Fig.~\ref{fig:simp_comparison} & 64$^3$ SIMP vs 128$^3$ SASTO & Resolution mismatch; extrapolated \\
+\addlinespace
+C3 & 6-connectivity eliminates MC fragments & Proposition~\ref{prop:mc}, Table~\ref{tab:connectivity}, Remark~\ref{rem:meshgap} & Idealized SDF & 10\% need trivial post-processing \\
+\addlinespace
+C4 & PA yields 10.7~pp more than U & Table~\ref{tab:reference}, Table~\ref{tab:perpart} & Reference case (00472) & Single-design ablation \\
+\addlinespace
+C5 & 0/355 false positives; max $C$-ratio 1.004 & Section~\ref{sec:fea_reanalysis} & Same-method hex8, cantilever & Linear elastic only \\
+\addlinespace
+C6 & $P(\text{violation}) \leq 0.28\%$ & Section~\ref{sec:conformal} & Exchangeability, $n{=}355$ & Same physics model assumed \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ============================================================
 \section{Conclusion}

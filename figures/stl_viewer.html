@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SASTO STL Viewer</title>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; background: #1e1e1e; color: #d4d4d4; }
+        #header { padding: 10px 20px; background: #252526; border-bottom: 1px solid #3c3c3c; }
+        h1 { margin: 0; font-size: 18px; color: #569cd6; }
+        #controls { padding: 10px 20px; background: #2d2d30; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        select, button { padding: 6px 12px; background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; border-radius: 3px; font-size: 13px; cursor: pointer; }
+        button:hover { background: #4c4c4c; }
+        #viewer { flex: 1; min-height: 70vh; }
+        .label { font-size: 12px; color: #888; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>SASTO Optimized House STL Viewer</h1>
+    </div>
+    <div id="controls">
+        <span class="label">Design:</span>
+        <select id="designSelect">
+            <option value="04203">04203 (45.0% reduction, high)</option>
+            <option value="05983">05983 (43.5% reduction, high)</option>
+            <option value="07093">07093 (44.8% reduction, high)</option>
+            <option value="08018">08018 (28.5% reduction, mid)</option>
+            <option value="05728">05728 (23.2% reduction, mid)</option>
+            <option value="01440">01440 (18.6% reduction, low)</option>
+            <option value="12356">12356 (4.5% reduction, edge)</option>
+        </select>
+        <span class="label">View:</span>
+        <select id="viewSelect">
+            <option value="original">Original</option>
+            <option value="optimized">Optimized</option>
+        </select>
+        <button onclick="loadSTL()">Load</button>
+        <button onclick="resetCamera()">Reset Camera</button>
+        <span id="info" class="label" style="margin-left: 20px;"></span>
+    </div>
+    <div id="viewer"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+    <script>
+        let scene, camera, renderer, controls, currentMesh;
+
+        function init() {
+            const container = document.getElementById('viewer');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1e1e1e);
+
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(100, 80, 150);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lights
+            const ambient = new THREE.AmbientLight(0x404040, 0.8);
+            scene.add(ambient);
+            const light1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            light1.position.set(1, 1, 1);
+            scene.add(light1);
+            const light2 = new THREE.DirectionalLight(0x8888ff, 0.4);
+            light2.position.set(-1, -0.5, -1);
+            scene.add(light2);
+
+            // Grid
+            const grid = new THREE.GridHelper(200, 20, 0x444444, 0x333333);
+            scene.add(grid);
+
+            window.addEventListener('resize', onResize);
+            animate();
+            loadSTL();
+        }
+
+        function onResize() {
+            const container = document.getElementById('viewer');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function loadSTL() {
+            const design = document.getElementById('designSelect').value;
+            const view = document.getElementById('viewSelect').value;
+            let filename;
+            if (view === 'original') {
+                filename = `stl_exports/${design}_original.stl`;
+            } else {
+                // Handle the 07093 naming difference
+                if (design === '07093') {
+                    filename = `stl_exports/${design}_optimized_sasto.stl`;
+                } else {
+                    filename = `stl_exports/${design}_optimized.stl`;
+                }
+            }
+
+            document.getElementById('info').textContent = `Loading ${filename}...`;
+
+            if (currentMesh) {
+                scene.remove(currentMesh);
+                currentMesh.geometry.dispose();
+                currentMesh.material.dispose();
+            }
+
+            const loader = new THREE.STLLoader();
+            loader.load(filename, function(geometry) {
+                geometry.computeVertexNormals();
+
+                const color = view === 'original' ? 0xaabbcc : 0x3399ee;
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    specular: 0x222222,
+                    shininess: 30,
+                    side: THREE.DoubleSide,
+                });
+
+                currentMesh = new THREE.Mesh(geometry, material);
+
+                // Center the mesh
+                geometry.computeBoundingBox();
+                const center = new THREE.Vector3();
+                geometry.boundingBox.getCenter(center);
+                currentMesh.position.sub(center);
+
+                scene.add(currentMesh);
+
+                // Fit camera
+                const size = new THREE.Vector3();
+                geometry.boundingBox.getSize(size);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                camera.position.set(maxDim * 0.8, maxDim * 0.6, maxDim * 1.2);
+                controls.target.set(0, 0, 0);
+                controls.update();
+
+                const triCount = geometry.attributes.position.count / 3;
+                document.getElementById('info').textContent =
+                    `${design} (${view}) — ${triCount.toLocaleString()} triangles`;
+            }, undefined, function(err) {
+                document.getElementById('info').textContent = `Error loading: ${filename}`;
+                console.error(err);
+            });
+        }
+
+        function resetCamera() {
+            camera.position.set(100, 80, 150);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>

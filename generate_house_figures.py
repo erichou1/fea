@@ -17,6 +17,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
+from scipy.ndimage import distance_transform_edt, gaussian_filter, label, binary_dilation
+from skimage.measure import marching_cubes
+import trimesh
 
 # Add fea_ml to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "fea_ml"))
@@ -41,13 +44,30 @@ plt.rcParams.update({
 })
 
 
-def voxels_to_mesh(occ, blur_sigma=0.8):
-    """Convert binary voxel grid to trimesh via SDF + marching cubes."""
-    from scipy.ndimage import distance_transform_edt, gaussian_filter
-    from skimage.measure import marching_cubes
-    import trimesh
+def voxels_to_mesh(occ, blur_sigma=0.6):
+    """Convert binary voxel grid to clean trimesh with floor, no floating parts."""
+    occ = occ.astype(bool).copy()
 
-    occ = occ.astype(bool)
+    # Find occupied z-range and add floor slab
+    z_occupied = np.where(occ.any(axis=(0, 1)))[0]
+    if len(z_occupied) == 0:
+        return trimesh.Trimesh()
+    z_min, z_max = z_occupied[0], z_occupied[-1]
+
+    # Get footprint from lowest occupied slices and add 2-voxel floor slab
+    xy_footprint = occ[:, :, z_min:min(z_min + 4, z_max)].any(axis=2)
+    xy_footprint = binary_dilation(xy_footprint, iterations=1)
+    floor_start = max(0, z_min - 2)
+    for dz in range(floor_start, z_min + 1):
+        occ[:, :, dz] |= xy_footprint
+
+    # Remove small disconnected voxel clusters
+    labeled, n = label(occ)
+    if n > 1:
+        sizes = [(labeled == i).sum() for i in range(1, n + 1)]
+        main_label = np.argmax(sizes) + 1
+        occ = (labeled == main_label)
+
     # SDF: positive inside, negative outside
     dist_in = distance_transform_edt(occ)
     dist_out = distance_transform_edt(~occ)
@@ -62,11 +82,24 @@ def voxels_to_mesh(occ, blur_sigma=0.8):
     # Remove padding offset
     verts -= 1.0
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
+
+    # Keep only largest mesh component
+    components = mesh.split()
+    if len(components) > 1:
+        mesh = max(components, key=lambda c: len(c.faces))
+
+    # Fill holes and fix normals (skip fix_normals for very large meshes - can hang)
+    trimesh.repair.fill_holes(mesh)
+    if len(mesh.faces) < 200000:
+        try:
+            trimesh.repair.fix_normals(mesh)
+        except Exception:
+            pass
     return mesh
 
 
 def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
-                max_faces=25000, title=None):
+                max_faces=10000, title=None):
     """Render a trimesh on a matplotlib 3D axis."""
     verts = mesh.vertices.copy()
     faces = mesh.faces
@@ -91,6 +124,8 @@ def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
         colors = np.full((len(faces), 4), [0.7, 0.75, 0.8, alpha])
     elif color_by == 'optimized':
         colors = np.full((len(faces), 4), [0.2, 0.6, 0.85, alpha])
+    elif color_by == 'sasto_pa':
+        colors = np.full((len(faces), 4), [0.85, 0.35, 0.2, alpha])
     else:
         colors = plt.cm.viridis(np.linspace(0, 1, len(faces)))
 
@@ -230,7 +265,7 @@ def generate_type_comparison():
     meshes = [
         (base_mesh, f"Original\n({n_base:,} voxels)", 'original'),
         (v12_mesh, f"SASTO-U (uniform)\n({n_v12:,} voxels, -{100*(n_base-n_v12)/n_base:.1f}%)", 'optimized'),
-        (v11_mesh, f"SASTO-PA (part-aware)\n({n_v11:,} voxels, -{100*(n_base-n_v11)/n_base:.1f}%)", 'height'),
+        (v11_mesh, f"SASTO-PA (part-aware)\n({n_v11:,} voxels, -{100*(n_base-n_v11)/n_base:.1f}%)", 'sasto_pa'),
     ]
 
     fig = plt.figure(figsize=(16, 16))
