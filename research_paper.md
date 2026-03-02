@@ -753,28 +753,28 @@ Three key observations emerge from the large-scale evaluation. First, 355 of 916
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_type_comparison.png}
-\caption{Three-view comparison of optimization types for the reference case (Sample 00472). \textbf{Left:}~Original geometry. \textbf{Center:}~SASTO-U (uniform minimum thickness, 2 voxels for all parts). \textbf{Right:}~SASTO-PA (part-aware, interior walls reduced to 1-voxel minimum). The part-aware formulation achieves 10.7 percentage points more material reduction by selectively thinning non-load-bearing interior partitions.}
+\caption{Four-view comparison of optimization types for the reference case (Sample 00472). \textbf{Left:}~Original geometry. \textbf{Center:}~SASTO-U (uniform minimum thickness, 2 voxels for all parts). \textbf{Right:}~SASTO-PA (part-aware, interior walls reduced to 1-voxel minimum). Rows show front, isometric, top, and interior cutout views. The cutout reveals how SASTO-PA selectively thins non-load-bearing interior partitions, achieving 10.7 percentage points more material reduction than SASTO-U.}
 \label{fig:type_comparison}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_optimized_gallery.png}
-\caption{Gallery of six SASTO-PA optimized houses spanning the full volume reduction range, from high-reduction designs ($>$40\%) to moderate designs ($\sim$10\%). Each row shows: original geometry (left), optimized geometry (center), and an isometric view colored by height (right). The optimizer consistently preserves the exterior shell and roof while aggressively thinning interior partition walls.}
+\caption{Gallery of four SASTO-PA optimized houses spanning the full volume reduction range, from high-reduction designs ($>$40\%) to moderate designs ($\sim$18\%). Each row shows: original geometry (left), optimized geometry colored by height (center), and an interior cutout view (right). The cutout reveals how interior walls are thinned while the exterior shell and roof are preserved.}
 \label{fig:gallery}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_diverse_stl_gallery.png}
-\caption{SASTO-PA optimization gallery: original (left) vs.\ optimized (right) for four designs spanning 18--45\% material reduction. All meshes include solid floor slabs and are single-component watertight geometries exported as STL files in the repository.}
+\caption{SASTO-PA optimization gallery: original (left), optimized (center), and interior cutout (right) for four designs spanning 18--45\% material reduction. The cutout views expose the interior room layout, showing how partition walls are thinned. All meshes are single-component watertight geometries exported as STL files in the repository.}
 \label{fig:diverse_gallery}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_cross_section_comparison.png}
-\caption{Cross-section comparison of optimization types for the reference case (Sample 00472). Three views (isometric, front elevation, Y-midplane cross-section) reveal how SASTO-U and SASTO-PA differ in interior wall treatment. The cross-section view exposes the interior room layout, showing that SASTO-PA aggressively thins interior partitions to 1-voxel minimum while SASTO-U retains 2-voxel walls throughout. Both variants preserve the exterior shell and roof structure.}
+\caption{Cross-section comparison of optimization types for the reference case (Sample 00472). Three views (isometric, front elevation, interior cutout) reveal how SASTO-U and SASTO-PA differ in interior wall treatment. The interior cutout view clips the mesh at 40\% depth to expose the room layout, showing that SASTO-PA aggressively thins interior partitions to 1-voxel minimum while SASTO-U retains 2-voxel walls throughout. Both variants preserve the exterior shell and roof structure.}
 \label{fig:cross_section_comparison}
 \end{figure}
 
@@ -1064,7 +1064,7 @@ Conversely, the high-reduction infeasible designs (Sample 06315 at $46.3\%$, Sam
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\figfull]{figures/fig_failure_gallery.png}
-\caption{Edge-case gallery. \textbf{Top three rows:} lowest-reduction feasible designs, where surrogate compliance estimates leave minimal erosion budget. \textbf{Bottom three rows:} highest-reduction infeasible designs, which achieve aggressive material removal but exceed the conservative compliance bound. Both categories highlight the surrogate calibration bottleneck as the primary driver of SASTO's limitations.}
+\caption{Edge-case gallery showing original (left), optimized (center), and interior cutout (right) views. \textbf{Top three rows:} lowest-reduction feasible designs, where surrogate compliance estimates leave minimal erosion budget. \textbf{Bottom three rows:} highest-reduction infeasible designs, which achieve aggressive material removal but exceed the conservative compliance bound. Both categories highlight the surrogate calibration bottleneck as the primary driver of SASTO's limitations.}
 \label{fig:failure_gallery}
 \end{figure}
 

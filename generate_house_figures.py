@@ -36,11 +36,11 @@ OPT_DIR = FEA_ML / "runs" / "v3" / "optimization_128"
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["Times New Roman", "DejaVu Serif"],
-    "font.size": 11,
-    "axes.labelsize": 12,
-    "axes.titlesize": 13,
-    "figure.dpi": 300,
-    "savefig.dpi": 300,
+    "font.size": 14,
+    "axes.labelsize": 14,
+    "axes.titlesize": 15,
+    "figure.dpi": 150,
+    "savefig.dpi": 150,
 })
 
 
@@ -98,44 +98,63 @@ def voxels_to_mesh(occ, blur_sigma=0.6):
     return mesh
 
 
-def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
-                max_faces=10000, title=None):
-    """Render a trimesh on a matplotlib 3D axis."""
-    verts = mesh.vertices.copy()
-    faces = mesh.faces
+def decimate_mesh(mesh, target_faces=10000):
+    """Decimate mesh preserving surface coverage (no dots like random subsampling)."""
+    if len(mesh.faces) <= target_faces:
+        return mesh
+    try:
+        decimated = mesh.simplify_quadric_decimation(face_count=target_faces)
+        if len(decimated.faces) > 0:
+            return decimated
+    except Exception as e:
+        print(f"    Decimation failed: {e}")
+    return mesh
 
-    # Center
+
+def get_colors(n_faces, triangles, color_by, alpha):
+    """Generate face colors."""
+    n = n_faces
+    if color_by == 'height':
+        centroids_z = triangles.mean(axis=1)[:, 2]
+        z_lo, z_hi = centroids_z.min(), centroids_z.max()
+        norm_z = (centroids_z - z_lo) / (z_hi - z_lo + 1e-10)
+        colors = plt.cm.viridis(norm_z)
+    elif color_by == 'original':
+        colors = np.full((n, 4), [0.72, 0.76, 0.82, alpha])
+    elif color_by == 'optimized':
+        colors = np.full((n, 4), [0.20, 0.60, 0.85, alpha])
+    elif color_by == 'sasto_pa':
+        colors = np.full((n, 4), [0.85, 0.35, 0.20, alpha])
+    elif color_by == 'cutout':
+        colors = np.full((n, 4), [0.78, 0.75, 0.72, alpha])
+    else:
+        colors = plt.cm.viridis(np.linspace(0, 1, n))
+    colors[:, 3] = alpha
+    return colors
+
+
+def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
+                target_faces=10000, title=None, title_size=13):
+    """Render a trimesh using decimation (solid surface, no dots)."""
+    render_m = decimate_mesh(mesh, target_faces)
+    verts = render_m.vertices.copy()
+    faces = render_m.faces
+
     center = verts.mean(axis=0)
     verts -= center
 
-    # Subsample faces for rendering speed
-    if len(faces) > max_faces:
-        idx = np.random.RandomState(42).choice(len(faces), max_faces, replace=False)
-        faces = faces[idx]
-
     triangles = verts[faces]
+    colors = get_colors(len(faces), triangles, color_by, alpha)
 
-    if color_by == 'height':
-        centroids_z = triangles.mean(axis=1)[:, 2]
-        z_min, z_max = centroids_z.min(), centroids_z.max()
-        norm_z = (centroids_z - z_min) / (z_max - z_min + 1e-10)
-        colors = plt.cm.viridis(norm_z)
-    elif color_by == 'original':
-        colors = np.full((len(faces), 4), [0.7, 0.75, 0.8, alpha])
-    elif color_by == 'optimized':
-        colors = np.full((len(faces), 4), [0.2, 0.6, 0.85, alpha])
-    elif color_by == 'sasto_pa':
-        colors = np.full((len(faces), 4), [0.85, 0.35, 0.2, alpha])
-    else:
-        colors = plt.cm.viridis(np.linspace(0, 1, len(faces)))
-
-    colors[:, 3] = alpha
+    edge_colors = colors.copy()
+    edge_colors[:, :3] *= 0.85
+    edge_colors[:, 3] = 0.3
 
     poly = Poly3DCollection(triangles, facecolors=colors,
-                            edgecolors='none', linewidths=0.0)
+                            edgecolors=edge_colors, linewidths=0.1)
     ax.add_collection3d(poly)
 
-    extents = np.abs(verts).max(axis=0) * 1.1
+    extents = np.abs(verts).max(axis=0) * 1.05
     ax.set_xlim(-extents[0], extents[0])
     ax.set_ylim(-extents[1], extents[1])
     ax.set_zlim(-extents[2], extents[2])
@@ -143,7 +162,51 @@ def render_mesh(ax, mesh, elev=25, azim=-60, color_by='height', alpha=0.95,
     ax.set_axis_off()
 
     if title:
-        ax.set_title(title, fontsize=10, pad=-5)
+        ax.set_title(title, fontsize=title_size, pad=2, fontweight='bold')
+
+
+def render_cutout(ax, mesh, cut_axis='y', cut_frac=0.5, elev=20, azim=-30,
+                  color_by='cutout', alpha=0.95, target_faces=10000,
+                  title=None, title_size=13):
+    """Render interior cutout - clip mesh to show inside of optimized walls."""
+    render_m = decimate_mesh(mesh, target_faces)
+    verts = render_m.vertices.copy()
+    faces = render_m.faces
+    center = verts.mean(axis=0)
+    verts -= center
+
+    axis_map = {'x': 0, 'y': 1, 'z': 2}
+    axis_idx = axis_map[cut_axis]
+    v_min = verts[:, axis_idx].min()
+    v_max = verts[:, axis_idx].max()
+    cut_val = v_min + cut_frac * (v_max - v_min)
+
+    centroids = verts[faces].mean(axis=1)
+    mask = centroids[:, axis_idx] > cut_val
+    faces = faces[mask]
+    if len(faces) == 0:
+        return
+
+    triangles = verts[faces]
+    colors = get_colors(len(faces), triangles, color_by, alpha)
+
+    edge_colors = colors.copy()
+    edge_colors[:, :3] *= 0.80
+    edge_colors[:, 3] = 0.4
+
+    poly = Poly3DCollection(triangles, facecolors=colors,
+                            edgecolors=edge_colors, linewidths=0.15)
+    ax.add_collection3d(poly)
+
+    extents = np.abs(verts).max(axis=0) * 1.05
+    ax.set_xlim(-extents[0], extents[0])
+    ax.set_ylim(-extents[1], extents[1])
+    ax.set_zlim(-extents[2], extents[2])
+    ax.view_init(elev=elev, azim=azim)
+    ax.set_axis_off()
+
+    if title:
+        ax.set_title(title, fontsize=title_size, pad=2, fontweight='bold')
 
 
 def load_sample_meshes(sample_id):
@@ -166,10 +229,10 @@ def load_sample_meshes(sample_id):
 
 
 def generate_gallery():
-    """Generate a gallery of 6 diverse designs (original vs optimized)."""
+    """Generate a gallery of 4 diverse designs: Original | Optimized | Interior Cutout."""
     print("Generating optimized house gallery...")
 
-    # Select 6 diverse samples: 2 high-reduction, 2 mid, 2 low
+    # Select diverse samples across the reduction distribution
     samples_info = []
     batch_files = list(BATCH_DIR.iterdir())
     for d in batch_files:
@@ -185,12 +248,12 @@ def generate_gallery():
 
     samples_info.sort(key=lambda x: x['volume_reduction_pct'], reverse=True)
 
-    # Pick 6 spread across the distribution
+    # Pick 4 spread across the distribution
     n = len(samples_info)
-    indices = [0, 2, n//4, n//2, 3*n//4, n-5]
+    indices = [0, n//4, n//2, 3*n//4]
     selected = [samples_info[i] for i in indices]
 
-    fig = plt.figure(figsize=(18, 20))
+    fig = plt.figure(figsize=(16, 18))
 
     for row, s in enumerate(selected):
         sid = s['sample_id']
@@ -201,30 +264,42 @@ def generate_gallery():
         if base_mesh is None:
             continue
 
+        # Pre-decimate once per design
+        base_mesh = decimate_mesh(base_mesh, 5000)
+        opt_mesh = decimate_mesh(opt_mesh, 5000)
+
         n_base = int(np.load(DATA_DIR / sid / "occ.npz")['data'].sum())
         n_opt = int(np.load(BATCH_DIR / sid / "optimized_occ.npz")['data'].sum())
 
         # Original (left)
-        ax1 = fig.add_subplot(6, 3, row * 3 + 1, projection='3d')
+        ax1 = fig.add_subplot(4, 3, row * 3 + 1, projection='3d')
+        t1 = "Original" if row == 0 else ""
         render_mesh(ax1, base_mesh, color_by='original',
-                    title=f"Original ({n_base:,} voxels)")
+                    title=f"{t1}\n{n_base:,} vox" if row == 0 else f"{n_base:,} vox",
+                    title_size=13, target_faces=99999)
 
         # Optimized (middle) 
-        ax2 = fig.add_subplot(6, 3, row * 3 + 2, projection='3d')
-        render_mesh(ax2, opt_mesh, color_by='optimized',
-                    title=f"Optimized ({n_opt:,} voxels, -{red_pct:.1f}%)")
+        ax2 = fig.add_subplot(4, 3, row * 3 + 2, projection='3d')
+        t2 = "Optimized" if row == 0 else ""
+        render_mesh(ax2, opt_mesh, color_by='height',
+                    title=f"{t2}\n{n_opt:,} vox ($-${red_pct:.1f}%)" if row == 0 else f"{n_opt:,} vox ($-${red_pct:.1f}%)",
+                    title_size=13, target_faces=99999)
 
-        # Optimized isometric (right)
-        ax3 = fig.add_subplot(6, 3, row * 3 + 3, projection='3d')
-        render_mesh(ax3, opt_mesh, elev=15, azim=-135, color_by='height',
-                    title=f"Sample {sid} (isometric)")
+        # Interior cutout (right)
+        ax3 = fig.add_subplot(4, 3, row * 3 + 3, projection='3d')
+        t3 = "Interior Cutout" if row == 0 else ""
+        render_cutout(ax3, opt_mesh, cut_axis='y', cut_frac=0.4,
+                      elev=15, azim=-25,
+                      title=f"{t3}\nSample {sid}" if row == 0 else f"Sample {sid}",
+                      title_size=13, target_faces=99999)
 
-    fig.suptitle("Gallery of SASTO-PA Optimized Houses\n(Original → Optimized → Isometric View)",
-                 fontsize=14, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.suptitle("SASTO-PA Optimization Gallery\nOriginal  |  Optimized  |  Interior Cutout",
+                 fontsize=17, fontweight='bold', y=0.99)
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.02,
+                        wspace=0.02, hspace=0.06)
 
     out_path = OUT_DIR / "fig_optimized_gallery.png"
-    fig.savefig(out_path, bbox_inches='tight', dpi=300)
+    fig.savefig(out_path, bbox_inches='tight', dpi=150)
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
@@ -255,7 +330,14 @@ def generate_type_comparison():
     v11_mesh = voxels_to_mesh(v11_occ)
     v12_mesh = voxels_to_mesh(v12_occ)
 
-    # 3 columns × 3 view rows
+    # Pre-decimate once
+    FACES = 5000
+    base_mesh = decimate_mesh(base_mesh, FACES)
+    v11_mesh = decimate_mesh(v11_mesh, FACES)
+    v12_mesh = decimate_mesh(v12_mesh, FACES)
+    print(f"  Decimated to: {len(base_mesh.faces)}, {len(v11_mesh.faces)}, {len(v12_mesh.faces)} faces")
+
+    # 3 columns x 4 view rows: Front, Isometric, Top, Interior Cutout
     views = [
         ("Front", 0, -90),
         ("Isometric", 25, -60),
@@ -268,22 +350,29 @@ def generate_type_comparison():
         (v11_mesh, f"SASTO-PA (part-aware)\n({n_v11:,} voxels, -{100*(n_base-n_v11)/n_base:.1f}%)", 'sasto_pa'),
     ]
 
-    fig = plt.figure(figsize=(16, 16))
+    fig = plt.figure(figsize=(18, 20))
 
-    for col, (mesh, label, cmode) in enumerate(meshes):
+    for col, (mesh, label_text, cmode) in enumerate(meshes):
         for row, (view_name, elev, azim) in enumerate(views):
-            ax = fig.add_subplot(3, 3, row * 3 + col + 1, projection='3d')
-            title = label if row == 0 else view_name
+            ax = fig.add_subplot(4, 3, row * 3 + col + 1, projection='3d')
+            title = label_text if row == 0 else view_name
             render_mesh(ax, mesh, elev=elev, azim=azim, color_by=cmode,
-                        title=title)
+                        title=title, title_size=14, target_faces=99999)
+
+        # Row 4: Interior cutout
+        ax = fig.add_subplot(4, 3, 9 + col + 1, projection='3d')
+        render_cutout(ax, mesh, cut_axis='y', cut_frac=0.4,
+                      elev=15, azim=-25, color_by=cmode,
+                      title="Interior Cutout", title_size=14, target_faces=99999)
 
     fig.suptitle("Reference Case (Sample 00472): Optimization Type Comparison\n"
-                 "SASTO-U (uniform min thickness = 2 voxels) vs SASTO-PA (interior min = 1 voxel)",
-                 fontsize=13, fontweight='bold', y=0.99)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+                 "SASTO-U (uniform, min = 2 voxels) vs SASTO-PA (interior min = 1 voxel)",
+                 fontsize=17, fontweight='bold', y=0.99)
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.02,
+                        wspace=0.02, hspace=0.06)
 
     out_path = OUT_DIR / "fig_type_comparison.png"
-    fig.savefig(out_path, bbox_inches='tight', dpi=300)
+    fig.savefig(out_path, bbox_inches='tight', dpi=150)
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
@@ -302,6 +391,7 @@ def generate_type_comparison_stl():
     for label, path in stl_files.items():
         if path.exists():
             mesh = trimesh.load(path)
+            mesh = decimate_mesh(mesh, 5000)
             meshes.append((mesh, label))
         else:
             print(f"  ! Missing: {path}")
@@ -312,21 +402,28 @@ def generate_type_comparison_stl():
 
     views = [("Front", 0, -90), ("Isometric", 25, -60), ("Top", 90, -90)]
 
-    fig = plt.figure(figsize=(16, 16))
-    for col, (mesh, label) in enumerate(meshes):
-        cmode = 'original' if col == 0 else ('optimized' if col == 1 else 'height')
+    fig = plt.figure(figsize=(18, 20))
+    for col, (mesh, label_text) in enumerate(meshes):
+        cmode = 'original' if col == 0 else ('optimized' if col == 1 else 'sasto_pa')
         for row, (view_name, elev, azim) in enumerate(views):
-            ax = fig.add_subplot(3, 3, row * 3 + col + 1, projection='3d')
-            title = label if row == 0 else view_name
+            ax = fig.add_subplot(4, 3, row * 3 + col + 1, projection='3d')
+            title = label_text if row == 0 else view_name
             render_mesh(ax, mesh, elev=elev, azim=azim, color_by=cmode,
-                        title=title, max_faces=30000)
+                        title=title, title_size=14, target_faces=99999)
 
-    fig.suptitle("Reference Case: Original → SASTO-U → SASTO-PA",
-                 fontsize=13, fontweight='bold', y=0.99)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+        # Row 4: Interior cutout
+        ax = fig.add_subplot(4, 3, 9 + col + 1, projection='3d')
+        render_cutout(ax, mesh, cut_axis='y', cut_frac=0.4,
+                      elev=15, azim=-25, color_by=cmode,
+                      title="Interior Cutout", title_size=14, target_faces=99999)
+
+    fig.suptitle("Reference Case: Original \u2192 SASTO-U \u2192 SASTO-PA",
+                 fontsize=17, fontweight='bold', y=0.99)
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.02,
+                        wspace=0.02, hspace=0.06)
 
     out_path = OUT_DIR / "fig_type_comparison.png"
-    fig.savefig(out_path, bbox_inches='tight', dpi=300)
+    fig.savefig(out_path, bbox_inches='tight', dpi=150)
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
