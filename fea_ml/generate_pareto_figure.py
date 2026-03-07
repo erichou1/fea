@@ -37,8 +37,8 @@ ax2.set_ylim(15, 30)
 # Highlight operating point k=1.0
 ax1.axvline(x=1.0, color='gray', linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
 ax1.annotate('$k = 1.0$\n(operating point)',
-             xy=(1.0, 38.8), xytext=(1.6, 55),
-             fontsize=10, ha='left',
+             xy=(1.0, 38.8), xytext=(0.2, 65),
+             fontsize=10, ha='center',
              arrowprops=dict(arrowstyle='->', color='gray', lw=1.2),
              bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow', 
                        edgecolor='gray', alpha=0.9))
@@ -46,7 +46,7 @@ ax1.annotate('$k = 1.0$\n(operating point)',
 # Combined legend
 lines = line1 + line2
 labels = [l.get_label() for l in lines]
-ax1.legend(lines, labels, loc='upper right', fontsize=10, framealpha=0.9)
+ax1.legend(lines, labels, loc='center right', fontsize=10, framealpha=0.9)
 
 # Grid
 ax1.grid(True, alpha=0.3, linestyle='-')

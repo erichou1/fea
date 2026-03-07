@@ -117,23 +117,23 @@ def generate_pipeline_figure():
     print("Generating fig1_pipeline.png ...")
 
     dot = graphviz.Digraph('pipeline', engine='dot')
-    dot.attr(rankdir='TB', dpi='300', size='7,10!',
-             fontname='Arial', bgcolor='white',
-             nodesep='0.5', ranksep='0.7', margin='0.3')
+    dot.attr(rankdir='TB', dpi='300', size='8,11!',
+             fontname='Helvetica', bgcolor='#E6E8EB',
+             nodesep='0.6', ranksep='0.8', margin='0.4')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='20',
-             fontcolor='white', penwidth='3.0', margin='0.30,0.20')
-    dot.attr('edge', fontname='Arial', fontsize='16',
-             penwidth='3.0', arrowsize='1.3')
+             fontname='Helvetica', fontsize='22',
+             fontcolor='white', penwidth='2.5', margin='0.32,0.22')
+    dot.attr('edge', fontname='Helvetica', fontsize='18',
+             penwidth='2.8', arrowsize='1.2')
 
     # ── Offline cluster ──
     with dot.subgraph(name='cluster_offline') as c:
         c.attr(label='  OFFLINE TRAINING PHASE  ', labelloc='t',
-               style='filled,rounded', fillcolor='#EDF2F9',
+               style='filled,rounded', fillcolor='#DCE4F0',
                color='#0D3B66', fontcolor='#0D3B66',
-               fontsize='22', fontname='Arial',
-               penwidth='3.0')
+               fontsize='24', fontname='Helvetica Bold',
+               penwidth='2.5')
 
         c.node('wire', '3DWire\nWireframes\n(14,293)',
                fillcolor='#1B5E9E', color='#0A2F5C')
@@ -151,10 +151,10 @@ def generate_pipeline_figure():
     # ── Online cluster ──
     with dot.subgraph(name='cluster_online') as c:
         c.attr(label='  ONLINE OPTIMIZATION PHASE  ', labelloc='t',
-               style='filled,rounded', fillcolor='#FDF3EA',
-               color='#8C3D00', fontcolor='#8C3D00',
-               fontsize='22', fontname='Arial',
-               penwidth='3.0')
+               style='filled,rounded', fillcolor='#FFF3E0',
+               color='#E65100', fontcolor='#BF360C',
+               fontsize='24', fontname='Helvetica Bold',
+               penwidth='2.5')
 
         c.node('voxel', '128³ Voxel Grid\n+ Part Labels',
                fillcolor='#D46A00', color='#5C2D00')
@@ -178,12 +178,11 @@ def generate_pipeline_figure():
              label='  Surrogate predictions  ',
              penwidth='1.5')
 
-    # Render PNG and PDF
+    # Render PNG only
     output_base = os.path.join(FIGURES_DIR, 'fig1_pipeline')
-    for fmt in ('png', 'pdf'):
-        dot.format = fmt
-        dot.render(output_base, cleanup=True)
-    print("  -> Saved fig1_pipeline.png/pdf")
+    dot.format = 'png'
+    dot.render(output_base, cleanup=True)
+    print("  -> Saved fig1_pipeline.png")
 
 
 # ============================================================
@@ -193,24 +192,25 @@ def generate_architecture_figure():
     print("Generating fig2_architecture.png ...")
 
     dot = graphviz.Digraph('architecture', engine='dot')
-    dot.attr(rankdir='TB', dpi='300', size='8,10!',
-             fontname='Arial', bgcolor='white',
-             nodesep='0.4', ranksep='0.6', margin='0.3',
+    dot.attr(rankdir='TB', dpi='300', size='9,11!',
+             fontname='Helvetica', bgcolor='#E6E8EB',
+             nodesep='0.5', ranksep='0.65', margin='0.3',
              label='Surrogate3DResNet Architecture  (Single Ensemble Member, ~8.76M params)',
-             labelloc='t', fontsize='20', labeljust='c')
+             labelloc='t', fontsize='22', labeljust='c',
+             fontcolor='#222222')
 
     dot.attr('node', shape='box', style='filled,rounded',
-             fontname='Arial', fontsize='18',
-             fontcolor='white', penwidth='2.8', margin='0.24,0.18')
-    dot.attr('edge', fontname='Arial', fontsize='14',
-             penwidth='2.8', arrowsize='1.2')
+             fontname='Helvetica', fontsize='20',
+             fontcolor='white', penwidth='2.5', margin='0.26,0.20')
+    dot.attr('edge', fontname='Helvetica', fontsize='16',
+             penwidth='2.5', arrowsize='1.1')
 
     # ── 3D CNN Backbone ──
     with dot.subgraph(name='cluster_cnn') as c:
         c.attr(label='3D CNN Backbone', labelloc='t',
-               style='filled,rounded', fillcolor='#EDF2F9',
-               color='#0D2E52', fontcolor='#0D2E52',
-               fontsize='15', penwidth='2.0')
+               style='filled,rounded', fillcolor='#DCE4F0',
+               color='#0D47A1', fontcolor='#0D47A1',
+               fontsize='17', fontname='Helvetica Bold', penwidth='2.0')
 
         c.node('input', 'Input\n7 × 128³',
                fillcolor='#2B5EA7', color='#0D2E52')
@@ -231,9 +231,9 @@ def generate_architecture_figure():
     # ── SE-ResBlock + Pooling ──
     with dot.subgraph(name='cluster_se') as c:
         c.attr(label='SE-Res + Pool', labelloc='t',
-               style='filled,rounded', fillcolor='#FDF3EA',
-               color='#7A3F06', fontcolor='#7A3F06',
-               fontsize='15', penwidth='2.0')
+               style='filled,rounded', fillcolor='#FFF3E0',
+               color='#E65100', fontcolor='#BF360C',
+               fontsize='17', fontname='Helvetica Bold', penwidth='2.0')
 
         c.node('se', 'SE-ResBlock\n× 3\nSE(r=4)',
                fillcolor='#B8600A', color='#7A3F06')
@@ -247,9 +247,9 @@ def generate_architecture_figure():
     # ── Feature Branch ──
     with dot.subgraph(name='cluster_feat') as c:
         c.attr(label='Feature Branch', labelloc='t',
-               style='filled,rounded', fillcolor='#FCEEF1',
-               color='#5A1220', fontcolor='#5A1220',
-               fontsize='15', penwidth='2.0')
+               style='filled,rounded', fillcolor='#FCE4EC',
+               color='#880E4F', fontcolor='#880E4F',
+               fontsize='17', fontname='Helvetica Bold', penwidth='2.0')
 
         c.node('feat', 'Feature Vector\n10-d',
                fillcolor='#9D2235', color='#5A1220')
@@ -269,12 +269,11 @@ def generate_architecture_figure():
              label='  128-d  ', fontcolor='#555555')
     dot.edge('concat', 'head', color='#333333')
 
-    # Render
+    # Render PNG only
     output_base = os.path.join(FIGURES_DIR, 'fig2_architecture')
-    for fmt in ('png', 'pdf'):
-        dot.format = fmt
-        dot.render(output_base, cleanup=True)
-    print("  -> Saved fig2_architecture.png/pdf")
+    dot.format = 'png'
+    dot.render(output_base, cleanup=True)
+    print("  -> Saved fig2_architecture.png")
 
 
 # ============================================================

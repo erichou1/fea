@@ -504,7 +504,12 @@ def _fig15_synthetic():
 # Figure 16: Placeholder – FEA Stress Contour Map
 # ═══════════════════════════════════════════════════════════════════
 def fig16_fea_placeholder():
-    """Generate FEA stress contour visualization from voxel data."""
+    """Generate FEA stress contour visualization using smooth 3D surface rendering."""
+    from render_figures import (voxels_to_mesh, decimate, dilate_part_labels,
+                                compute_camera_poses, BG_COLOR, RENDER_W, RENDER_H,
+                                _add_lights, TARGET_FACES, trim_whitespace)
+    import pyrender as _pr
+
     occ_path = os.path.join(OPT_DIR, "fixed_occ.npz")
     part_path = os.path.join(OPT_DIR, "fixed_part.npz")
     occ_opt_path = os.path.join(OPT_DIR, "optimized_occ_v11.npz")
@@ -517,60 +522,82 @@ def fig16_fea_placeholder():
     part = np.load(part_path)["data"]
     occ_opt = np.load(occ_opt_path)["data"]
 
-    fig = plt.figure(figsize=(14, 6))
+    bg_rgb = np.array(BG_COLOR[:3]) / 255.0
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7), facecolor='#E6E8EB')
 
     datasets = [
-        (occ_orig, "(a) Original — Illustrative Von Mises Stress"),
-        (occ_opt,  "(b) Optimized SASTO-PA — Illustrative Von Mises Stress"),
+        (occ_orig, "(a) Original \u2014 Von Mises Stress"),
+        (occ_opt,  "(b) Optimized SASTO-PA \u2014 Von Mises Stress"),
     ]
 
     for col, (occ, title) in enumerate(datasets):
-        ax = fig.add_subplot(1, 2, col + 1, projection='3d')
-        ds = 3
-        occ_ds = occ[::ds, ::ds, ::ds]
-        part_ds = part[::ds, ::ds, ::ds]
-
-        occupied = np.where(occ_ds > 0)
-        if len(occupied[0]) == 0:
+        # Build smooth mesh surface
+        mesh = voxels_to_mesh(occ.copy())
+        if mesh is None:
             continue
+        mesh = decimate(mesh, TARGET_FACES)
 
-        xs, ys, zs = occupied
-        z_max = float(occ_ds.shape[2])
+        # Compute synthetic stress per vertex (vectorised)
+        verts = mesh.vertices
+        z_vals = verts[:, 2]
+        z_min, z_max = z_vals.min(), z_vals.max()
+        z_norm = (z_vals - z_min) / (z_max - z_min + 1e-8)
 
-        # Synthetic stress: higher at base (gravity), higher on exterior (wind)
-        stress = np.zeros(len(xs), dtype=float)
-        part_mult = {0: 1.0, 1: 1.3, 2: 0.8, 3: 1.0, 4: 0.6}
-        for i in range(len(xs)):
-            z_norm = zs[i] / z_max
-            p = part_ds[xs[i], ys[i], zs[i]]
-            base = 2.0 * (1.0 - z_norm) + 0.5
-            mult = part_mult.get(int(p), 1.0)
-            stress[i] = base * mult + 0.2 * np.sin(xs[i] * 0.3) * np.cos(ys[i] * 0.2)
+        # Part-label lookup per vertex for stress multiplier
+        dilated = dilate_part_labels(part)
+        shape = np.array(dilated.shape)
+        v_coords = np.clip(np.round(verts).astype(int), 0, shape - 1)
+        v_parts = dilated[v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]]
 
+        part_mult = np.ones(len(verts))
+        for p_id, m in {0: 1.0, 1: 1.3, 2: 0.8, 3: 1.0, 4: 0.6}.items():
+            part_mult[v_parts == p_id] = m
+
+        base = 2.0 * (1.0 - z_norm) + 0.5
+        stress = base * part_mult + 0.2 * np.sin(verts[:, 0] * 0.3) * np.cos(verts[:, 1] * 0.2)
         stress = np.clip(stress / stress.max() * 5.0, 0, 5.0)
 
+        # Map stress to jet colormap for vertex colors
         cmap = plt.cm.jet
-        norm = plt.Normalize(0, 5.0)
-        colors = cmap(norm(stress))
+        norm_s = plt.Normalize(0, 5.0)
+        vc_float = cmap(norm_s(stress))
+        vc = (vc_float[:, :4] * 255).astype(np.uint8)
+        mesh.visual.vertex_colors = vc
 
-        ax.scatter(xs, ys, zs, c=colors, s=2.5, marker='s',
-                   linewidths=0, depthshade=True)
-        ax.view_init(elev=25, azim=-55)
-        ax.set_axis_off()
-        ax.set_title(title, fontsize=10, fontweight='bold', pad=-5)
+        # Render with pyrender (smooth Phong shading)
+        poses, _ = compute_camera_poses(mesh)
+        cam = poses['isometric']
+        yfov = np.pi / 4.5
+        pr_mesh = _pr.Mesh.from_trimesh(mesh, smooth=True)
+        scene = _pr.Scene(bg_color=BG_COLOR, ambient_light=[0.533, 0.533, 0.533])
+        scene.add(pr_mesh)
+        camera = _pr.PerspectiveCamera(yfov=yfov)
+        scene.add(camera, pose=cam)
+        _add_lights(scene, cam)
+        renderer = _pr.OffscreenRenderer(RENDER_W, RENDER_H)
+        color, depth = renderer.render(scene)
+        renderer.delete()
 
-    # Colorbar
+        img = trim_whitespace(color)
+        axes[col].imshow(img)
+        axes[col].axis('off')
+        axes[col].set_facecolor('#E6E8EB')
+        axes[col].set_title(title, fontsize=13, fontweight='bold', pad=8)
+
+    # Colorbar — positioned to the right, not overlapping
     sm = plt.cm.ScalarMappable(cmap=plt.cm.jet, norm=plt.Normalize(0, 5.0))
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=fig.axes, shrink=0.6, aspect=20, pad=0.08)
-    cbar.set_label("Von Mises Stress (MPa)", fontsize=11)
+    cbar = fig.colorbar(sm, ax=axes.tolist(), shrink=0.65, aspect=25, pad=0.03,
+                        location='right')
+    cbar.set_label("Von Mises Stress (MPa)", fontsize=12)
+    cbar.ax.tick_params(labelsize=10)
     cbar.ax.axhline(y=5.0, color='black', linewidth=2, linestyle='--')
 
     plt.suptitle("FEA Stress Distribution: Original vs. Optimized (Illustrative)",
                  fontsize=14, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0, 0.92, 0.95])
-    for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT_DIR, f"fig16_fea_stress_placeholder.{ext}"))
+    plt.tight_layout(rect=[0, 0, 0.93, 0.95])
+    fig.savefig(os.path.join(OUT_DIR, "fig16_fea_stress_placeholder.png"),
+                dpi=300, facecolor='#E6E8EB', edgecolor='none')
     plt.close(fig)
     print("  OK Figure 16: FEA stress contour visualization")
 
@@ -579,58 +606,55 @@ def fig16_fea_placeholder():
 # Figure 17: Placeholder – Physical Testing
 # ═══════════════════════════════════════════════════════════════════
 def fig17_physical_placeholder():
-    """Generate physical testing protocol figure with specimen render + schematic + criteria."""
+    """Generate physical testing protocol figure with rendered 3D specimen + schematic + criteria."""
+    from render_figures import (build_colored_mesh, render_mesh, compute_camera_poses,
+                                trim_whitespace)
+
     occ_opt_path = os.path.join(OPT_DIR, "optimized_occ_v11.npz")
     part_path = os.path.join(OPT_DIR, "fixed_part.npz")
 
-    fig = plt.figure(figsize=(16, 5.5))
+    fig = plt.figure(figsize=(16, 6), facecolor='#E6E8EB')
 
-    # ── Panel (a): 3D specimen with load annotations ──
-    ax1 = fig.add_subplot(131, projection='3d')
+    # ── Panel (a): Rendered 3D specimen with load annotations ──
+    ax1 = fig.add_subplot(131)
+    ax1.set_facecolor('#E6E8EB')
 
     if os.path.exists(occ_opt_path) and os.path.exists(part_path):
         occ = np.load(occ_opt_path)["data"]
-        part = np.load(part_path)["data"]
-        ds = 3
-        occ_ds = occ[::ds, ::ds, ::ds]
-        part_ds = part[::ds, ::ds, ::ds]
-        occupied = np.where(occ_ds > 0)
-        if len(occupied[0]) > 0:
-            xs, ys, zs = occupied
-            # Color by part type
-            part_colors = {
-                0: (0.5, 0.5, 0.5, 0.9),
-                1: (0.08, 0.30, 0.70, 0.9),
-                2: (0.15, 0.60, 0.15, 0.9),
-                3: (0.85, 0.45, 0.00, 0.9),
-                4: (0.75, 0.10, 0.10, 0.9),
-            }
-            colors = [part_colors.get(int(part_ds[xs[i], ys[i], zs[i]]),
-                       part_colors[0]) for i in range(len(xs))]
-            ax1.scatter(xs, ys, zs, c=colors, s=2.0, marker='s',
-                        linewidths=0, depthshade=True)
-            # Load arrows (downward gravity at roof)
-            z_top = zs.max()
-            for xg, yg in [(15, 15), (25, 15), (15, 25), (25, 25)]:
-                ax1.quiver(xg, yg, z_top + 3, 0, 0, -3,
-                           color='#c62828', arrow_length_ratio=0.4, linewidth=1.5)
-            # Support triangles at base
-            ax1.text(20, 20, -2, "▲ Fixed Base", ha='center',
-                     fontsize=7, color='#333333')
-            ax1.view_init(elev=20, azim=-55)
-            ax1.set_axis_off()
-    ax1.set_title("(a) Test Specimen\n(1:20 scale, SASTO-PA)", fontsize=11,
-                  fontweight='bold', pad=-5)
+        part_data = np.load(part_path)["data"]
+        mesh = build_colored_mesh(occ, part_data)
+        if mesh is not None:
+            poses, _ = compute_camera_poses(mesh)
+            cam = poses['isometric']
+            img = trim_whitespace(render_mesh(mesh, cam))
+            ax1.imshow(img)
+            h_img, w_img = img.shape[:2]
+            # Load arrows pointing down from top
+            for x_frac in [0.3, 0.5, 0.7]:
+                ax1.annotate('', xy=(w_img * x_frac, h_img * 0.15),
+                           xytext=(w_img * x_frac, h_img * 0.02),
+                           arrowprops=dict(arrowstyle='->', color='#c62828', lw=2.5))
+            ax1.text(w_img * 0.5, h_img * 0.01, "Gravity Load",
+                    ha='center', va='top', fontsize=10, color='#c62828', fontweight='bold')
+            # Fixed base annotation
+            ax1.text(w_img * 0.5, h_img * 0.98, "Fixed Base",
+                    ha='center', va='bottom', fontsize=9, color='#333',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='#ddd',
+                              edgecolor='#888', alpha=0.7))
+    ax1.axis('off')
+    ax1.set_title("(a) Test Specimen\n(1:20 scale, SASTO-PA)", fontsize=13,
+                  fontweight='bold', pad=4)
 
     # ── Panel (b): Test setup schematic ──
     ax2 = fig.add_subplot(132)
+    ax2.set_facecolor('#E6E8EB')
     ax2.set_xlim(0, 10)
     ax2.set_ylim(0, 10)
     ax2.set_aspect('equal')
     ax2.axis('off')
 
-    # Loading frame (outer rectangle)
-    from matplotlib.patches import Rectangle, FancyArrowPatch as FAP
+    from matplotlib.patches import Rectangle
+    # Loading frame
     frame = Rectangle((0.5, 0.5), 9, 9, linewidth=2.5,
                        edgecolor='#333333', facecolor='#f8f8f8')
     ax2.add_patch(frame)
@@ -647,36 +671,37 @@ def fig17_physical_placeholder():
     plate_top = Rectangle((2.5, 6.2), 5, 0.3, linewidth=1.5,
                             edgecolor='#333333', facecolor='#666666')
     ax2.add_patch(plate_top)
-    ax2.text(5, 6.8, "Load Cell", ha='center', fontsize=8, fontweight='bold')
+    ax2.text(5, 7.0, "Load Cell", ha='center', fontsize=8, fontweight='bold')
 
-    # Arrows for distributed load
-    for x_arr in [3.5, 5.0, 6.5]:
-        ax2.annotate('', xy=(x_arr, 6.2), xytext=(x_arr, 7.5),
+    # Load arrows (wider spacing to avoid overlap)
+    for x_arr in [3.2, 5.0, 6.8]:
+        ax2.annotate('', xy=(x_arr, 6.3), xytext=(x_arr, 7.8),
                      arrowprops=dict(arrowstyle='->', color='#c62828', lw=2))
-    ax2.text(5, 8, "Applied Load", ha='center', fontsize=9,
+    ax2.text(5, 8.5, "Applied Load", ha='center', fontsize=9,
              color='#c62828', fontweight='bold')
 
     # Support base
     base = Rectangle((2, 1.5), 6, 0.3, linewidth=1.5,
                        edgecolor='#333333', facecolor='#888888')
     ax2.add_patch(base)
-    ax2.text(5, 1.0, "Fixed Support Plate", ha='center', fontsize=8,
+    ax2.text(5, 0.9, "Fixed Support Plate", ha='center', fontsize=8,
              fontweight='bold')
 
-    # DIC cameras
-    ax2.text(0.8, 5, "DIC\nCamera", ha='center', fontsize=7,
+    # DIC camera (right side to avoid overlap)
+    ax2.text(9.3, 4.5, "DIC\nCamera", ha='center', fontsize=7,
              color='#2e7d32', fontweight='bold',
              bbox=dict(boxstyle='round', facecolor='#eeffee', edgecolor='#2e7d32'))
-    ax2.annotate('', xy=(2.4, 4), xytext=(1.3, 5),
+    ax2.annotate('', xy=(7.6, 4), xytext=(8.9, 4.5),
                  arrowprops=dict(arrowstyle='->', color='#2e7d32', lw=1.2))
 
     ax2.set_title("(b) Compression Test Setup\n(ASTM C39 adapted)",
-                  fontsize=11, fontweight='bold')
+                  fontsize=13, fontweight='bold')
 
     # ── Panel (c): Acceptance criteria table ──
     ax3 = fig.add_subplot(133)
+    ax3.set_facecolor('#E6E8EB')
     ax3.axis('off')
-    ax3.set_title("(c) Validation Criteria", fontsize=11, fontweight='bold')
+    ax3.set_title("(c) Validation Criteria", fontsize=13, fontweight='bold')
 
     criteria = [
         ["Failure load", "σ_pred ± 20%"],
@@ -711,8 +736,8 @@ def fig17_physical_placeholder():
     plt.suptitle("Physical Validation — 3D-Print Test Protocol (Future Work)",
                  fontsize=14, fontweight="bold", y=0.99)
     plt.tight_layout(rect=[0, 0, 1, 0.94])
-    for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT_DIR, f"fig17_physical_testing_placeholder.{ext}"))
+    fig.savefig(os.path.join(OUT_DIR, "fig17_physical_testing_placeholder.png"),
+                facecolor='#E6E8EB', edgecolor='none')
     plt.close(fig)
     print("  OK Figure 17: Physical testing protocol")
 
