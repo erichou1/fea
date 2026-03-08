@@ -65,8 +65,8 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     exposed[:, :, 1:] |= filled[:, :, 1:] & ~filled[:, :, :-1]
     exposed[:, :, :-1] |= filled[:, :, :-1] & ~filled[:, :, 1:]
 
-    # Avoid seeing interior walls through the shell in the conceptual thumbnail.
-    visible = exposed & ~interior_mask
+    # Avoid seeing interior walls or floor slab through the shell in the conceptual thumbnail.
+    visible = exposed & ~interior_mask & ~slab_mask
 
     def apply_color(mask, hex_color, alpha=0.98):
         rgb = mcolors.to_rgb(hex_color)
@@ -254,13 +254,13 @@ render_voxelized_house(ax_left, "figures/screenshot_stls/REF_original_colored.pl
 
 fig.text(0.1225, 0.905, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.1225, 0.095, "starting design represented on a voxel grid",
+fig.text(0.1225, 0.095, "part-colored voxel grid of the starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.132
-legend_x = [0.060, 0.115, 0.165]
-legend_colors = [WALL, ROOF, SLAB]
-legend_labels = ["Exterior", "Roof", "Slab"]
+legend_x = [0.045, 0.095, 0.145, 0.190]
+legend_colors = [WALL, INTERIOR, ROOF, SLAB]
+legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
 for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
     fig.add_artist(mpatches.Rectangle((x0, legend_y), 0.010, 0.016,
                                       transform=fig.transFigure, facecolor=c0,
@@ -278,69 +278,70 @@ ax_mid.set_axis_off()
 ax_mid.text(0.50, 0.93, "Surrogate-Guided Optimization",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
-# candidate design mini-grid
-left_cluster = FancyBboxPatch((0.05, 0.19), 0.25, 0.62,
-                              boxstyle="round,pad=0.012,rounding_size=0.025",
-                              facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
-ax_mid.add_patch(left_cluster)
-ax_mid.text(0.175, 0.76, "1. Candidate Edits",
+# encode box
+enc_box = FancyBboxPatch((0.05, 0.19), 0.23, 0.62,
+                         boxstyle="round,pad=0.012,rounding_size=0.025",
+                         facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
+ax_mid.add_patch(enc_box)
+ax_mid.text(0.165, 0.76, "Encode Geometry",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=BLUE)
+draw_volume_block(ax_mid, 0.095, 0.42, 0.085, 0.16, 0.020, 0.020,
+                  "#A9C3F5", "#7BA1EA", "#C7D8FA")
+draw_volume_block(ax_mid, 0.145, 0.45, 0.060, 0.12, 0.016, 0.016,
+                  "#6F97E4", "#4E79CF", "#98B7F0")
+draw_volume_block(ax_mid, 0.182, 0.47, 0.036, 0.085, 0.012, 0.012,
+                  "#29B8C7", "#1095A6", "#73D4DC")
+ax_mid.text(0.165, 0.28, "compact features from the voxel grid",
+            ha="center", va="center", fontsize=8.1, color=DARK, fontstyle="italic")
 
-draw_house_thumbnail(ax_mid, 0.085, 0.50, 0.95, removed=[(0.55, 0.40)])
-draw_house_thumbnail(ax_mid, 0.155, 0.42, 0.95, removed=[(0.28, 0.55)])
-draw_house_thumbnail(ax_mid, 0.115, 0.31, 0.95, removed=[(0.44, 0.20)])
-ax_mid.text(0.175, 0.25, "try small voxel removals",
-            ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
-
-# central surrogate box
-ax_mid.add_patch(FancyArrowPatch((0.315, 0.50), (0.405, 0.50), arrowstyle="-|>",
+ax_mid.add_patch(FancyArrowPatch((0.295, 0.50), (0.385, 0.50), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-sur_box = FancyBboxPatch((0.42, 0.19), 0.24, 0.62,
+# score matrix box
+mat_box = FancyBboxPatch((0.40, 0.19), 0.26, 0.62,
                          boxstyle="round,pad=0.014,rounding_size=0.025",
                          facecolor=NAVY, edgecolor=GOLD, linewidth=1.8)
-ax_mid.add_patch(sur_box)
-ax_mid.text(0.54, 0.76, "2. Fast Scoring",
+ax_mid.add_patch(mat_box)
+ax_mid.text(0.53, 0.76, "Score Matrix",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
-ax_mid.text(0.54, 0.67, "surrogate predicts",
-            ha="center", va="center", fontsize=8.5, color=WHITE, fontstyle="italic")
-ax_mid.text(0.54, 0.61, "stress, compliance,",
-            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
-ax_mid.text(0.54, 0.55, "and displacement",
-            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
-
-for y0, txt, fc in [(0.45, "stress", "#EAF0FB"), (0.39, "compliance", "#EAF0FB"), (0.33, "displacement", "#EAF0FB")]:
-    pill = FancyBboxPatch((0.465, y0), 0.15, 0.040,
-                          boxstyle="round,pad=0.004,rounding_size=0.015",
-                          facecolor=fc, edgecolor="none")
-    ax_mid.add_patch(pill)
-    ax_mid.text(0.54, y0 + 0.020, txt,
-                ha="center", va="center", fontsize=7.8, color=NAVY, fontweight="bold")
-
-eq_box = FancyBboxPatch((0.455, 0.24), 0.17, 0.055,
-                        boxstyle="round,pad=0.006,rounding_size=0.014",
-                        facecolor="#123A92", edgecolor=WHITE, linewidth=0.8)
-ax_mid.add_patch(eq_box)
-ax_mid.text(0.54, 0.267, r"$J = V + \lambda P$",
-            ha="center", va="center", fontsize=11.0, color=WHITE, fontweight="bold")
-ax_mid.text(0.54, 0.215, "lower score is better",
+ax_mid.text(0.53, 0.69, "candidate edits scored by the surrogate",
             ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
 
-# final choice
-ax_mid.add_patch(FancyArrowPatch((0.675, 0.50), (0.775, 0.50), arrowstyle="-|>",
+mx0, my0 = 0.455, 0.36
+mw, mh = 0.145, 0.22
+for r in range(3):
+    for c in range(3):
+        val = 0.20 + 0.22 * r + 0.14 * c
+        color = plt.get_cmap("viridis")(val)
+        ax_mid.add_patch(mpatches.Rectangle((mx0 + c * mw / 3, my0 + (2 - r) * mh / 3),
+                                            mw / 3, mh / 3, facecolor=color,
+                                            edgecolor=WHITE, linewidth=0.8))
+for i, row_label in enumerate(["A", "B", "C"]):
+    ax_mid.text(mx0 - 0.020, my0 + mh * (5 / 6 - i / 3), row_label,
+                ha="center", va="center", fontsize=8.5, color=WHITE, fontweight="bold")
+for i, col_label in enumerate(["stress", "comp.", "disp."]):
+    ax_mid.text(mx0 + mw * (1 / 6 + i / 3), my0 + mh + 0.025, col_label,
+                ha="center", va="center", fontsize=7.2, color=WHITE)
+ax_mid.text(0.53, 0.28, r"$J = V + \lambda P$",
+            ha="center", va="center", fontsize=12.0, color=GOLD, fontweight="bold")
+ax_mid.text(0.53, 0.23, "lower score means a better edit",
+            ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
+
+ax_mid.add_patch(FancyArrowPatch((0.675, 0.50), (0.765, 0.50), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-right_cluster = FancyBboxPatch((0.78, 0.19), 0.17, 0.62,
-                               boxstyle="round,pad=0.012,rounding_size=0.025",
-                               facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
-ax_mid.add_patch(right_cluster)
-ax_mid.text(0.865, 0.76, "3. Selected Design",
+# select box
+sel_box = FancyBboxPatch((0.78, 0.19), 0.17, 0.62,
+                         boxstyle="round,pad=0.012,rounding_size=0.025",
+                         facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
+ax_mid.add_patch(sel_box)
+ax_mid.text(0.865, 0.76, "Select Best Edit",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=DARK)
-draw_house_thumbnail(ax_mid, 0.825, 0.40, 1.10, selected=True)
-ax_mid.text(0.865, 0.28, "lowest valid objective",
+draw_house_thumbnail(ax_mid, 0.815, 0.42, 1.05, removed=[(0.44, 0.20)], selected=True)
+ax_mid.text(0.865, 0.30, "apply the safest",
             ha="center", va="center", fontsize=8.1, color=DARK, fontweight="bold")
-ax_mid.text(0.865, 0.23, "lighter but still safe",
-            ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
+ax_mid.text(0.865, 0.25, "lowest-score change",
+            ha="center", va="center", fontsize=7.9, color=DARK, fontstyle="italic")
 
 
 # ── Right: full-house structural response ───────────────────────────────────
