@@ -1,0 +1,866 @@
+% ============================================================
+%  SASTO ISEF Poster v5  —  48" × 36"  (121.92 × 91.44 cm)
+%  Three panels: Left 12" | Center 24" | Right 12"
+%
+%  Compile:  pdflatex poster_v5.tex
+%            (run twice for correct layout)
+%
+%  All images use paths relative to this file:
+%    poster_final/renders_hq/   <- new HQ 3D renders
+%    poster_final/renders/      <- per-geometry renders
+%    poster_figures_v5/         <- matplotlib data figures
+%    poster_images_extracted/   <- extracted diagram images
+% ============================================================
+
+\documentclass[10pt]{article}
+
+\usepackage[
+  paperwidth=121.92cm, paperheight=91.44cm,
+  top=0cm, bottom=0cm, left=0cm, right=0cm,
+  noheadfoot
+]{geometry}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{calc}
+\usepackage{tikz}
+\usepackage{ragged2e}
+\usepackage{setspace}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+
+% ── COLOURS ─────────────────────────────────────────────────
+\definecolor{bgnavy}   {HTML}{062B7A}
+\definecolor{titleband}{HTML}{032061}
+\definecolor{secbar}   {HTML}{0A3D9A}
+\definecolor{cardfill} {HTML}{F7F9FC}
+\definecolor{cardbdr}  {HTML}{B7C5E3}
+\definecolor{txtdark}  {HTML}{0B1736}
+\definecolor{posterred}{HTML}{D7263D}
+\definecolor{teal}     {HTML}{008C9E}
+\definecolor{gold}     {HTML}{CFA535}
+\definecolor{eqbg}     {HTML}{E8EEF2}
+\definecolor{altrow}   {HTML}{EEF2FA}
+\definecolor{darkcard} {HTML}{1A3A6E}
+
+% ── CONTENT CARD ─────────────────────────────────────────────
+\newenvironment{ccard}{%
+  \begin{tcolorbox}[
+    colback=cardfill, colframe=cardbdr,
+    boxrule=0.5pt, arc=4pt, outer arc=4pt,
+    left=3.5mm, right=3.5mm, top=2.5mm, bottom=2.5mm,
+    width=\linewidth
+  ]%
+}{%
+  \end{tcolorbox}%
+}
+
+% ── SECTION HEADER ───────────────────────────────────────────
+\newcommand{\sechdr}[1]{%
+  \begin{tcolorbox}[
+    colback=secbar, colframe=secbar,
+    boxrule=0pt, arc=3pt,
+    left=4mm, right=4mm, top=1mm, bottom=1mm,
+    width=\linewidth
+  ]
+    \centering\color{white}\fontsize{24pt}{26pt}\selectfont\bfseries
+    \MakeUppercase{#1}
+  \end{tcolorbox}%
+  \vspace{1.5mm}%
+}
+
+% ── SUBSECTION LABEL ─────────────────────────────────────────
+\newcommand{\sub}[1]{%
+  {\color{secbar}\bfseries\large #1}\par\vspace{1mm}}
+
+% ── EQUATION PILL ────────────────────────────────────────────
+\newcommand{\eqpill}[1]{%
+  \begin{tcolorbox}[
+    colback=eqbg, colframe=cardbdr,
+    boxrule=0.5pt, arc=5pt,
+    left=3mm, right=3mm, top=1mm, bottom=1mm,
+    width=\linewidth
+  ]
+    \centering\small #1
+  \end{tcolorbox}%
+}
+
+% ── CRITERIA BOX ─────────────────────────────────────────────
+\newcommand{\cbox}[2]{%
+  \begin{tcolorbox}[
+    colback=darkcard, colframe=cardbdr,
+    boxrule=0.5pt, arc=5pt,
+    left=2mm, right=2mm, top=2mm, bottom=2mm,
+    width=\linewidth
+  ]
+    \centering{\color{gold}\bfseries\large #1}\\[3pt]
+    \color{white}\small #2
+  \end{tcolorbox}%
+}
+
+% ── FIGURE CAPTION ───────────────────────────────────────────
+\newcommand{\fc}[1]{{\centering\color{txtdark}\tiny\itshape #1\par}\vspace{1mm}}
+
+% ── IMAGE COMMAND ────────────────────────────────────────────
+\newcommand{\fig}[2]{\includegraphics[width=#2,keepaspectratio]{#1}}
+
+% ── PATH SHORTCUTS ───────────────────────────────────────────
+\newcommand{\HQ}[1]{poster_final/renders_hq/#1}
+\newcommand{\RD}[1]{poster_final/renders/#1}
+\newcommand{\PF}[1]{poster_figures_v5/#1}
+\newcommand{\EX}[1]{poster_images_extracted/#1}
+
+% ── DIMENSIONS ───────────────────────────────────────────────
+% Poster = 121.92cm wide; panels: 30.48 | 60.96 | 30.48 cm
+% Inner margin: 0.38cm each side
+\newlength{\LC}  \setlength{\LC} {29.72cm}   % left col content width
+\newlength{\CC}  \setlength{\CC} {60.20cm}   % center col content width
+\newlength{\RC}  \setlength{\RC} {29.72cm}   % right col content width
+\newlength{\HC}  \setlength{\HC} {29.60cm}   % half of center col
+\newlength{\TC}  \setlength{\TC} {19.33cm}   % third of center col
+\newlength{\SG}  \setlength{\SG} {1.5mm}     % section gap
+\newlength{\PM}  \setlength{\PM} {0.38cm}    % panel margin
+
+% ============================================================
+\begin{document}
+\noindent
+% ============================================================
+%  TITLE BAND  (3" = 7.62cm, full width)
+% ============================================================
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[titleband] (current page.north west) rectangle ++(121.92cm,-7.62cm);
+  \fill[gold] ([yshift=-7.55cm]current page.north west) rectangle ++(121.92cm,-0.07cm);
+\end{tikzpicture}%
+\begin{minipage}[t][7.62cm][c]{121.92cm}
+  \hspace{0.5cm}%
+  % Left 3D renders
+  \begin{minipage}[c]{6.4cm}
+    \fig{\RD{thumb_original_house.png}}{6.4cm}\\[-1pt]
+    {\centering\tiny\color{white}Original structure\par}
+  \end{minipage}%
+  \hspace{0.25cm}%
+  \begin{minipage}[c]{6.4cm}
+    \fig{\RD{thumb_optimized_house.png}}{6.4cm}\\[-1pt]
+    {\centering\tiny\color{white}After SASTO-PA\par}
+  \end{minipage}%
+  \hfill
+  % Center title block
+  \begin{minipage}[c]{76cm}
+    \centering\color{white}
+    {\fontsize{46pt}{48pt}\selectfont\bfseries
+      SURROGATE-ACCELERATED STRUCTURAL TOPOLOGY OPTIMIZATION}\\[4pt]
+    {\fontsize{23pt}{25pt}\selectfont\bfseries\itshape
+      A Deep Ensemble Surrogate for Fast, Printable, and Safety-Verified Building Optimization}\\[5pt]
+    {\fontsize{20pt}{22pt}\selectfont\bfseries Eric Hou
+      \hspace{1cm}{\normalfont\fontsize{15pt}{17pt}\selectfont
+        Engineering Category \hspace{5mm} SASTO Project \hspace{5mm} March 2026}}
+  \end{minipage}%
+  \hfill
+  % Right credit block
+  \begin{minipage}[c]{22cm}
+    \RaggedRight\small\color{white}
+    {\bfseries\large Credit Line of Origin}\\[3pt]
+    {\bfseries Credit Line of Origin}\\[4pt]
+    {\itshape References \& Data: see Key References.}\\[4pt]
+    * Images with asterisk are public domain\\
+    (Wikimedia Commons CC-BY-SA~3.0).\\[3pt]
+    All other graphics and images created by\\
+    Eric Hou, 2026, unless otherwise noted.
+  \end{minipage}%
+  \hspace{0.38cm}
+\end{minipage}
+
+\vspace{2mm}
+
+% ============================================================
+%  THREE PANELS
+% ============================================================
+\noindent\hspace{\PM}%
+%% ════════════════════════════════════════════════════════════
+%%  LEFT PANEL  (29.72cm)
+%% ════════════════════════════════════════════════════════════
+\begin{minipage}[t]{\LC}
+
+%% L1: VISUAL ABSTRACT ─────────────────────────────────────
+\sechdr{Visual Abstract}
+\begin{ccard}
+  \centering
+  \fig{\HQ{fig_wireframe_pipeline.png}}{\linewidth}\\[2pt]
+  \fc{Fig.~1.\ Full SASTO pipeline:
+    3DWire wireframe $\to$ volumetric extrusion $\to$ FEA simulation $\to$
+    voxel encoding $\to$ deep ensemble training $\to$ sensitivity-guided erosion $\to$
+    watertight optimized STL.}
+
+  \RaggedRight\small\vspace{1mm}
+  \textbf{a)~User Workflow:}
+  Given a building wireframe, SASTO extrudes walls, roof, and floor into a
+  watertight volumetric solid; runs a single FEA simulation; then applies
+  surrogate-guided erosion in 50\,s to produce an optimized single-component STL
+  with 23--92$\times$ speedup over SIMP.\\[3pt]
+  \textbf{b)~Model Creation:}
+  14,293 wireframes from the 3DWire dataset were processed into volumetric meshes.
+  After filtering 3,115 diverged/invalid solves, \textbf{11,178 valid 128-cube voxel
+  grids} remain, split family-aware into \textbf{8,943 train / 1,121 val / 1,114 test}.
+  Each sample is labeled with peak Von Mises stress, max displacement, and global compliance.
+\end{ccard}
+\vspace{\SG}
+
+%% L2: INTRODUCTION ────────────────────────────────────────
+\sechdr{Introduction}
+\begin{ccard}
+  % ── Opening prose + right-floated image (mirrors reference poster layout) ──
+  \begin{minipage}[t]{18.5cm}
+    \RaggedRight\small
+    \sub{CONCRETE \& GLOBAL EMISSIONS}
+    Cement production accounts for approximately \textbf{8\% of global CO$_2$ emissions}
+    [IEA~2021], more than all commercial aviation combined.
+    A single residential building consumes 30--80 tonnes of concrete, most placed in walls
+    sized for the \textit{worst-case load scenario} rather than the service condition.
+    This uniform-thickness paradigm is an artifact of conventional formwork, not structural
+    optimality.\\[4pt]
+    \textbf{Large-scale 3D concrete printing} companies (ICON, COBOD, Apis~Cor) can
+    now extrude \textit{arbitrary wall-thickness profiles} at no additional tooling cost.
+    This makes topology-optimized heterogeneous walls \textbf{practically realizable at
+    building scale for the first time.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{9.8cm}\centering
+    \fig{\HQ{wireframe_panel.png}}{\linewidth}\\[-2pt]
+    \fc{3DWire building wireframes (Lin et al.\ 2024)}
+    \vspace{1.5mm}
+    \fig{\RD{REF_original_colored_iso.png}}{\linewidth}\\[-2pt]
+    \fc{Volumetric mesh (reference case)}
+  \end{minipage}
+
+  % ── 3-box causal chain ──────────────────────────────────────────────────────
+  \vspace{3mm}
+  \noindent
+  \begin{minipage}[c]{8.2cm}
+    \begin{tcolorbox}[colback=secbar!12,colframe=secbar,arc=3pt,
+      left=2mm,right=2mm,top=1.5mm,bottom=1.5mm,width=\linewidth]
+      \centering\small\bfseries\color{secbar}
+      Worst-case wall sizing\\[-1pt]
+      {\normalfont\footnotesize wastes 30--80\,t concrete per building}
+    \end{tcolorbox}
+  \end{minipage}%
+  \hfill{\color{gold}\Large$\Rightarrow$}\hfill
+  \begin{minipage}[c]{8.8cm}
+    \begin{tcolorbox}[colback=secbar!12,colframe=secbar,arc=3pt,
+      left=2mm,right=2mm,top=1.5mm,bottom=1.5mm,width=\linewidth]
+      \centering\small\bfseries\color{secbar}
+      FEA ``hidden'' cost\\[-1pt]
+      {\normalfont\footnotesize 100$+$ solves $\times$ 19--77\,min at $128^3$}
+    \end{tcolorbox}
+  \end{minipage}%
+  \hfill{\color{gold}\Large$\Rightarrow$}\hfill
+  \begin{minipage}[c]{9.0cm}
+    \begin{tcolorbox}[colback=secbar!12,colframe=secbar,arc=3pt,
+      left=2mm,right=2mm,top=1.5mm,bottom=1.5mm,width=\linewidth]
+      \centering\small\bfseries\color{secbar}
+      Unprintable geometry\\[-1pt]
+      {\normalfont\footnotesize diagonal voxels $\to$ floating fragments}
+    \end{tcolorbox}
+  \end{minipage}
+
+  % ── Subsection pivot + equation with right-side annotation ──────────────────
+  \vspace{3mm}
+  \sub{SURROGATE TOPOLOGY OPTIMIZATION}
+  \small\RaggedRight
+  Classical \textbf{SIMP} topology optimization iterates 100--1000 full FEA solves.
+  \textbf{SASTO} replaces this loop with a trained surrogate, yet existing approaches
+  are not used in building-scale design because:
+
+  \vspace{2mm}
+  \begin{minipage}[c]{0.44\linewidth}
+    \centering
+    \[{\color{secbar}\large\mathbf{K\,u = f}}\]
+  \end{minipage}%
+  \begin{minipage}[c]{0.54\linewidth}
+    \small\RaggedRight
+    \textbf{Equation:} Linear elastostatics.\\
+    $K$: global stiffness matrix \hspace{1mm} $u$: displacement field\\
+    $f$: applied load vector.\\[2pt]
+    Solved \textbf{once per design} during data generation;
+    \textbf{never} during optimization in SASTO vs.\ 100$+$ times per design in SIMP.
+  \end{minipage}
+
+  \vspace{2mm}
+  \begin{enumerate}[leftmargin=1.6em, itemsep=2pt, topsep=0pt, label=\textbf{(\arabic*)}]
+    \item FEA requires 100$+$ expensive iterative solves, making it infeasible at building
+      scale ($128^3$ mesh, 19--77\,min per solve).
+    \item No guarantee of topological connectivity for \textbf{3D-printable
+      single-component toolpaths}: diagonal voxel adjacency produces
+      unfabricable floating geometry.
+    \item Uniform wall-thickness assumption \textbf{wastes material} in structurally
+      unloaded interior partitions.
+  \end{enumerate}
+
+  \vspace{2mm}
+  \small\RaggedRight
+  \textbf{SASTO} addresses all three simultaneously: a trained surrogate replaces
+  iterative FEA, 6-connectivity enforcement guarantees single-component printable
+  geometry, and part-aware thickness floors maximize material savings where structural
+  demand is lowest.
+\end{ccard}
+\vspace{\SG}
+
+%% L3: RESEARCH OBJECTIVES ──────────────────────────────────
+\sechdr{Research Objectives}
+\begin{ccard}
+  \small\RaggedRight
+  \textbf{ENGINEERING PROBLEM:} SIMP topology optimization requires 100s--1000s of costly
+  FEA solves; existing surrogate models lack formal topology guarantees; and uniform-thickness
+  constraints forego material savings in structurally non-critical interior walls.\\[4pt]
+  \textbf{RESEARCH QUESTION:} Can a deep learning surrogate replace iterative FEA to
+  enable fast, 3D-printable, and safety-verified topology optimization of full building
+  structures, validated against independent ground-truth FEA on 1,114 held-out designs?\\[4pt]
+  \textbf{CLAIM:} \textbf{SASTO} replaces iterative FEA with a 5-member deep ensemble
+  providing uncertainty-quantified structural predictions. It enforces a \textbf{6-connected
+  topology} criterion for printability and achieves \textbf{23--92$\times$ speedup} with
+  \textbf{zero safety violations} on 1,114 test designs, verified by independent hex8 FEA.
+
+  \vspace{3mm}
+  \begin{minipage}[t]{0.31\linewidth}
+    \cbox{Speed}{50\,s median runtime.\\23--92$\times$ vs.\ SIMP.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.31\linewidth}
+    \cbox{Printability}{6-connectivity enforced.\\Single-component STL.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.31\linewidth}
+    \cbox{Safety}{$k$=1.0 bound.\\0/1,114 FEA violations.}
+  \end{minipage}
+
+  \vspace{3mm}
+  \textbf{Primary Endpoint:} Minimize material volume subject to structural constraints
+  (stress $\leq \sigma_\text{allow}$, compliance ratio $\leq 1.15$) with zero violations
+  confirmed by independent hex8 FEA across the full 1,114-geometry test set.\\[3pt]
+  \textbf{Secondary Endpoint:} Compliance Spearman $\rho \geq 0.90$; $\geq 90\%$ single-component
+  STL meshes without post-processing.\\[4pt]
+  \textbf{BRAINSTORMING A SOLUTION:}\\
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=0pt]
+    \item \textbf{Data:} Wireframe-to-FEA pipeline using 3DWire + SfePy; 14,293 samples.
+    \item \textbf{Surrogate:} 5 independently seeded 3D-CNNs; ensemble mean $+$ s.d.\ as
+      uncertainty-quantified predictions of stress, displacement, and compliance.
+    \item \textbf{Optimize:} Per-voxel sensitivity guides removal; 6-simple-point test guards
+      connectivity; trust-region adaptive batch avoids constraint overshoot.
+    \item \textbf{Validate:} Re-run independent ground-truth FEA on every optimized design;
+      compute conformal coverage certificates.
+  \end{itemize}
+\end{ccard}
+\vspace{\SG}
+
+%% L4: PROBLEM FRAMING ─────────────────────────────────────
+\sechdr{Problem Framing}
+\begin{ccard}
+  \small\RaggedRight
+  \sub{Optimization Objective}
+  The three-term objective balances volume removal, surface smoothness, and structural
+  constraint satisfaction. Both volume $V$ and surface area $S$ are normalized by prior
+  volume $V_0$; the constraint penalty $P$ aggregates scaled violations:
+  \[\min_{\mathbf{p}\in\{0,1\}^N}\;
+    J(\mathbf{p}) = w_V\!\left(\!\frac{V}{V_0}\!\right)
+    + w_S\!\left(\!\frac{S}{V_0}\!\right) + P_\text{constraint}(\mathbf{p})\]
+  Weights $w_V\!=\!1.0$, $w_S\!=\!0.01$ are selected by grid search on the validation
+  split.  $P$ aggregates stress, compliance, and displacement violations, each normalized
+  to a $[0,1]$ penalty scale.
+
+  \vspace{2mm}
+  \sub{Sensitivity Computation}
+  Each iteration, back-propagation through the ensemble yields a per-voxel removal score:
+  \[s_i = \frac{1}{M}\sum_{m=1}^{M}\frac{\partial}{\partial p_i}
+    \bigl[f_m(C) + 0.3\,f_m(\sigma)\bigr]\]
+  {\color{teal}$s_i > 0$: voxel penalizes objectives more than it stiffens; safe to remove.}\\
+  {\color{posterred}$s_i < 0$: voxel is load-bearing; removal risks violation.}
+
+  \vspace{2mm}
+  \sub{Part-Aware Thickness (Cross-Section Views)}
+  \begin{minipage}[c]{0.31\linewidth}\centering
+    \fig{\HQ{xs_original.png}}{8.6cm}\\[-1pt]\fc{Original}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.31\linewidth}\centering
+    \fig{\HQ{xs_sasto_u.png}}{8.6cm}\\[-1pt]\fc{SASTO-U}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.31\linewidth}\centering
+    \fig{\HQ{xs_sasto_pa.png}}{8.6cm}\\[-1pt]\fc{SASTO-PA}
+  \end{minipage}
+
+  \vspace{2mm}
+  Exterior walls, roof, and floor require $t_{\min}=2\Delta x\approx 156\,\text{mm}$ for
+  structural and weather-tightness integrity. Interior partitions carry negligible vertical
+  load and are permitted to thin to $t_{\min}=1\Delta x\approx 78\,\text{mm}$.
+  This \textbf{part-aware} policy yields an additional \textbf{10.7\,pp} volume reduction
+  vs.\ the uniform variant (SASTO-U: 34.3\% $\to$ SASTO-PA: 45.0\% on the reference case),
+  as visible in the cross-section comparison above.
+\end{ccard}
+
+\end{minipage}%  ─── END LEFT PANEL ───
+\hspace{3mm}%
+%% ════════════════════════════════════════════════════════════
+%%  CENTER PANEL  (60.20cm)
+%% ════════════════════════════════════════════════════════════
+\begin{minipage}[t]{\CC}
+
+%% C1: ENGINEERING METHODOLOGY ──────────────────────────────
+\sechdr{Engineering Methodology}
+\begin{ccard}
+
+% Overview + step pills row
+\begin{minipage}[t]{30cm}
+  \small\RaggedRight
+  \textbf{Overview:}
+  My methodology has four stages: (1)~dataset generation from real building wireframes via
+  FEA, (2)~3D-CNN ensemble training with uncertainty quantification, (3)~SASTO
+  sensitivity-guided voxel erosion with topology enforcement, and (4)~independent FEA
+  ground-truth validation on all 1,114 held-out designs.
+\end{minipage}\hfill
+\begin{minipage}[t]{28cm}\centering
+  \begin{tcolorbox}[colback=teal,colframe=teal,arc=3pt,left=1mm,right=1mm,
+    top=0.5mm,bottom=0.5mm,width=5.8cm,nobeforeafter]
+    \centering\color{white}\bfseries\footnotesize Wireframe\\\itshape Step 1
+  \end{tcolorbox}\hspace{0.5mm}%
+  {\color{gold}\small$\to$}\hspace{0.5mm}%
+  \begin{tcolorbox}[colback=teal,colframe=teal,arc=3pt,left=1mm,right=1mm,
+    top=0.5mm,bottom=0.5mm,width=5.8cm,nobeforeafter]
+    \centering\color{white}\bfseries\footnotesize Volumetric\\\itshape Step 2
+  \end{tcolorbox}\hspace{0.5mm}%
+  {\color{gold}\small$\to$}\hspace{0.5mm}%
+  \begin{tcolorbox}[colback=teal,colframe=teal,arc=3pt,left=1mm,right=1mm,
+    top=0.5mm,bottom=0.5mm,width=5.8cm,nobeforeafter]
+    \centering\color{white}\bfseries\footnotesize FEA + Train\\\itshape Step 3
+  \end{tcolorbox}\hspace{0.5mm}%
+  {\color{gold}\small$\to$}\hspace{0.5mm}%
+  \begin{tcolorbox}[colback=teal,colframe=teal,arc=3pt,left=1mm,right=1mm,
+    top=0.5mm,bottom=0.5mm,width=5.8cm,nobeforeafter]
+    \centering\color{white}\bfseries\footnotesize Optimize\\\itshape Step 4
+  \end{tcolorbox}
+\end{minipage}
+
+\vspace{3mm}\noindent\rule{\linewidth}{0.3pt}\vspace{2mm}
+
+% Data Generation | Deep Ensemble
+\begin{minipage}[t]{\HC}
+  \sub{(1) Data Generation Pipeline}
+  \fig{\HQ{fig_wireframe_pipeline.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~2.\ Pipeline: 3DWire wireframe $\to$ boolean-fused mesh $\to$ hex8 FEA $\to$ 128-cube voxel grid.}
+
+  \small
+  The 3DWire dataset provides 14,293 building wireframe skeletons. Each is processed through
+  a custom pipeline: wall/roof/floor solid extrusion, boolean union into one watertight body,
+  and static FEA under ASCE~7-22 gravity + wind load combos using SfePy. Of 14,293 inputs,
+  \textbf{3,115 (21.8\%)} are rejected for divergence, near-zero strain energy, or degenerate
+  geometry, leaving \textbf{11,178 valid} $128^3$ voxel grids with 7 geometric channels and
+  three scalar FEA labels: peak VM stress, max displacement, global compliance.
+  A \textbf{family-aware split} groups wireframes by architectural cluster, preventing
+  near-duplicate leakage: 8,943 train / 1,121 val / 1,114 test.
+  Raw FEA outputs total $\sim$200\,GB; processed dataset is 59\,GB.
+  Targets span 4.9 orders of magnitude (stress) to 7.7 orders (compliance), requiring
+  log-transform normalization and 2nd/98th-percentile winsorization before training.
+\end{minipage}%
+\hspace{2mm}%
+\begin{minipage}[t]{\HC}
+  \sub{(2) Deep Ensemble Surrogate (5\,$\times$\,8.76M params)}
+  \fig{\EX{Image 7.jpg}}{\linewidth}\\[-1pt]
+  \fc{Fig.~3.\ Architecture: 4 conv stages (BN+GELU) $\to$ 3 SE-ResBlocks $\to$ dual pool $\to$ 3 outputs.}
+
+  \small
+  Each ensemble member is a 3D convolutional network.
+  The architecture uses four strided conv stages (BatchNorm + GELU), followed by three
+  Squeeze-and-Excitation ResBlocks for long-range spatial dependency, a dual global pooling
+  head (avg + max), and three fully-connected layers down to 3 scalar outputs
+  (stress, displacement, compliance). Five members are trained independently with different
+  random seeds. The ensemble predicts \textbf{mean $\mu$} and \textbf{std.\ dev.\ $\sigma$}
+  for each quantity, providing principled uncertainty bounds.
+  Training: AdamW ($lr$=5e-4), Huber loss, cosine annealing, EMA ($\alpha$=0.999),
+  random 90$^\circ$ rotations + reflections. Breakthrough at \textbf{model version~14}: first
+  substantially accurate validation predictions (compliance Spearman $\rho$\,=\,0.948).
+\end{minipage}
+
+\vspace{3mm}\noindent\rule{\linewidth}{0.3pt}\vspace{2mm}
+
+% SASTO Algorithm | 6-Connectivity
+\begin{minipage}[t]{\HC}
+  \sub{(3) SASTO Sensitivity-Guided Erosion}
+  \fig{\EX{Image 8.jpg}}{\linewidth}\\[-1pt]
+  \fc{Fig.~4.\ SASTO three-phase algorithm flowchart.}
+
+  \small
+  The surrogate replaces FEA inside a voxel-removal loop. Each iteration:
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=1pt]
+    \item Compute distance transform; find candidates deeper than $t_{\min}(p)$.
+    \item Score by ensemble sensitivity $s_i$; rank descending.
+    \item Select batch $B$ of \textbf{6-simple-point} voxels (topology-safe by construction).
+    \item Tentatively remove batch; query ensemble. If $\hat{\sigma}^+ \leq \sigma_\text{allow}$
+      \textit{and} $\hat{C}/C_0 \leq 1.15$: \textbf{commit}. Else: \textbf{undo}
+      $+$ halve $B$ (trust-region).
+    \item \textbf{Phase~2} (endgame): fix $B$ at 5, then 1 for fine-grained pruning.
+    \item \textbf{Phase~3}: swap moves, replacing corner-touching non-simple voxels with
+      face-adjacent topology-safe alternatives.
+  \end{itemize}
+  Post-process: pocket fill $\to$ SDF smoothing $\to$ Marching Cubes $\to$ STL export.
+
+  \eqpill{$\hat{\sigma}^+ = \mu_\sigma + k\,\sigma_\sigma$,\;
+    $\hat{C}^+ = \mu_C + k\,\sigma_C$,\; $k=1.0$ at operating point.}
+\end{minipage}%
+\hspace{2mm}%
+\begin{minipage}[t]{\HC}
+  \sub{(4) Topology Preservation: 6-Connectivity}
+  \begin{minipage}[c]{0.47\linewidth}\centering
+    \fig{\EX{Image 9.jpg}}{13.3cm}\\[-1pt]
+    \fc{{\color{posterred}26-conn: fragments}}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.47\linewidth}\centering
+    \fig{\EX{Image 10.jpg}}{13.3cm}\\[-1pt]
+    \fc{{\color{teal}6-conn: 1 component}}
+  \end{minipage}
+
+  \vspace{1mm}\small
+  \textit{Proposition (Kong \& Rosenfeld 1989): A binary voxel field with exactly one
+  6-connected foreground component yields a single-component Marching Cubes mesh.}
+
+  Two voxels are \textbf{6-adjacent} iff they share a face. They are
+  \textbf{26-adjacent} iff they share a face, edge, or corner. Classical voxel removal
+  using 26-adjacency produces isolated islands attached only at diagonal corners that
+  become floating geometry after meshing, making them unfabricable. SASTO enforces the
+  \textbf{6-simple-point} criterion: a voxel is removable only if deletion does not
+  alter the 6-connected component count. This is checked in O(1) via a
+  26-neighborhood Euler characteristic table lookup.
+
+  \textbf{Experimental verification (60 designs):}
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=1pt]
+    \item 100\% single-component voxel fields
+    \item 90\% produce single-component meshes without post-processing
+    \item 10\% resolved by a single connected-component fill pass
+    \item Zero cases required geometry discard
+  \end{itemize}
+
+  \vspace{2mm}
+  \sub{Training Curves \& Model Tuning}
+  \begin{minipage}[c]{0.58\linewidth}
+    \fig{\PF{fig_training_curves.png}}{\linewidth}\\[-1pt]
+    \fc{Fig.~5.\ 5 ensemble members; convergence by epoch\,$\sim$130.}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.15\linewidth}
+    \fig{\PF{fig_activation.png}}{\linewidth}\\[-1pt]
+    \fc{GELU}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.22\linewidth}
+    \small GELU outperforms ReLU on smooth stress fields. EMA reduces checkpoint noise. Removing SE blocks drops displacement $\rho$ from 0.970 to 0.921.
+  \end{minipage}
+\end{minipage}
+
+\end{ccard}
+\vspace{\SG}
+
+%% C2: RESULTS & IN-SILICO VALIDATION ───────────────────────
+\sechdr{Results \& In-Silico Validation}
+\begin{ccard}
+
+\begin{minipage}[t]{\TC}  %% COL A: Reference Case + Volume Distribution
+
+  \sub{Reference Case (Sample 00472)}
+  \begin{minipage}[c]{0.48\linewidth}\centering
+    \fig{\RD{REF_original_colored_iso.png}}{8.4cm}\\[-1pt]\fc{Original}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.48\linewidth}\centering
+    \fig{\RD{ref_v11_pa_colored_iso.png}}{8.4cm}\\[-1pt]\fc{SASTO-PA ($-$45.0\%)}
+  \end{minipage}
+  \begin{minipage}[c]{0.48\linewidth}\centering
+    \fig{\RD{REF_original_cutaway_iso.png}}{8.4cm}\\[-1pt]\fc{Cutaway: original}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.48\linewidth}\centering
+    \fig{\RD{ref_v11_pa_cutaway_iso.png}}{8.4cm}\\[-1pt]\fc{Cutaway: SASTO-PA}
+  \end{minipage}
+
+  \vspace{1mm}\small
+  \begin{tabular}{@{}ll@{}}
+    Volume removed: & $116{,}872 \to 64{,}292$ vox ($-$45.0\%) \\
+    VM stress (cons.): & $3.08\!\times\!10^6$\,Pa \\
+    Compliance ratio: & 1.004 (limit: 1.15) \\
+    Mesh components: & 1 (watertight) \\
+    Runtime: & 159.5\,s \\
+    PA vs.\ U gain: & {\color{teal}\bfseries +10.7\,pp} \\
+  \end{tabular}
+
+  \vspace{3mm}
+  \fig{\PF{fig_histogram.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~6.\ Volume reduction distribution: 1,114 test geometries. Median 23.5\%.}
+
+  \small
+  Volume reductions span 5--65\%, reflecting the geometric diversity of 3DWire.
+  SASTO-PA consistently outperforms SASTO-U by exploiting part-aware thickness floors
+  for aggressive interior wall thinning. The negative-skew tail reflects complex
+  houses with many load-bearing internal walls that resist further erosion.
+
+\end{minipage}\hfill
+%
+\begin{minipage}[t]{\TC}  %% COL B: Multi-Geometry + Speedup
+
+  \sub{Diverse Geometry Results}
+  \fig{\HQ{fig_diverse_stl_gallery.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~7.\ Four held-out test geometries: original (left), SASTO-PA solid (center), SASTO-PA cutaway (right). Reductions range from 18--41\%.}
+
+  \small
+  SASTO generalizes across markedly different house archetypes: simple rectangular plans,
+  L-shaped footprints, multi-gabled roofs, and complex interior arrangements.
+  All 1,114 test designs pass independent FEA re-analysis with zero violations.
+  Volume reductions range from 18\% (geometry~08018, dense load-bearing interior walls)
+  to 41\% (geometry~04203, large open-plan interior). The ``compressibility'' of a
+  design is primarily determined by the fraction of interior partition surface area
+  relative to total structure; open-plan designs with fewer interior walls allow
+  more aggressive bulk exterior wall thinning without constraint violation.
+
+  \vspace{2mm}
+  \fig{\HQ{fig_type_comparison.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~8.\ SASTO-U vs.\ SASTO-PA side-by-side. Part-aware removes more interior material while preserving the exterior structural envelope.}
+
+  \vspace{2mm}
+  \fig{\PF{fig_speedup.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~9.\ Runtime comparison (log scale). SASTO 50\,s median vs.\ SIMP 19--77\,min projected.}
+
+\end{minipage}\hfill
+%
+\begin{minipage}[t]{\TC}  %% COL C: FEA Validation + Cross-sections
+
+  \sub{Independent FEA Validation ($n$\,=\,1,114)}
+  \fig{\PF{fig_fea_compliance.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~10.\ Compliance ratio $C_\text{opt}/C_\text{base}$ for all 1,114 test designs. Dashed = limit 1.15. Max observed: 1.004.}
+
+  \small
+  Every optimized design is re-analyzed by an \textit{independent} hex8 voxel FEA
+  solver (not the trained surrogate) to provide a ground-truth safety check:
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=1pt]
+    \item Mean $C_\text{opt}/C_\text{base} = 0.631 \pm 0.112$
+    \item Maximum ratio: \textbf{1.004} (37\,pp below the 1.15 limit)
+    \item {\color{teal}\bfseries Zero violations across all 1,114 designs}
+    \item 99\% conformal upper bound: 0.950
+  \end{itemize}
+
+  \vspace{2mm}
+  \fig{\HQ{fig_cross_section_comparison.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~11.\ Cross-sections: original (top), SASTO-U (mid), SASTO-PA (bottom). Part-aware shows aggressive interior thinning.}
+
+  \vspace{2mm}
+  \begin{minipage}[c]{0.48\linewidth}
+    \fig{\PF{fig_regression.png}}{\linewidth}\\[-1pt]\fc{Fig.~12.\ Regression}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.48\linewidth}
+    \fig{\PF{fig_bland_altman.png}}{\linewidth}\\[-1pt]\fc{Fig.~13.\ Bland-Altman}
+  \end{minipage}
+
+  \small\vspace{1mm}
+  The regression and Bland-Altman plots confirm that for designs where the surrogate
+  predicts low compliance (efficient designs), the FEA ground truth also records low
+  compliance, validating the surrogate's ranking accuracy as the mechanism underlying
+  SASTO's safety record.
+
+\end{minipage}
+
+\vspace{3mm}
+\eqpill{Conservative bound: $\hat{\sigma}^+ = \mu + k\sigma$ ($k$=1.0).
+  $P(\text{violation}) \leq \tfrac{1}{n+1} = 0.09\%$
+  (Vovk et al.\ conformal guarantee, distribution-free, $n$=1,114).
+  Safety margin to compliance limit: 0.146 units.}
+{\centering\tiny\itshape
+  Model v14; 5-member deep ensemble; independent hex8 FEA validation on all 1,114 test designs.\par}
+
+\end{ccard}
+
+\end{minipage}%  ─── END CENTER PANEL ───
+\hspace{3mm}%
+%% ════════════════════════════════════════════════════════════
+%%  RIGHT PANEL  (29.72cm)
+%% ════════════════════════════════════════════════════════════
+\begin{minipage}[t]{\RC}
+
+%% R1: STATISTICAL ANALYSIS ────────────────────────────────
+\sechdr{Statistical Analysis}
+\begin{ccard}
+  \small\RaggedRight
+  I conducted a comprehensive statistical analysis to characterize SASTO's performance
+  across the full 1,114-geometry test set, including surrogate quality, optimization
+  outcomes, uncertainty calibration, and runtime distribution.
+
+  \vspace{3mm}
+  \sub{k-Factor Pareto Frontier}
+  \fig{\PF{fig_k_factor.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~14.\ $k$-factor: acceptance rate (teal, left) and mean volume reduction (gold, right). Operating point $k$=1.0.}
+
+  \small
+  The scalar $k$ controls the safety margin in the conservative bound $\hat{y}^+ = \mu + k\sigma$.
+  At $k$=0 the surrogate mean is used directly; at $k$=3 the bound is extremely conservative.
+  The dual-axis Pareto plot reveals that larger $k$ reduces per-design material savings but
+  provides stronger safety guarantees. \textbf{$k$=1.0} was selected as the operating point:
+  it maintains $>$99\% acceptance rate while providing a $1\sigma$ buffer against
+  surrogate under-prediction, corresponding to the observed conformal $k$=1.90 for 84.1\%
+  compliance coverage.
+
+  \vspace{3mm}
+  \sub{Ensemble Uncertainty Bands}
+  \fig{\PF{fig_uncertainty.png}}{\linewidth}\\[-1pt]
+  \fc{Fig.~15.\ Ensemble mean $\pm\sigma$ during reference-case optimization. Bands narrow as design converges.}
+
+  \small
+  Ensemble uncertainty $\sigma$ naturally decreases as optimization converges toward a
+  structurally efficient configuration, because such designs are well-represented in
+  the training distribution. This self-calibrating behavior provides \textit{additional}
+  implicit safety margin precisely when the design is most aggressively pruned.
+
+  \vspace{3mm}
+  \sub{Surrogate Quality (test set, $n$\,=\,1,114)}
+  {\small
+  \begin{tabular}{@{}lrrr@{}}
+    \rowcolor{secbar}
+    \color{white}\bfseries Target &
+    \color{white}\bfseries Spear.~$\rho$ &
+    \color{white}\bfseries $R^2_{\log}$ &
+    \color{white}\bfseries MAPE \\\midrule
+    VM stress    & 0.737 & 0.419 & 37.4\% \\
+    \rowcolor{altrow}
+    Displacement & 0.970 & 0.842 & 10.9\% \\
+    Compliance   & 0.948 & 0.814 & 18.5\% \\
+  \end{tabular}}
+
+  \vspace{1mm}\small
+  The surrogate does not need pointwise accuracy; it needs to correctly
+  \textit{rank} designs by compliance so that sensitivity scores steer erosion away
+  from essential voxels. Compliance $\rho$=0.948 far exceeds the $\geq$0.90 endpoint.
+  VM stress MAPE is higher (37.4\%) due to localized stress concentrations, but the
+  $k$-bound compensates: $k$=1.0 adds ${\sim}1\sigma\approx 0.37$ compliance units of
+  margin, which is 2.5$\times$ the observed reserve (0.146 units).
+
+  \vspace{3mm}
+  \sub{Conformal Prediction Certificates}
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=0pt]
+    \item $k$ for 84.1\% compliance coverage: $k=1.90$ (heavier tails than Gaussian)
+    \item $k$ for 84.1\% VM stress coverage: $k=4.31$ (localized peaks)
+    \item 99\% conformal upper bound on $C_\text{opt}/C_\text{base}$: \textbf{0.950}
+    \item {\color{teal}\bfseries $P(\text{viol.})\leq 1/(n{+}1)=0.09\%$, distribution-free}
+  \end{itemize}
+
+  \vspace{3mm}
+  \sub{Runtime Summary}
+  {\small
+  \begin{tabular}{@{}lll@{}}
+    \rowcolor{secbar}
+    \color{white}\bfseries Method &
+    \color{white}\bfseries Per Design &
+    \color{white}\bfseries vs.\ SASTO \\\midrule
+    SASTO (ours)  & 50\,s median & baseline \\
+    \rowcolor{altrow}
+    SIMP 64-cube  & 94\,s median & 0.5$\times$ \\
+    SIMP 128-cube & 19--77\,min  & 23--92$\times$ slower \\
+  \end{tabular}}
+
+  \small\vspace{1mm}
+  Measured on RTX A3000 Laptop GPU. SIMP 128-cube times are projected from measured
+  64-cube data with $O(N^2)$ scaling (each additional resolution doubling $\approx 4\times$
+  solve time). SASTO's 50\,s runtime is dominated by ensemble inference ($\sim$80\%) and
+  distance-transform ($\sim$15\%), both highly GPU-parallelizable.
+\end{ccard}
+\vspace{\SG}
+
+%% R2: CONCLUSIONS ─────────────────────────────────────────
+\sechdr{Conclusions}
+\begin{ccard}
+  \small\RaggedRight
+  This research demonstrates that a 5-member deep ensemble surrogate can replace iterative
+  FEA within a topology optimization loop for full building-scale structures. SASTO achieves
+  competitive material savings at a fraction of the compute cost, while guaranteeing
+  printable single-component topology and distribution-free safety coverage. Specifically,
+  SASTO solves the three identified failure modes: it is fast (50\,s), enforces 6-connected
+  topology for printability, and provides conformal safety certificates.\\[4pt]
+  \textbf{Revisiting Engineering Criteria:}
+  \begin{itemize}[leftmargin=1.2em, itemsep=1pt, topsep=2pt]
+    \item \textbf{Speed:} 50\,s median vs.\ SIMP 19--77\,min at equivalent resolution.
+      \textbf{Endpoint: met.}
+    \item \textbf{Printability:} 100\% single-component voxel fields; 90\% direct
+      single-component meshes. \textbf{Endpoint: met.}
+    \item \textbf{Safety:} 0/1,114 FEA violations; 99\%-conformal bound 0.950 vs.\
+      limit 1.15. \textbf{Endpoint: met and exceeded.}
+  \end{itemize}
+
+  \vspace{3mm}
+  \textbf{Scientific Contributions.}
+  SASTO is the first system combining (a)~building-scale 3D-CNN surrogate inference,
+  (b)~6-connected topology enforcement for printability, and (c)~conformal safety
+  coverage for structural topology optimization. The 6-connectivity proposition and
+  family-aware data splitting are novel contributions applicable beyond this domain.\\[3pt]
+  \textbf{Practical Impact.}
+  At scale, 23.5\% concrete reduction per building translates to millions of tonnes of
+  avoided CO$_2$ annually. SASTO runs on a single consumer GPU in under one minute,
+  enabling engineers to explore dozens of design variants in a morning, a workflow
+  that was previously impossible with FEA-based optimization.
+  {\color{teal}\bfseries 8\% of global CO$_2$ is cement. Even 10\% adoption of
+  AI-optimized construction would offset tens of millions of tonnes annually.}
+\end{ccard}
+\vspace{\SG}
+
+%% R3: FUTURE WORK ─────────────────────────────────────────
+\sechdr{Future Work}
+\begin{ccard}
+  \small\RaggedRight
+  This work opens several promising research directions, distinguished by near-term
+  feasibility vs.\ requiring additional data or infrastructure:
+
+  \vspace{2mm}
+  \begin{itemize}[leftmargin=1.2em, itemsep=2pt, topsep=0pt]
+    \item \textbf{FEA-in-the-loop active learning:} When ensemble $\sigma$ exceeds a
+      threshold mid-run, trigger a ground-truth FEA solve, fine-tune the member on the
+      new data point, and continue, providing a self-correcting safety net.
+    \item \textbf{Nonlinear material spot checks:} Apply concrete damaged plasticity
+      (CDP) FEA to assess cracking and buckling in 78\,mm interior partitions under
+      both service and extreme loads.
+    \item \textbf{Physical print validation:} 3D-print one optimized house at 1:10 scale
+      in micro-concrete; apply incremental compression load to failure; compare DIC
+      strain fields to FEA predictions.
+    \item \textbf{Seismic + wind} load extensions for code compliance in ASCE~7-22
+      Chapter~12 seismically active zones.
+    \item \textbf{Multi-material:} Allow geopolymer or fiber-reinforced concrete in thin
+      sections for a higher strength-to-weight ratio without increasing volume.
+    \item \textbf{Other domains:} Ship hulls, aircraft ribs, biomedical scaffolds; all share the same boundary-value problem structure.
+  \end{itemize}
+\end{ccard}
+\vspace{\SG}
+
+%% R4: KEY REFERENCES ──────────────────────────────────────
+\sechdr{Key References}
+\begin{ccard}
+  \footnotesize
+  \begin{enumerate}[leftmargin=1.4em, itemsep=2pt, topsep=0pt, label={[\arabic*]}]
+    \item M.~P.~Bendsoe \& O.~Sigmund. \textit{Topology Optimization.} Springer, 2003.
+    \item B.~Lakshminarayanan et al. Deep ensembles for uncertainty.
+      \textit{NeurIPS}, 2017.
+    \item T.~Y.~Kong \& A.~Rosenfeld. Digital topology survey.
+      \textit{CVGIP} 48(3):357--393, 1989.
+    \item ASCE. \textit{ASCE/SEI~7-22: Minimum Design Loads.} 2022.
+    \item R.~A.~Buswell et al. 3D printing using concrete extrusion.
+      \textit{Cem.\ Concr.\ Res.} 112:37--49, 2018.
+    \item O.~Sigmund \& K.~Maute. Topology optimization approaches.
+      \textit{Struct.\ Multidisc.\ Optim.} 48:1031, 2013.
+    \item Y.~Lin et al. 3DWire wireframe dataset. KAUST, 2024.
+    \item IEA. \textit{Global Buildings Report 2021.} Int'l Energy Agency.
+    \item W.~E.~Lorensen \& H.~E.~Cline. Marching Cubes.
+      \textit{ACM SIGGRAPH} 21(4):163--169, 1987.
+    \item V.~Vovk et al. \textit{Algorithmic Learning in a Random World.}
+      Springer, 2005.
+  \end{enumerate}
+  \vspace{2mm}
+  {\centering\color{posterred}\itshape Full bibliography in accompanying paper.\par}
+\end{ccard}
+
+\end{minipage}%  ─── END RIGHT PANEL ───
+
+\end{document}

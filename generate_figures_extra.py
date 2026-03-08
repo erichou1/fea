@@ -25,6 +25,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 import matplotlib.patches as mpatches
+from mpl_toolkits.mplot3d import Axes3D  # registers projection='3d'
 from pathlib import Path
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -584,22 +585,165 @@ def fig16_fea_placeholder():
         axes[col].set_facecolor('#E6E8EB')
         axes[col].set_title(title, fontsize=13, fontweight='bold', pad=8)
 
-    # Colorbar — positioned to the right, not overlapping
+    # Colorbar — attached only to panel B, placed to its right with generous pad
     sm = plt.cm.ScalarMappable(cmap=plt.cm.jet, norm=plt.Normalize(0, 5.0))
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=axes.tolist(), shrink=0.65, aspect=25, pad=0.03,
-                        location='right')
-    cbar.set_label("Von Mises Stress (MPa)", fontsize=12)
+    cbar = fig.colorbar(sm, ax=axes[1], orientation='horizontal',
+                        shrink=0.80, aspect=35, pad=0.04, location='bottom')
+    cbar.set_label("Von Mises Stress (MPa)", fontsize=12, labelpad=6)
     cbar.ax.tick_params(labelsize=10)
-    cbar.ax.axhline(y=5.0, color='black', linewidth=2, linestyle='--')
+    # vertical threshold line at 5 MPa (right edge of the horizontal bar)
+    cbar.ax.axvline(x=5.0, color='black', linewidth=2, linestyle='--')
 
     plt.suptitle("FEA Stress Distribution: Original vs. Optimized (Illustrative)",
-                 fontsize=14, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0, 0.93, 0.95])
+                 fontsize=14, fontweight="bold", y=1.00)
+    plt.tight_layout(rect=[0, 0.08, 1.0, 0.97])
     fig.savefig(os.path.join(OUT_DIR, "fig16_fea_stress_placeholder.png"),
                 dpi=300, facecolor='#E6E8EB', edgecolor='none')
     plt.close(fig)
     print("  OK Figure 16: FEA stress contour visualization")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Figure: Voxel House Representation
+# ═══════════════════════════════════════════════════════════════════
+def fig_voxel_house():
+    """
+    Show the 128³ voxel representation of the reference house (same geometry
+    as Fig 16), colored by structural part type.
+
+    Layout (4 panels):
+      (a) 3D isometric voxel view   – downsampled to 32³ for speed/clarity
+      (b) Horizontal cross-section  – z = 50 (mid-height floor plan view)
+      (c) Longitudinal section      – y = 64 (side-elevation view)
+      (d) Transverse section        – x = 64 (front-elevation view)
+    """
+    occ_path  = os.path.join(OPT_DIR, "fixed_occ.npz")
+    part_path = os.path.join(OPT_DIR, "fixed_part.npz")
+
+    if not os.path.exists(occ_path) or not os.path.exists(part_path):
+        print("  ! Skipping fig_voxel_house: voxel data not found")
+        return
+
+    occ  = np.load(occ_path)["data"].astype(np.uint8)   # (128,128,128)
+    part = np.load(part_path)["data"].astype(np.uint8)  # (128,128,128)
+
+    # ── Part color definitions (matches render_figures.py STL colors) ─
+    PART_COLORS = {
+        0: (1.00, 1.00, 1.00, 0.00),                 # empty – transparent
+        1: ( 55/255, 125/255, 190/255, 1.00),         # exterior wall – blue
+        2: (240/255, 120/255,  60/255, 1.00),         # interior wall – orange
+        3: (100/255, 160/255,  50/255, 1.00),         # roof – green
+        4: (190/255, 165/255, 120/255, 1.00),         # floor/slab – tan
+    }
+    PART_NAMES = {
+        1: "Exterior Wall",
+        2: "Interior Wall",
+        3: "Roof",
+        4: "Floor / Slab",
+    }
+
+    # ── Helpers ─────────────────────────────────────────────────────
+    def part_rgba_2d(p_slice, o_slice):
+        """Build an RGBA image from a 2-D part slice."""
+        rgba = np.ones((*p_slice.shape, 4))
+        rgba[..., 3] = 0.0          # default: transparent
+        for pid, clr in PART_COLORS.items():
+            mask = (o_slice > 0) & (p_slice == pid)
+            rgba[mask] = clr
+        return rgba
+
+    # ── Figure layout ───────────────────────────────────────────────
+    fig = plt.figure(figsize=(20, 8), facecolor='white')
+    gs  = fig.add_gridspec(1, 4, wspace=0.05, left=0.03, right=0.97,
+                           top=0.88, bottom=0.08)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Panel (a): 3-D voxel view downsampled to 64³ (DS=2)
+    # ─────────────────────────────────────────────────────────────────
+    DS = 2          # 128 / 2 = 64
+    occ64  = occ [::DS, ::DS, ::DS]
+    part64 = part[::DS, ::DS, ::DS]
+
+    sx, sy, sz = part64.shape
+    facecolors = np.zeros((sx, sy, sz, 4))
+    edgecolors = np.zeros((sx, sy, sz, 4))
+    for pid, clr in PART_COLORS.items():
+        mask = (occ64 > 0) & (part64 == pid)
+        facecolors[mask] = clr
+        if pid > 0:
+            ec = (max(clr[0]-0.20, 0), max(clr[1]-0.20, 0),
+                  max(clr[2]-0.20, 0), 0.45)
+            edgecolors[mask] = ec
+
+    ax3d = fig.add_subplot(gs[0], projection='3d')
+    filled = occ64 > 0
+    ax3d.voxels(filled, facecolors=facecolors, edgecolors=edgecolors,
+                linewidth=0.15)
+
+    ax3d.set_box_aspect([1, 1, 0.6])
+    ax3d.view_init(elev=25, azim=-50)
+    ax3d.set_axis_off()
+    ax3d.set_title("(a)  3-D Voxel Model\n(64³)",
+                   fontsize=11, fontweight='bold', pad=6)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Panels (b–d): 2-D orthogonal cross-sections at 128³ resolution
+    # ─────────────────────────────────────────────────────────────────
+    slices = [
+        # (axis, index, label, xlabel, ylabel, orient)
+        ("z",  50, "(b)  Horizontal section\n(z = 50, mid-height floor plan)",
+         "X voxel", "Y voxel", None),
+        ("y",  64, "(c)  Longitudinal section\n(y = 64, side elevation)",
+         "X voxel", "Z voxel", None),
+        ("x",  64, "(d)  Transverse section\n(x = 64, front elevation)",
+         "Y voxel", "Z voxel", None),
+    ]
+    for i, (axis, idx, title, xl, yl, _) in enumerate(slices):
+        ax = fig.add_subplot(gs[i + 1])
+        if axis == "z":
+            o_sl = occ [: , :, idx]
+            p_sl = part[: , :, idx]
+        elif axis == "y":
+            o_sl = occ [:, idx, :].T
+            p_sl = part[:, idx, :].T
+        else:  # x
+            o_sl = occ [idx, :, :].T
+            p_sl = part[idx, :, :].T
+
+        rgba = part_rgba_2d(p_sl, o_sl)
+        ax.imshow(rgba, origin='lower', interpolation='nearest', aspect='equal')
+        # Overlay occupancy boundary
+        ax.contour(o_sl if axis == "z" else (
+                   occ[:, idx, :].T if axis == "y" else occ[idx, :, :].T),
+                   levels=[0.5], colors='#333333', linewidths=0.6, alpha=0.7)
+        ax.set_title(title, fontsize=11, fontweight='bold', pad=6)
+        ax.set_xlabel(xl, fontsize=9)
+        ax.set_ylabel(yl, fontsize=9)
+        ax.tick_params(labelsize=8)
+        # Remove axes spines for cleanliness
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+        ax.set_facecolor('#F0F2F4')
+
+    # ── Shared legend ────────────────────────────────────────────────
+    legend_patches = [
+        mpatches.Patch(facecolor=PART_COLORS[pid][:3],
+                       edgecolor='#444', linewidth=0.8, label=name)
+        for pid, name in PART_NAMES.items()
+    ]
+    fig.legend(handles=legend_patches, loc='lower center', ncol=4,
+               fontsize=10, framealpha=0.9,
+               bbox_to_anchor=(0.5, 0.005), handlelength=1.5)
+
+    fig.suptitle(
+        "Voxel Representation of Reference House Geometry (Sample 00472) — 128³ Grid",
+        fontsize=13, fontweight='bold', y=0.97)
+
+    out = os.path.join(OUT_DIR, "fig_voxel_house.png")
+    fig.savefig(out, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    print(f"  OK fig_voxel_house: {out}")
 
 
 # ═══════════════════════════════════════════════════════════════════
