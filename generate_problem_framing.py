@@ -8,6 +8,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
+from PIL import Image
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Polygon
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
@@ -244,17 +245,18 @@ left = (0.015, 0.08, 0.215, 0.84)
 mid = (0.280, 0.08, 0.440, 0.84)
 right = (0.770, 0.08, 0.215, 0.84)
 
-add_card(fig, left, LBLUE, BLUE, zorder=0)
-add_card(fig, mid, CARD, GOLD, zorder=0)
-add_card(fig, right, LBLUE, BLUE, zorder=0)
+# keep the background clean like the reference figure
 
-add_arrow(fig, (0.235, 0.50), (0.275, 0.50))
-add_arrow(fig, (0.725, 0.50), (0.765, 0.50))
+add_arrow(fig, (0.238, 0.50), (0.275, 0.50), lw=3.6, scale=30)
+add_arrow(fig, (0.725, 0.50), (0.762, 0.50), lw=3.6, scale=30)
 
 
 # ── Left: actual voxelized structure ─────────────────────────────────────────
-ax_left = fig.add_axes([0.032, 0.18, 0.178, 0.64], projection="3d")
-render_voxelized_house(ax_left, "figures/screenshot_stls/REF_original_colored.ply")
+ax_left = fig.add_axes([0.030, 0.18, 0.182, 0.64])
+ax_left.set_axis_off()
+voxel_img = Image.open("thumb_voxel_house.png")
+ax_left.imshow(voxel_img)
+ax_left.set_aspect("equal")
 
 fig.text(0.1225, 0.905, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
@@ -262,7 +264,7 @@ fig.text(0.1225, 0.095, "part-colored voxel grid of the starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.132
-legend_x = [0.040, 0.082, 0.126, 0.170]
+legend_x = [0.036, 0.079, 0.122, 0.167]
 legend_colors = [WALL, INTERIOR, ROOF, SLAB]
 legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
 for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
@@ -279,7 +281,7 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.93, "Project Representation",
+ax_mid.text(0.50, 0.93, "Surrogate Model",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
 # simple reference-style flow
@@ -287,15 +289,13 @@ enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.17, 0.47, "3D House",
-            ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
-ax_mid.text(0.17, 0.41, "Encoder",
-            ha="center", va="center", fontsize=11.0, color=DARK, fontweight="bold")
+ax_mid.text(0.17, 0.50, "3D House\nEncoder",
+            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1)
 ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
             ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
 ax_mid.add_patch(FancyArrowPatch((0.28, 0.47), (0.39, 0.47), arrowstyle="-|>",
-                                 mutation_scale=18, color=BLACK, lw=1.9))
+                                 mutation_scale=18, color=BLACK, lw=2.8))
 
 vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
@@ -311,16 +311,14 @@ ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
             ha="center", va="center", fontsize=11.5, color=NAVY, fontweight="bold")
 
 ax_mid.add_patch(FancyArrowPatch((0.60, 0.47), (0.71, 0.47), arrowstyle="-|>",
-                                 mutation_scale=18, color=BLACK, lw=1.9))
+                                 mutation_scale=18, color=BLACK, lw=2.8))
 
 dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(dec_box)
-ax_mid.text(0.83, 0.47, "Structural",
-            ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
-ax_mid.text(0.83, 0.41, "Surrogate",
-            ha="center", va="center", fontsize=11.0, color=DARK, fontweight="bold")
+ax_mid.text(0.83, 0.50, "Structural\nSurrogate",
+            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1)
 ax_mid.text(0.83, 0.31, "predicts stress, compliance, and displacement",
             ha="center", va="center", fontsize=7.4, color=DARK, fontstyle="italic")
 
