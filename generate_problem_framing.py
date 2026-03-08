@@ -29,17 +29,17 @@ INTERIOR = "#E88843"
 ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
-ARROW_SCALE = 30
-ARROW_DX  = 0.045   # arrow length in figure coords
+ARROW_SCALE = 18
+ARROW_DX  = 0.054   # arrow length in figure coords
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
-LEG_Y     = 0.183   # legend / colorbar row y
+LEG_Y     = 0.194   # legend / colorbar row y
 
 # Symmetric layout grid
 PANEL_W  = 0.220
 PANEL_H  = 0.590
 PANEL_Y  = 0.205
-GAP      = 0.048    # gap on each side of mid panel
+GAP      = 0.060    # gap on each side of mid panel
 LEFT_X   = 0.010
 MID_X    = LEFT_X + PANEL_W + GAP   # 0.285
 MID_W    = 1.0 - 2*LEFT_X - 2*PANEL_W - 2*GAP  # 0.430
@@ -319,7 +319,7 @@ def add_outline_arrow(container, start, end, transform, scale=28, lw=2.8, z=15):
     patch = FancyArrowPatch(
         start,
         end,
-        arrowstyle="Simple,head_length=1.2,head_width=1.2,tail_width=0.50",
+        arrowstyle="Simple,head_length=0.85,head_width=0.85,tail_width=0.42",
         mutation_scale=scale,
         facecolor=WHITE,
         edgecolor=BLACK,
@@ -336,7 +336,7 @@ def add_outline_arrow(container, start, end, transform, scale=28, lw=2.8, z=15):
 fig = plt.figure(figsize=(20, 5.8), facecolor=WHITE)
 
 # Right panel size (hoisted here so arrow 4 can use _R_X)
-_R_W = PANEL_W + 0.010
+_R_W = PANEL_W           # same width as left; taller via _R_H
 _R_H = PANEL_H + 0.070
 _R_Y = PANEL_Y - 0.035
 _R_X = 1.0 - LEFT_X - _R_W
@@ -351,15 +351,17 @@ _VEC_L_AX = 0.41   # vec box left  edge in ax_mid
 _VEC_R_AX = 0.59   # vec box right edge in ax_mid
 _DEC_L_AX = 0.74   # dec box left  edge in ax_mid  (pushed in to widen gaps)
 
+_enc_l_fig = MID_X + MID_W * 0.02        # enc box left  edge in fig coords
 _enc_r_fig = MID_X + MID_W * _ENC_R_AX
 _vec_l_fig = MID_X + MID_W * _VEC_L_AX
 _vec_r_fig = MID_X + MID_W * _VEC_R_AX
 _dec_l_fig = MID_X + MID_W * _DEC_L_AX
+_dec_r_fig = MID_X + MID_W * 0.98        # dec box right edge in fig coords
 
-_a1_cx = (LEFT_X + PANEL_W + MID_X)   / 2   # outer-left  gap centre
-_a2_cx = (_enc_r_fig + _vec_l_fig)     / 2   # inner gap 1 centre
-_a3_cx = (_vec_r_fig + _dec_l_fig)     / 2   # inner gap 2 centre
-_a4_cx = (MID_X + MID_W + _R_X)       / 2   # outer-right gap centre (uses actual _R_X)
+_a1_cx = (LEFT_X + PANEL_W + _enc_l_fig) / 2   # outer-left  gap centre
+_a2_cx = (_enc_r_fig + _vec_l_fig)        / 2   # inner gap 1 centre
+_a3_cx = (_vec_r_fig + _dec_l_fig)        / 2   # inner gap 2 centre
+_a4_cx = (_dec_r_fig + _R_X)              / 2   # outer-right gap centre (dec right → right panel)
 
 for _cx in [_a1_cx, _a2_cx, _a3_cx, _a4_cx]:
     _sx = _cx - ARROW_DX / 2
@@ -421,21 +423,29 @@ enc_box = FancyBboxPatch((0.02, _ay - _bh/2), _bw, _bh,
                          facecolor="#F2F5FA", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(enc_box)
 ax_mid.text(_ENC_CX, _ay, "3D House\nEncoder",
-            ha="center", va="center", fontsize=10.5, color=DARK,
+            ha="center", va="center", fontsize=13.0, color=DARK,
             fontweight="bold", linespacing=1.15, multialignment="center")
 ax_mid.text(_ENC_CX, _ay - _bh/2 - 0.055,
             "voxel geometry →\nstructural features",
-            ha="center", va="center", fontsize=7.5, color=DARK,
+            ha="center", va="center", fontsize=9.5, color=DARK,
             fontstyle="italic", linespacing=1.3)
 
 # Latent vector box: centred at 0.50, edges match _VEC_L_AX/_VEC_R_AX
 _VEC_CX = 0.50
 _vw = _VEC_R_AX - _VEC_L_AX   # = 0.18
 _vh = 0.50
-# White background (no visible border)
+# Colored fill between bracket stems
+_bxi_l_inner = _VEC_L_AX + 0.028
+_bxi_r_inner = _VEC_R_AX - 0.028
+vec_fill = FancyBboxPatch((_bxi_l_inner, _ay - _vh/2 + 0.004),
+                          _bxi_r_inner - _bxi_l_inner, _vh - 0.008,
+                          boxstyle="square,pad=0.0",
+                          facecolor="#FFF0D8", edgecolor="none", linewidth=0, zorder=1)
+ax_mid.add_patch(vec_fill)
+# White bleed behind brackets so they sit cleanly on fill
 vec_bg = FancyBboxPatch((_VEC_L_AX + 0.028, _ay - _vh/2), _vw - 0.056, _vh,
                          boxstyle="square,pad=0.0",
-                         facecolor=WHITE, edgecolor="none", linewidth=0)
+                         facecolor="none", edgecolor="none", linewidth=0)
 ax_mid.add_patch(vec_bg)
 # Square brackets [ ] drawn as L-shaped line segments
 _blw   = 3.0          # bracket line width
@@ -455,7 +465,7 @@ ax_mid.plot([_bxi_r - _btick, _bxi_r, _bxi_r, _bxi_r - _btick],
 # Vertical stack of z labels, centred on _ay, evenly spaced
 _z_labels = [r"$z_{\mathrm{shape}}$", r"$z_{\mathrm{load}}$",
              r"$\vdots$",            r"$z_{\mathrm{stiff}}$"]
-_z_fs     = [11.0, 11.0, 18.0, 11.0]
+_z_fs     = [15.0, 15.0, 26.0, 15.0]
 _n_items  = len(_z_labels)
 _z_step   = 0.135
 _z_top    = _ay + (_n_items - 1) / 2 * _z_step
@@ -471,11 +481,11 @@ dec_box = FancyBboxPatch((_DEC_L_AX, _ay - _bh/2), _bw, _bh,
                          facecolor="#FDEEEF", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(dec_box)
 ax_mid.text(_DEC_CX, _ay, "Structural\nSurrogate",
-            ha="center", va="center", fontsize=10.5, color=DARK,
+            ha="center", va="center", fontsize=13.0, color=DARK,
             fontweight="bold", linespacing=1.15, multialignment="center")
 ax_mid.text(_DEC_CX, _ay - _bh/2 - 0.055,
             "predicts stress,\ncompliance & displacement",
-            ha="center", va="center", fontsize=7.5, color=DARK,
+            ha="center", va="center", fontsize=9.5, color=DARK,
             fontstyle="italic", linespacing=1.3)
 
 # Objective below the whole mid panel
