@@ -387,12 +387,13 @@ fig.text(LEFT_CX, SUB_Y, "Part-labeled voxel grid of starting design",
 # Legend centred under left panel
 _leg_labels = ["Exterior", "Interior", "Roof", "Floor"]
 _leg_colors  = [WALL,       INTERIOR,   ROOF,   SLAB]
-_SW = 0.011; _SG = 0.004; _TW = 0.040
+_SW = 0.011; _SG = 0.003; _TW = 0.034
 _iw = _SW + _SG + _TW
-_tot = len(_leg_labels) * _iw + (len(_leg_labels) - 1) * 0.005
+_GAP_LEG = 0.001   # gap between items
+_tot = len(_leg_labels) * _iw + (len(_leg_labels) - 1) * _GAP_LEG
 _lx0 = LEFT_CX - _tot / 2
 for i, (c0, txt) in enumerate(zip(_leg_colors, _leg_labels)):
-    xi = _lx0 + i * (_iw + 0.005)
+    xi = _lx0 + i * (_iw + _GAP_LEG)
     fig.add_artist(mpatches.Rectangle((xi, LEG_Y), _SW, 0.016,
                                       transform=fig.transFigure, facecolor=c0,
                                       edgecolor=BLACK, linewidth=0.6, zorder=10))
