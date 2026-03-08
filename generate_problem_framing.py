@@ -1,4 +1,4 @@
-﻿"""Generate a simplified problem-framing diagram for the poster."""
+﻿"""Generate a conceptual problem-framing diagram for the poster."""
 
 import matplotlib
 matplotlib.use("Agg")
@@ -216,7 +216,7 @@ render_voxelized_house(ax_left, "figures/screenshot_stls/REF_original_colored.pl
 
 fig.text(0.1225, 0.905, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.1225, 0.095, "colored by roof, slab, exterior, and interior parts",
+fig.text(0.1225, 0.095, "starting design represented on a voxel grid",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.132
@@ -231,63 +231,84 @@ for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
              ha="left", va="center", fontsize=7.4, color=DARK)
 
 
-# ── Middle: one coherent surrogate-model panel ───────────────────────────────
+# ── Middle: conceptual optimization panel ────────────────────────────────────
 ax_mid = fig.add_axes([mid[0], mid[1], mid[2], mid[3]], facecolor="none")
 ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.93, "Surrogate Model",
+ax_mid.text(0.50, 0.93, "Surrogate-Guided Optimization",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
-# encoder area
-enc_box = FancyBboxPatch((0.05, 0.19), 0.28, 0.62,
-                         boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
-ax_mid.add_patch(enc_box)
-ax_mid.text(0.19, 0.76, "3D CNN Encoder",
-            ha="center", va="center", fontsize=11.2, fontweight="bold", color=BLUE)
-draw_volume_block(ax_mid, 0.105, 0.37, 0.085, 0.17, 0.020, 0.020,
-                  "#A9C3F5", "#7BA1EA", "#C7D8FA")
-draw_volume_block(ax_mid, 0.155, 0.40, 0.065, 0.135, 0.018, 0.018,
-                  "#6E97E4", "#4B77CF", "#94B5F0")
-draw_volume_block(ax_mid, 0.197, 0.425, 0.045, 0.105, 0.014, 0.014,
-                  "#25B4C3", "#0E90A2", "#6FD2DA")
-ax_mid.text(0.19, 0.25, "learns geometry features",
+# candidate design mini-grid
+left_cluster = FancyBboxPatch((0.05, 0.19), 0.23, 0.62,
+                              boxstyle="round,pad=0.012,rounding_size=0.025",
+                              facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
+ax_mid.add_patch(left_cluster)
+ax_mid.text(0.165, 0.76, "Candidate Designs",
+            ha="center", va="center", fontsize=11.0, fontweight="bold", color=BLUE)
+
+draw_volume_block(ax_mid, 0.090, 0.47, 0.055, 0.10, 0.015, 0.015,
+                  "#9CBBF3", "#6F95E0", "#C4D6F8")
+draw_volume_block(ax_mid, 0.145, 0.44, 0.055, 0.10, 0.015, 0.015,
+                  "#9CBBF3", "#6F95E0", "#C4D6F8")
+draw_volume_block(ax_mid, 0.115, 0.34, 0.055, 0.10, 0.015, 0.015,
+                  "#9CBBF3", "#6F95E0", "#C4D6F8")
+ax_mid.add_patch(mpatches.Rectangle((0.160, 0.47), 0.010, 0.018, facecolor=RED, edgecolor="none"))
+ax_mid.add_patch(mpatches.Rectangle((0.173, 0.47), 0.010, 0.018, facecolor=RED, edgecolor="none"))
+ax_mid.text(0.165, 0.25, "remove and test voxels",
             ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
 
-# clean black arrow to ensemble
-ax_mid.add_patch(FancyArrowPatch((0.35, 0.50), (0.43, 0.50), arrowstyle="-|>",
+# central surrogate box
+ax_mid.add_patch(FancyArrowPatch((0.295, 0.50), (0.405, 0.50), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-# ensemble area
-ens_box = FancyBboxPatch((0.45, 0.19), 0.50, 0.62,
-                         boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
-ax_mid.add_patch(ens_box)
-ax_mid.text(0.70, 0.76, "Deep Ensemble",
-            ha="center", va="center", fontsize=11.2, fontweight="bold", color=DARK)
-ax_mid.text(0.70, 0.70, "five independently trained models",
-            ha="center", va="center", fontsize=8.3, color=DARK, fontstyle="italic")
+sur_box = FancyBboxPatch((0.42, 0.29), 0.22, 0.42,
+                         boxstyle="round,pad=0.014,rounding_size=0.025",
+                         facecolor=NAVY, edgecolor=GOLD, linewidth=1.8)
+ax_mid.add_patch(sur_box)
+ax_mid.text(0.53, 0.63, "Fast Structural",
+            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
+ax_mid.text(0.53, 0.57, "Surrogate",
+            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
 
-start_x = 0.50
-gap = 0.083
-for i in range(5):
-    draw_model_card(ax_mid, start_x + i * gap, 0.39, 0.060, 0.18, f"Model {i+1}")
+chip = FancyBboxPatch((0.485, 0.40), 0.09, 0.10,
+                      boxstyle="round,pad=0.01,rounding_size=0.01",
+                      facecolor="#123A92", edgecolor=WHITE, linewidth=1.0)
+ax_mid.add_patch(chip)
+for px in np.linspace(0.488, 0.572, 7):
+    ax_mid.plot([px, px], [0.505, 0.525], color=WHITE, lw=0.8)
+    ax_mid.plot([px, px], [0.375, 0.395], color=WHITE, lw=0.8)
+for py in np.linspace(0.405, 0.495, 5):
+    ax_mid.plot([0.468, 0.485], [py, py], color=WHITE, lw=0.8)
+    ax_mid.plot([0.575, 0.592], [py, py], color=WHITE, lw=0.8)
 
-for i in range(5):
-    xm = start_x + i * gap + 0.030
-    ax_mid.plot([xm, 0.86], [0.36, 0.29], color=BLACK, lw=0.9, alpha=0.45)
+for y0, txt, fc in [(0.34, "stress", "#EAF0FB"), (0.29, "compliance", "#EAF0FB"), (0.24, "displacement", "#EAF0FB")]:
+    pill = FancyBboxPatch((0.455, y0), 0.15, 0.038,
+                          boxstyle="round,pad=0.004,rounding_size=0.015",
+                          facecolor=fc, edgecolor="none")
+    ax_mid.add_patch(pill)
+    ax_mid.text(0.53, y0 + 0.019, txt,
+                ha="center", va="center", fontsize=7.8, color=NAVY, fontweight="bold")
 
-summary = Circle((0.86, 0.29), 0.080, facecolor=TEAL, edgecolor=WHITE, linewidth=1.2)
-ax_mid.add_patch(summary)
-ax_mid.text(0.86, 0.31, "Mean",
-            ha="center", va="center", fontsize=10.0, color=WHITE, fontweight="bold")
-ax_mid.text(0.86, 0.265, "+ spread",
-            ha="center", va="center", fontsize=8.2, color=WHITE, fontweight="bold")
+# optimization loop and final choice
+ax_mid.add_patch(FancyArrowPatch((0.66, 0.50), (0.77, 0.50), arrowstyle="-|>",
+                                 mutation_scale=18, color=BLACK, lw=1.9))
+ax_mid.add_patch(FancyArrowPatch((0.78, 0.32), (0.26, 0.32), arrowstyle="-|>",
+                                 connectionstyle="arc3,rad=-0.35",
+                                 mutation_scale=16, color=BLACK, lw=1.6))
 
-ax_mid.text(0.70, 0.22, "trained on FEA simulations",
-            ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
+right_cluster = FancyBboxPatch((0.78, 0.19), 0.17, 0.62,
+                               boxstyle="round,pad=0.012,rounding_size=0.025",
+                               facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
+ax_mid.add_patch(right_cluster)
+ax_mid.text(0.865, 0.76, "Best Design",
+            ha="center", va="center", fontsize=11.0, fontweight="bold", color=DARK)
+draw_volume_block(ax_mid, 0.815, 0.40, 0.060, 0.12, 0.018, 0.018,
+                  "#8BB1EE", "#5D87D5", "#B9CEF6")
+ax_mid.add_patch(mpatches.Rectangle((0.845, 0.44), 0.012, 0.020, facecolor=WHITE, edgecolor="none"))
+ax_mid.text(0.865, 0.25, "keep low material, satisfy constraints",
+            ha="center", va="center", fontsize=7.9, color=DARK, fontstyle="italic", wrap=True)
 
 
 # ── Right: full-house structural response ───────────────────────────────────
