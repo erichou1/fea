@@ -30,7 +30,7 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
 ARROW_SCALE = 30
-ARROW_DX  = 0.036   # arrow length in figure coords – fits all 4 gaps
+ARROW_DX  = 0.038   # fits inside smallest gap (0.047) with clearance
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
 LEG_Y     = 0.147   # legend / colorbar row y
@@ -339,16 +339,21 @@ fig = plt.figure(figsize=(20, 5.8), facecolor=WHITE)
 arrow_y = PANEL_Y + PANEL_H * 0.50
 
 # ── All 4 identical arrows in figure coordinates ──────────────────────────────
-# Outer left: centred in gap between left panel and enc box
-_enc_r_fig  = MID_X + MID_W * 0.310   # enc box right edge
-_vec_l_fig  = MID_X + MID_W * 0.410   # vec box left edge
-_vec_r_fig  = MID_X + MID_W * 0.590   # vec box right edge
-_dec_l_fig  = MID_X + MID_W * 0.690   # dec box left edge
+# Box edges in ax_mid fractions (must match FancyBboxPatch positions below)
+_ENC_R_AX = 0.30   # enc box right edge in ax_mid
+_VEC_L_AX = 0.41   # vec box left  edge in ax_mid
+_VEC_R_AX = 0.59   # vec box right edge in ax_mid
+_DEC_L_AX = 0.70   # dec box left  edge in ax_mid
 
-_a1_cx = (LEFT_X + PANEL_W + MID_X)       / 2   # outer-left gap centre
-_a2_cx = (_enc_r_fig + _vec_l_fig)         / 2   # inner gap 1 centre
-_a3_cx = (_vec_r_fig + _dec_l_fig)         / 2   # inner gap 2 centre
-_a4_cx = (MID_X + MID_W + RIGHT_X)        / 2   # outer-right gap centre
+_enc_r_fig = MID_X + MID_W * _ENC_R_AX
+_vec_l_fig = MID_X + MID_W * _VEC_L_AX
+_vec_r_fig = MID_X + MID_W * _VEC_R_AX
+_dec_l_fig = MID_X + MID_W * _DEC_L_AX
+
+_a1_cx = (LEFT_X + PANEL_W + MID_X)   / 2   # outer-left  gap centre
+_a2_cx = (_enc_r_fig + _vec_l_fig)     / 2   # inner gap 1 centre
+_a3_cx = (_vec_r_fig + _dec_l_fig)     / 2   # inner gap 2 centre
+_a4_cx = (MID_X + MID_W + RIGHT_X)    / 2   # outer-right gap centre
 
 for _cx in [_a1_cx, _a2_cx, _a3_cx, _a4_cx]:
     _sx = _cx - ARROW_DX / 2
@@ -400,27 +405,28 @@ fig.text(MID_X + MID_W / 2, TITLE_Y, "Surrogate Model",
 
 # Convert shared arrow_y to ax_mid fraction
 _ay = (arrow_y - MID_Y_AX) / MID_H_AX
-_bh = 0.26   # box height in ax_mid units
-_bw = 0.38   # box width in ax_mid units
+_bh = 0.20   # box height in ax_mid units (reduced to avoid clipping)
+_bw = 0.28   # box width in ax_mid units
 
-# Encoder box: cx on left third, width matched to _bw
-_ENC_CX = 0.17
-enc_box = FancyBboxPatch((_ENC_CX - _bw/2, _ay - _bh/2), _bw, _bh,
+# Encoder box: anchored at left=0.02, right=_ENC_R_AX=0.30
+_ENC_CX = (_ENC_R_AX + 0.02) / 2   # = 0.16
+enc_box = FancyBboxPatch((0.02, _ay - _bh/2), _bw, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#F2F5FA", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(enc_box)
 ax_mid.text(_ENC_CX, _ay, "3D House\nEncoder",
-            ha="center", va="center", fontsize=11.5, color=DARK,
+            ha="center", va="center", fontsize=10.5, color=DARK,
             fontweight="bold", linespacing=1.15, multialignment="center")
-ax_mid.text(_ENC_CX, _ay - _bh/2 - 0.06,
+ax_mid.text(_ENC_CX, _ay - _bh/2 - 0.055,
             "voxel geometry →\nstructural features",
             ha="center", va="center", fontsize=7.5, color=DARK,
             fontstyle="italic", linespacing=1.3)
 
-# Latent vector box: narrow, centred
+# Latent vector box: centred at 0.50, edges match _VEC_L_AX/_VEC_R_AX
 _VEC_CX = 0.50
-_vw, _vh = 0.18, 0.55
-vec_box = FancyBboxPatch((_VEC_CX - _vw/2, _ay - _vh/2), _vw, _vh,
+_vw = _VEC_R_AX - _VEC_L_AX   # = 0.18
+_vh = 0.50
+vec_box = FancyBboxPatch((_VEC_L_AX, _ay - _vh/2), _vw, _vh,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
                          facecolor="#FFF6E5", edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(vec_box)
@@ -436,16 +442,16 @@ for k, (lbl, fs) in enumerate(zip(_z_labels, _z_fs), 0):
                 ha="center", va="center", fontsize=fs, color=DARK,
                 fontweight="bold" if r"\vdots" not in lbl else "normal")
 
-# Surrogate/Decoder box: cx on right third, width matched
-_DEC_CX = 0.83
-dec_box = FancyBboxPatch((_DEC_CX - _bw/2, _ay - _bh/2), _bw, _bh,
+# Surrogate/Decoder box: anchored at left=_DEC_L_AX=0.70, right=0.98
+_DEC_CX = (_DEC_L_AX + 0.98) / 2   # = 0.84
+dec_box = FancyBboxPatch((_DEC_L_AX, _ay - _bh/2), _bw, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#FDEEEF", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(dec_box)
 ax_mid.text(_DEC_CX, _ay, "Structural\nSurrogate",
-            ha="center", va="center", fontsize=11.5, color=DARK,
+            ha="center", va="center", fontsize=10.5, color=DARK,
             fontweight="bold", linespacing=1.15, multialignment="center")
-ax_mid.text(_DEC_CX, _ay - _bh/2 - 0.06,
+ax_mid.text(_DEC_CX, _ay - _bh/2 - 0.055,
             "predicts stress,\ncompliance & displacement",
             ha="center", va="center", fontsize=7.5, color=DARK,
             fontstyle="italic", linespacing=1.3)
