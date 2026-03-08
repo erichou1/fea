@@ -30,6 +30,7 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW = 3.2
 ARROW_SCALE = 30
+ARROW_DX = 0.037
 
 OUT = Path("poster_images_extracted/problem_framing.png")
 
@@ -325,8 +326,8 @@ right = (0.770, 0.08, 0.215, 0.84)
 
 # keep the background clean like the reference figure
 
-add_outline_arrow(fig, (0.238, 0.50), (0.275, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
-add_outline_arrow(fig, (0.725, 0.50), (0.762, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(fig, (0.238, 0.50), (0.238 + ARROW_DX, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(fig, (0.725, 0.50), (0.725 + ARROW_DX, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
 
 
 # ── Left: actual voxelized structure ─────────────────────────────────────────
@@ -377,8 +378,8 @@ ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
 
 add_outline_arrow(
     fig,
-    (mid[0] + mid[2] * 0.28, mid[1] + mid[3] * 0.47),
-    (mid[0] + mid[2] * 0.39, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.315, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.315 + ARROW_DX, mid[1] + mid[3] * 0.47),
     transform=fig.transFigure,
     scale=ARROW_SCALE,
     lw=ARROW_LW,
@@ -399,8 +400,8 @@ ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
 
 add_outline_arrow(
     fig,
-    (mid[0] + mid[2] * 0.60, mid[1] + mid[3] * 0.47),
-    (mid[0] + mid[2] * 0.71, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.605, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.605 + ARROW_DX, mid[1] + mid[3] * 0.47),
     transform=fig.transFigure,
     scale=ARROW_SCALE,
     lw=ARROW_LW,
