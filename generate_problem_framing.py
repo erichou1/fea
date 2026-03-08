@@ -31,6 +31,7 @@ SLAB = "#D6B48A"
 ARROW_LW = 3.2
 ARROW_SCALE = 30
 ARROW_DX = 0.037
+TITLE_Y = 0.835
 
 OUT = Path("poster_images_extracted/problem_framing.png")
 
@@ -323,11 +324,12 @@ fig = plt.figure(figsize=(20, 5.8), facecolor=WHITE)
 left = (0.015, 0.08, 0.215, 0.84)
 mid = (0.280, 0.08, 0.440, 0.84)
 right = (0.770, 0.08, 0.215, 0.84)
+arrow_y = mid[1] + mid[3] * 0.47
 
 # keep the background clean like the reference figure
 
-add_outline_arrow(fig, (0.238, 0.50), (0.238 + ARROW_DX, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
-add_outline_arrow(fig, (0.725, 0.50), (0.725 + ARROW_DX, 0.50), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(fig, (0.238, arrow_y), (0.238 + ARROW_DX, arrow_y), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(fig, (0.725, arrow_y), (0.725 + ARROW_DX, arrow_y), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
 
 
 # ── Left: actual voxelized structure ─────────────────────────────────────────
@@ -340,13 +342,13 @@ render_voxelized_house(
     azim=-55,
 )
 
-fig.text(0.132, 0.805, "Voxelized Structure",
+fig.text(0.132, TITLE_Y, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=DARK)
 fig.text(0.132, 0.132, "part-labeled voxel grid of the starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.168
-legend_x = [0.080, 0.118, 0.157, 0.193]
+legend_x = [0.100, 0.139, 0.178, 0.214]
 legend_colors = [WALL, INTERIOR, ROOF, SLAB]
 legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
 for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
@@ -363,8 +365,8 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.79, "Surrogate Model",
-            ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
+fig.text(0.500, TITLE_Y, "Surrogate Model",
+         ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
 # simple reference-style flow
 enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
@@ -378,8 +380,8 @@ ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
 
 add_outline_arrow(
     fig,
-    (mid[0] + mid[2] * 0.315, mid[1] + mid[3] * 0.47),
-    (mid[0] + mid[2] * 0.315 + ARROW_DX, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.315, arrow_y),
+    (mid[0] + mid[2] * 0.315 + ARROW_DX, arrow_y),
     transform=fig.transFigure,
     scale=ARROW_SCALE,
     lw=ARROW_LW,
@@ -400,8 +402,8 @@ ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
 
 add_outline_arrow(
     fig,
-    (mid[0] + mid[2] * 0.605, mid[1] + mid[3] * 0.47),
-    (mid[0] + mid[2] * 0.605 + ARROW_DX, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.605, arrow_y),
+    (mid[0] + mid[2] * 0.605 + ARROW_DX, arrow_y),
     transform=fig.transFigure,
     scale=ARROW_SCALE,
     lw=ARROW_LW,
@@ -422,7 +424,7 @@ ax_right = fig.add_axes([0.787, 0.18, 0.178, 0.64], projection="3d")
 render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
             color_mode="stress", elev=22, azim=-55, ambient=0.84)
 
-fig.text(0.8775, 0.805, "Predicted Structural Response",
+fig.text(0.8775, TITLE_Y, "Predicted Structural Response",
          ha="center", va="center", fontsize=13, fontweight="bold", color=DARK)
 fig.text(0.8775, 0.082, "full-house stress prediction",
          ha="center", va="center", fontsize=8.7, color=DARK, fontstyle="italic")
