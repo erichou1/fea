@@ -123,6 +123,17 @@ def _make_figure():
     return fig, (cx, cy, cw, ch), (hx, hy, hw, hh), (bx, by, bw, bh)
 
 
+def _axes(fig, rect, projection=None, z=6):
+    """Create an axes that stays above the background card."""
+    if projection is None:
+        ax = fig.add_axes(rect)
+    else:
+        ax = fig.add_axes(rect, projection=projection)
+    ax.set_zorder(z)
+    ax.patch.set_alpha(0)
+    return ax
+
+
 def _finalize(fig, title, caption, bullets, outname):
     cx, cy, cw, ch = MARGIN, MARGIN, 1 - 2 * MARGIN, 1 - 2 * MARGIN
     hx, hy, hw, hh = cx, cy + ch - HEADER_H, cw, HEADER_H
@@ -192,7 +203,7 @@ def panel_dataset():
     sy = by + bh * 0.14
 
     def sub_ax(col):
-        return fig.add_axes([bx + pad + col * (sw + pad), sy, sw, sh])
+        return _axes(fig, [bx + pad + col * (sw + pad), sy, sw, sh])
 
     # ① wireframe
     ax = sub_ax(0)
@@ -275,7 +286,7 @@ def panel_meshing():
 
     # Left: house silhouette
     from matplotlib.patches import Polygon as MPoly
-    axL = fig.add_axes([bx + pad, sy, sw, sh])
+    axL = _axes(fig, [bx + pad, sy, sw, sh])
     axL.set_xlim(0, 1.3); axL.set_ylim(0, 1.2); axL.axis("off")
     axL.add_patch(mpatches.Rectangle((0.05, 0.05), 0.90, 0.65,
                   facecolor=WALL + "88", edgecolor=WALL, lw=2.0))
@@ -287,7 +298,7 @@ def panel_meshing():
             arr_cx + 0.004, sy + sh * 0.5, lw=2.2, scale=14)
 
     # Right: Delaunay mesh
-    axR = fig.add_axes([bx + pad + sw + pad, sy, sw, sh])
+    axR = _axes(fig, [bx + pad + sw + pad, sy, sw, sh])
     axR.set_xlim(0, 1); axR.set_ylim(0, 1); axR.axis("off")
     rng = np.random.default_rng(42)
     px = np.concatenate([rng.uniform(0.05, 0.95, 60), [0.5]])
@@ -329,7 +340,7 @@ def panel_fea():
     hm_x = bx + sw + pad + bw * 0.24
 
     # Left: mesh
-    axM = fig.add_axes([bx + pad, sy, sw, sh])
+    axM = _axes(fig, [bx + pad, sy, sw, sh])
     axM.set_xlim(0, 1); axM.set_ylim(0, 1); axM.axis("off")
     rng = np.random.default_rng(7)
     pts = rng.uniform(0.05, 0.95, (60, 2))
@@ -353,7 +364,7 @@ def panel_fea():
             hm_x - 0.008, sy + sh * 0.5, lw=2.0, scale=13)
 
     # Right: stress heatmap
-    axS = fig.add_axes([hm_x, sy, sw, sh])
+    axS = _axes(fig, [hm_x, sy, sw, sh])
     Z = gaussian_filter(np.random.default_rng(9).random((24, 24)), sigma=3.0)
     axS.imshow(Z, cmap="jet", origin="lower", aspect="auto",
                extent=[0, 1, 0, 1], interpolation="bilinear")
@@ -362,7 +373,7 @@ def panel_fea():
 
     # Colorbar
     cbx = bx + bw * 0.55
-    cax = fig.add_axes([cbx, by + 0.010, bw * 0.36, 0.022])
+    cax = _axes(fig, [cbx, by + 0.010, bw * 0.36, 0.022])
     cb = plt.colorbar(
         plt.cm.ScalarMappable(mcolors.Normalize(0, 1), cmap="jet"),
         cax=cax, orientation="horizontal")
@@ -395,7 +406,7 @@ def panel_voxelization():
     sy = by + bh * 0.15
 
     # ① tet mesh
-    ax = fig.add_axes([bx + pad, sy, sw, sh])
+    ax = _axes(fig, [bx + pad, sy, sw, sh])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
     rng = np.random.default_rng(3)
     pts = rng.uniform(0.08, 0.92, (45, 2))
@@ -409,7 +420,7 @@ def panel_voxelization():
     ax.set_title("① Tet Mesh", fontsize=11, color=DARK, pad=3, fontweight="bold")
 
     # ② uniform voxel grid
-    ax = fig.add_axes([bx + pad * 2 + sw, sy, sw, sh])
+    ax = _axes(fig, [bx + pad * 2 + sw, sy, sw, sh])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
     nv = 9
     for ix in range(nv):
@@ -422,7 +433,7 @@ def panel_voxelization():
     ax.set_title("② Voxel Grid", fontsize=11, color=DARK, pad=3, fontweight="bold")
 
     # ③ labeled channels
-    ax = fig.add_axes([bx + pad * 3 + sw * 2, sy, sw, sh])
+    ax = _axes(fig, [bx + pad * 3 + sw * 2, sy, sw, sh])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
     cmap_data = {0: WALL, 1: INTERIOR, 2: ROOF, 3: SLAB}
     rng2 = np.random.default_rng(8)
@@ -459,7 +470,7 @@ def panel_surrogate():
     fig, card_rect, hdr, body = _make_figure()
     bx, by, bw, bh = body
 
-    ax = fig.add_axes([bx, by + bh * 0.08, bw, bh * 0.82])
+    ax = _axes(fig, [bx, by + bh * 0.08, bw, bh * 0.82])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
 
     layers = [
@@ -510,7 +521,7 @@ def panel_optimization():
     fig, card_rect, hdr, body = _make_figure()
     bx, by, bw, bh = body
 
-    ax = fig.add_axes([bx, by + bh * 0.05, bw, bh * 0.85])
+    ax = _axes(fig, [bx, by + bh * 0.05, bw, bh * 0.85])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
 
     steps = [
@@ -630,8 +641,7 @@ def panel_results():
     ay_mid = sy + sh * 0.50
 
     for i, (ply, cmode, lbl) in enumerate(models):
-        ax3 = fig.add_axes([bx + pad + i * (sw + pad), sy, sw, sh],
-                           projection="3d")
+        ax3 = _axes(fig, [bx + pad + i * (sw + pad), sy, sw, sh], projection="3d")
         try:
             _render_ply(ply, ax3, color_mode=cmode)
         except Exception:
