@@ -45,6 +45,15 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
         pass
     filled = np.asarray(vox.matrix, dtype=bool)
 
+    # Make the conceptual voxel thumbnail read as a solid house mass with no open shaft.
+    solid = filled.copy()
+    for ix in range(solid.shape[0]):
+        for iy in range(solid.shape[1]):
+            z_idx = np.flatnonzero(filled[ix, iy, :])
+            if z_idx.size:
+                solid[ix, iy, z_idx.min():z_idx.max() + 1] = True
+    filled = solid
+
     sx, sy, sz = filled.shape
     facecolors = np.zeros(filled.shape + (4,), dtype=float)
     edgecolors = np.zeros_like(facecolors)
@@ -72,8 +81,7 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     exposed[:, :, 1:] |= filled[:, :, 1:] & ~filled[:, :, :-1]
     exposed[:, :, :-1] |= filled[:, :, :-1] & ~filled[:, :, 1:]
 
-    # Avoid seeing interior walls or floor slab through the shell in the conceptual thumbnail.
-    visible = exposed & ~interior_mask & ~slab_mask
+    visible = exposed
 
     def apply_color(mask, hex_color, alpha=0.98):
         rgb = mcolors.to_rgb(hex_color)
@@ -367,7 +375,14 @@ ax_mid.text(0.17, 0.50, "3D House\nEncoder",
 ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
             ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
-add_outline_arrow(ax_mid, (0.28, 0.47), (0.39, 0.47), transform=ax_mid.transAxes, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(
+    fig,
+    (mid[0] + mid[2] * 0.28, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.39, mid[1] + mid[3] * 0.47),
+    transform=fig.transFigure,
+    scale=ARROW_SCALE,
+    lw=ARROW_LW,
+)
 
 vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
@@ -382,7 +397,14 @@ ax_mid.text(0.50, 0.33, r"$z_{\mathrm{stiff}}$", ha="center", va="center", fonts
 ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
             ha="center", va="center", fontsize=11.5, color=NAVY, fontweight="bold")
 
-add_outline_arrow(ax_mid, (0.60, 0.47), (0.71, 0.47), transform=ax_mid.transAxes, scale=ARROW_SCALE, lw=ARROW_LW)
+add_outline_arrow(
+    fig,
+    (mid[0] + mid[2] * 0.60, mid[1] + mid[3] * 0.47),
+    (mid[0] + mid[2] * 0.71, mid[1] + mid[3] * 0.47),
+    transform=fig.transFigure,
+    scale=ARROW_SCALE,
+    lw=ARROW_LW,
+)
 
 dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
