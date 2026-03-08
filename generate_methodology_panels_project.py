@@ -13,6 +13,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
+from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
 from pathlib import Path
@@ -128,6 +129,142 @@ def _label_below(fig, cx, y, text, *, fs=10.5, color=DARK, bold=True, zo=8):
              fontweight="bold" if bold else "normal",
              family="sans-serif",
              transform=fig.transFigure, zorder=zo)
+
+
+# ── Pipeline-row helpers ──────────────────────────────────────────────────────
+
+def _step_box(fig, x, y, w, h, text, *, fc=BLUE, tc=WHITE, fs=9.0,
+              bold=True, r=0.008, zo=10):
+    """Small labelled rounded box for mini-pipeline steps."""
+    fig.add_artist(FancyBboxPatch(
+        (x, y), w, h,
+        boxstyle=f"round,pad=0,rounding_size={r}",
+        facecolor=fc, edgecolor="none",
+        transform=fig.transFigure, clip_on=False, zorder=zo,
+    ))
+    fig.text(x + w / 2, y + h / 2, text,
+             ha="center", va="center", fontsize=fs,
+             fontweight="bold" if bold else "normal",
+             color=tc, family="sans-serif", linespacing=1.15,
+             transform=fig.transFigure, zorder=zo + 1)
+
+
+def _outline_box(fig, x, y, w, h, text, *, ec=BLUE, tc=BLUE, fs=8.5,
+                 bold=True, r=0.007, lw=1.8, zo=10):
+    """Outline-only (hollow) rounded box for pipeline sub-items."""
+    fig.add_artist(FancyBboxPatch(
+        (x, y), w, h,
+        boxstyle=f"round,pad=0,rounding_size={r}",
+        facecolor=WHITE, edgecolor=ec, linewidth=lw,
+        transform=fig.transFigure, clip_on=False, zorder=zo,
+    ))
+    fig.text(x + w / 2, y + h / 2, text,
+             ha="center", va="center", fontsize=fs,
+             fontweight="bold" if bold else "normal",
+             color=tc, family="sans-serif", linespacing=1.15,
+             transform=fig.transFigure, zorder=zo + 1)
+
+
+def _hbrace(fig, x0, x1, y, *, depth=0.022, color=NAVY, lw=2.0, zo=12):
+    """Draw a horizontal curly brace from x0 to x1 at height y, tip pointing DOWN."""
+    from matplotlib.path import Path as MPath
+    mid = (x0 + x1) / 2
+    q = depth * 0.55
+    verts = [
+        (x0, y),
+        (x0 + q, y), (mid - q, y - depth + q), (mid, y - depth),
+        (mid, y - depth),
+        (mid + q, y - depth + q), (x1 - q, y), (x1, y),
+    ]
+    codes = [
+        MPath.MOVETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+        MPath.LINETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+    ]
+    path = MPath(verts, codes)
+    patch = mpatches.PathPatch(
+        path, facecolor="none", edgecolor=color,
+        linewidth=lw, capstyle="round",
+        transform=fig.transFigure, clip_on=False, zorder=zo,
+    )
+    fig.add_artist(patch)
+    return mid, y - depth          # tip coords
+
+
+def _hbrace_up(fig, x0, x1, y, *, depth=0.022, color=NAVY, lw=2.0, zo=12):
+    """Horizontal curly brace, tip pointing UP."""
+    from matplotlib.path import Path as MPath
+    mid = (x0 + x1) / 2
+    q = depth * 0.55
+    verts = [
+        (x0, y),
+        (x0 + q, y), (mid - q, y + depth - q), (mid, y + depth),
+        (mid, y + depth),
+        (mid + q, y + depth - q), (x1 - q, y), (x1, y),
+    ]
+    codes = [
+        MPath.MOVETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+        MPath.LINETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+    ]
+    path = MPath(verts, codes)
+    patch = mpatches.PathPatch(
+        path, facecolor="none", edgecolor=color,
+        linewidth=lw, capstyle="round",
+        transform=fig.transFigure, clip_on=False, zorder=zo,
+    )
+    fig.add_artist(patch)
+    return mid, y + depth
+
+
+def _vbrace(fig, x, y0, y1, *, depth=0.020, color=NAVY, lw=2.0, zo=12):
+    """Vertical curly brace (right-pointing tip) from y0 to y1 at x."""
+    from matplotlib.path import Path as MPath
+    mid = (y0 + y1) / 2
+    q = depth * 0.55
+    verts = [
+        (x, y0),
+        (x, y0 + q), (x + depth - q, mid - q), (x + depth, mid),
+        (x + depth, mid),
+        (x + depth - q, mid + q), (x, y1 - q), (x, y1),
+    ]
+    codes = [
+        MPath.MOVETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+        MPath.LINETO,
+        MPath.CURVE4, MPath.CURVE4, MPath.CURVE4,
+    ]
+    path = MPath(verts, codes)
+    patch = mpatches.PathPatch(
+        path, facecolor="none", edgecolor=color,
+        linewidth=lw, capstyle="round",
+        transform=fig.transFigure, clip_on=False, zorder=zo,
+    )
+    fig.add_artist(patch)
+    return x + depth, mid
+
+
+def _bracket_h(fig, x0, x1, y, *, depth=0.012, color=NAVY, lw=1.6, zo=12):
+    """Simple square bracket spanning x0..x1, sitting at y, pointing down."""
+    from matplotlib.lines import Line2D
+    for seg in [
+        ([x0, x0], [y, y - depth]),
+        ([x0, x1], [y - depth, y - depth]),
+        ([x1, x1], [y, y - depth]),
+    ]:
+        fig.add_artist(Line2D(
+            seg[0], seg[1],
+            color=color, linewidth=lw,
+            transform=fig.transFigure, clip_on=False, zorder=zo,
+        ))
+    return (x0 + x1) / 2, y - depth
+
+
+def _darrow(fig, x, y0, y1, *, color=DARK, lw=1.8, ms=11, zo=15):
+    """Downward (or upward) vertical arrow."""
+    _arrow(fig, x, y0, x, y1, color=color, lw=lw, ms=ms, zo=zo)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -438,67 +575,192 @@ def panel_dataset():
 
 
 def panel_meshing():
-    """Panel 2 — Structural meshing: surface model -> tet mesh."""
+    """Panel 2 — Structural meshing pipeline."""
     fig, body = _new_panel(
         "\u2461  Structural Meshing",
-        "Structural surface models are discretized into finite elements "
-        "for simulation with SfePy",
+        "Volumetric structural models are discretized into hexahedral finite "
+        "elements compatible with the SfePy solver",
         hdr_fc=STEP_COLORS[1],
     )
     bx, by, bw, bh = body
     occ = np.load(OPT_DIR / "fixed_occ.npz")["data"]
 
-    gap = 0.06
-    sw = (bw - gap) / 2
-    sh = bh * 0.82
-    sy = by + bh * 0.09
+    # ── mini-pipeline row at top ──
+    pipe_y = by + bh - 0.05
+    pipe_h = 0.038
+    box_w  = 0.15
+    gap_a  = 0.035  # arrow gap
+    labels = ["Surface\nGeometry", "Hex8\nDiscretization", "FE Mesh"]
+    colors = [NAVY, STEP_COLORS[1], TEAL]
+    total  = len(labels) * box_w + (len(labels) - 1) * gap_a
+    sx     = bx + (bw - total) / 2
+    for i, (lbl, clr) in enumerate(zip(labels, colors)):
+        xi = sx + i * (box_w + gap_a)
+        _step_box(fig, xi, pipe_y, box_w, pipe_h, lbl, fc=clr, fs=8.5)
+        if i < len(labels) - 1:
+            _arrow(fig, xi + box_w + 0.004, pipe_y + pipe_h / 2,
+                   xi + box_w + gap_a - 0.004, pipe_y + pipe_h / 2,
+                   color=DARK, lw=2.0, ms=12)
 
-    ax1 = _ax(fig, [bx, sy, sw, sh], projection="3d")
+    # ── brace under pipeline pointing to figures ──
+    brace_y = pipe_y - 0.008
+    _hbrace(fig, sx + 0.01, sx + total - 0.01, brace_y,
+            depth=0.018, color=NAVY, lw=1.6)
+
+    # ── two 3D renders below ──
+    rend_gap = 0.07
+    rw = (bw - rend_gap) / 2
+    rh = bh * 0.60
+    ry = by + bh * 0.05
+
+    ax1 = _ax(fig, [bx, ry, rw, rh], projection="3d")
     _draw_part_mesh(ax1, PLY_PART)
-    _label_below(fig, bx + sw / 2, sy - 0.005, "Surface Model")
+    _label_below(fig, bx + rw / 2, ry - 0.005, "Surface Model")
 
-    _arrow(fig, bx + sw + 0.008, sy + sh * 0.5,
-           bx + sw + gap - 0.008, sy + sh * 0.5,
+    _arrow(fig, bx + rw + 0.010, ry + rh * 0.5,
+           bx + rw + rend_gap - 0.010, ry + rh * 0.5,
            color=NAVY, lw=2.5, ms=15)
 
-    ax2 = _ax(fig, [bx + sw + gap, sy, sw, sh], projection="3d")
+    ax2 = _ax(fig, [bx + rw + rend_gap, ry, rw, rh], projection="3d")
     _draw_tet_mesh(ax2, occ[::3, ::3, ::3] > 0)
-    _label_below(fig, bx + sw + gap + sw / 2, sy - 0.005,
+    _label_below(fig, bx + rw + rend_gap + rw / 2, ry - 0.005,
                  "Tetrahedral Mesh")
 
     _save(fig, "panel_02_meshing.png")
 
 
 def panel_fea():
-    """Panel 3 — FEA stress visualisation (project-generated figure)."""
+    """Panel 3 — FEA pipeline: inputs → solver → outputs."""
     fig, body = _new_panel(
         "\u2462  Finite Element Simulation",
-        "Linear-elastic FEA (SfePy) computes stress, displacement, and "
-        "compliance for each building under structural loading",
+        "Linear-elastic FEA (SfePy) computes stress, displacement, "
+        "and compliance for every building geometry",
         hdr_fc=STEP_COLORS[2],
     )
     bx, by, bw, bh = body
-    _imshow(fig, [bx, by, bw, bh],
+
+    # ── top row: three input boxes → curly brace → solver box → fan out ──
+    row_y = by + bh - 0.048
+    bxh = 0.032  # box height
+    ibw = 0.125  # input box width
+    igap = 0.018
+    inputs = ["Hex8 Mesh", "Boundary\nConditions", "Material\nProperties"]
+    inp_total = len(inputs) * ibw + (len(inputs) - 1) * igap
+    ix0 = bx + 0.02
+    for i, lbl in enumerate(inputs):
+        xi = ix0 + i * (ibw + igap)
+        _outline_box(fig, xi, row_y, ibw, bxh, lbl, ec=NAVY, tc=NAVY, fs=7.5)
+
+    # curly brace under the 3 inputs
+    brace_top = row_y - 0.005
+    tip_x, tip_y = _hbrace(fig, ix0 + 0.01, ix0 + inp_total - 0.01,
+                            brace_top, depth=0.016, color=NAVY, lw=1.5)
+
+    # arrow from brace tip down to solver box
+    solv_w, solv_h = 0.16, 0.032
+    solv_x = tip_x - solv_w / 2
+    solv_y = tip_y - 0.026
+    _darrow(fig, tip_x, tip_y - 0.003, solv_y + solv_h + 0.003,
+            color=NAVY, lw=1.6, ms=9)
+    _step_box(fig, solv_x, solv_y, solv_w, solv_h,
+              "SfePy FEA Solver", fc=STEP_COLORS[2], fs=8.5)
+
+    # arrow from solver to outputs bracket
+    out_labels = ["\u03c3 Stress", "u Displacement", "C Compliance"]
+    obw = 0.095
+    ogap = 0.012
+    out_total = len(out_labels) * obw + (len(out_labels) - 1) * ogap
+    ox0 = bx + bw - out_total - 0.02
+    oy  = row_y
+    for i, lbl in enumerate(out_labels):
+        xi = ox0 + i * (obw + ogap)
+        _step_box(fig, xi, oy, obw, bxh, lbl, fc=TEAL, fs=7.5)
+
+    # bracket above outputs
+    bracket_y = oy + bxh + 0.005
+    _bracket_h(fig, ox0 + 0.005, ox0 + out_total - 0.005,
+               bracket_y, depth=-0.010, color=TEAL, lw=1.4)
+    fig.text(ox0 + out_total / 2, bracket_y + 0.016, "Outputs",
+             ha="center", va="center", fontsize=8, color=TEAL,
+             fontweight="bold", family="sans-serif",
+             transform=fig.transFigure, zorder=12)
+
+    # horizontal arrow: solver → outputs
+    _arrow(fig, solv_x + solv_w + 0.006, solv_y + solv_h / 2,
+           ox0 - 0.008, oy + bxh / 2,
+           color=NAVY, lw=2.0, ms=12)
+
+    # ── main FEA figure ──
+    fig_h = bh * 0.58
+    fig_y = by + bh * 0.02
+    _imshow(fig, [bx, fig_y, bw, fig_h],
             FIG_DIR / "fig16_fea_stress_placeholder.png")
+
     _save(fig, "panel_03_fea.png")
 
 
 def panel_voxelization():
-    """Panel 4 — Voxelization & multi-channel encoding."""
+    """Panel 4 — Voxelization pipeline: mesh → 128³ grid → 7-ch tensor."""
     fig, body = _new_panel(
         "\u2463  Voxelization & Preprocessing",
-        "Structural meshes are voxelized to 128\u00b3 and encoded as "
-        "7-channel tensors with preserved part labels",
+        "Structural meshes are rasterized onto a 128\u00b3 voxel grid and "
+        "encoded as 7-channel tensors for the surrogate network",
         hdr_fc=STEP_COLORS[3],
     )
     bx, by, bw, bh = body
-    _imshow(fig, [bx, by, bw, bh],
+
+    # ── pipeline across top ──
+    pipe_y = by + bh - 0.05
+    pipe_h = 0.038
+    entries = [
+        ("Triangle\nMesh",    NAVY),
+        ("128\u00b3 Voxel\nRasterization", STEP_COLORS[3]),
+        ("7-Channel\nTensor",  TEAL),
+    ]
+    box_w = 0.145
+    gap_a = 0.038
+    total = len(entries) * box_w + (len(entries) - 1) * gap_a
+    sx = bx + (bw - total) / 2 - 0.10  # shift left to make room for channel list
+    for i, (lbl, clr) in enumerate(entries):
+        xi = sx + i * (box_w + gap_a)
+        _step_box(fig, xi, pipe_y, box_w, pipe_h, lbl, fc=clr, fs=8.5)
+        if i < len(entries) - 1:
+            _arrow(fig, xi + box_w + 0.004, pipe_y + pipe_h / 2,
+                   xi + box_w + gap_a - 0.004, pipe_y + pipe_h / 2,
+                   color=DARK, lw=2.0, ms=12)
+
+    # ── vertical curly brace + channel list to the right ──
+    last_x = sx + (len(entries) - 1) * (box_w + gap_a) + box_w
+    _arrow(fig, last_x + 0.006, pipe_y + pipe_h / 2,
+           last_x + 0.026, pipe_y + pipe_h / 2,
+           color=DARK, lw=1.6, ms=9)
+    ch_x = last_x + 0.032
+    channels = ["Occupancy", "Part ID", "Wall dist",
+                "Roof dist", "Slab dist", "Height", "Normals"]
+    ch_fs = 7.0
+    ch_lh = 0.017  # line height
+    ch_top = pipe_y + pipe_h / 2 + len(channels) * ch_lh / 2
+    for j, ch in enumerate(channels):
+        cy = ch_top - j * ch_lh
+        fig.text(ch_x + 0.025, cy, ch, ha="left", va="center",
+                 fontsize=ch_fs, color=DARK, family="sans-serif",
+                 transform=fig.transFigure, zorder=12)
+    brace_tip_x, _ = _vbrace(fig, ch_x + 0.005,
+                              ch_top - (len(channels) - 1) * ch_lh - 0.004,
+                              ch_top + 0.004,
+                              depth=0.015, color=STEP_COLORS[3], lw=1.5)
+
+    # ── main voxel figure ──
+    fig_h = bh * 0.58
+    fig_y = by + bh * 0.02
+    _imshow(fig, [bx, fig_y, bw, fig_h],
             FIG_DIR / "fig_voxel_house.png")
+
     _save(fig, "panel_04_voxelization.png")
 
 
 def panel_surrogate():
-    """Panel 5 — Deep-ensemble surrogate architecture."""
+    """Panel 5 — Surrogate pipeline: voxel input → ensemble → predictions."""
     arch_path = POSTER_FINAL / "fig04_architecture.png"
     if not arch_path.exists():
         arch_path = FIG_DIR / "fig2_architecture.png"
@@ -506,16 +768,67 @@ def panel_surrogate():
     fig, body = _new_panel(
         "\u2464  Surrogate Model Training",
         "A 5-member deep ensemble of 3D CNNs predicts structural "
-        "responses directly from voxelized buildings (trained on 11,178 FEA runs)",
+        "responses directly from voxelized buildings (11,178 FEA training runs)",
         hdr_fc=STEP_COLORS[4],
     )
     bx, by, bw, bh = body
-    _imshow(fig, [bx, by, bw, bh], arch_path)
+
+    # ── pipeline row at top ──
+    pipe_y = by + bh - 0.050
+    pipe_h = 0.038
+    # left: input box
+    in_w = 0.14
+    _step_box(fig, bx + 0.01, pipe_y, in_w, pipe_h,
+              "Voxel Input\n(7 channels)", fc=NAVY, fs=8.5)
+
+    # arrow
+    _arrow(fig, bx + 0.01 + in_w + 0.005, pipe_y + pipe_h / 2,
+           bx + 0.01 + in_w + 0.030, pipe_y + pipe_h / 2,
+           color=DARK, lw=2.0, ms=12)
+
+    # centre: 5 small ensemble member boxes with brace below
+    ens_x0 = bx + 0.01 + in_w + 0.038
+    ens_bw = 0.065
+    ens_gap = 0.008
+    ens_labels = ["CNN 1", "CNN 2", "CNN 3", "CNN 4", "CNN 5"]
+    for i, el in enumerate(ens_labels):
+        xi = ens_x0 + i * (ens_bw + ens_gap)
+        _outline_box(fig, xi, pipe_y, ens_bw, pipe_h, el,
+                     ec=STEP_COLORS[4], tc=STEP_COLORS[4], fs=7.5)
+    ens_end = ens_x0 + len(ens_labels) * (ens_bw + ens_gap) - ens_gap
+
+    # curly brace under ensemble
+    brace_top = pipe_y - 0.005
+    tip_x, tip_y = _hbrace(fig, ens_x0 + 0.008, ens_end - 0.008,
+                            brace_top, depth=0.016, color=STEP_COLORS[4], lw=1.5)
+    fig.text(tip_x, tip_y - 0.010, "Deep Ensemble",
+             ha="center", va="center", fontsize=8, color=STEP_COLORS[4],
+             fontweight="bold", family="sans-serif",
+             transform=fig.transFigure, zorder=12)
+
+    # arrow from ensemble to output
+    _arrow(fig, ens_end + 0.005, pipe_y + pipe_h / 2,
+           ens_end + 0.030, pipe_y + pipe_h / 2,
+           color=DARK, lw=2.0, ms=12)
+
+    # right: output boxes
+    out_x = ens_end + 0.038
+    outs = [("\u03c3, u, C", TEAL), ("Uncertainty", "#A3111A")]
+    for j, (ol, oc) in enumerate(outs):
+        ow = 0.09
+        oy = pipe_y + j * (pipe_h + 0.006) - (len(outs) - 1) * (pipe_h + 0.006) / 2
+        _step_box(fig, out_x, oy, ow, pipe_h, ol, fc=oc, fs=8.0)
+
+    # ── main architecture figure ──
+    fig_h = bh * 0.55
+    fig_y = by + bh * 0.02
+    _imshow(fig, [bx, fig_y, bw, fig_h], arch_path)
+
     _save(fig, "panel_05_surrogate.png")
 
 
 def panel_optimization():
-    """Panel 6 — SASTO flowchart."""
+    """Panel 6 — SASTO iterative optimisation loop."""
     flow_path = POSTER_FINAL / "fig05_sasto_flowchart.png"
     if not flow_path.exists():
         flow_path = FIG_DIR / "fig_sasto_pipeline.png"
@@ -523,11 +836,62 @@ def panel_optimization():
     fig, body = _new_panel(
         "\u2465  SASTO Optimization",
         "Surrogate-accelerated sensitivity-driven topology optimization "
-        "removes material while preserving connectivity and constraints",
+        "removes material while preserving connectivity & constraints",
         hdr_fc=STEP_COLORS[5],
     )
     bx, by, bw, bh = body
-    _imshow(fig, [bx, by, bw, bh], flow_path)
+
+    # ── iterative pipeline across top ──
+    pipe_y = by + bh - 0.050
+    pipe_h = 0.034
+    steps = [
+        ("Initial\nDesign",    NAVY),
+        ("Surrogate\nEval",    STEP_COLORS[4]),
+        ("Sensitivity\nCalc",  STEP_COLORS[2]),
+        ("Voxel\nRemoval",    STEP_COLORS[5]),
+        ("Constraint\nCheck",  TEAL),
+    ]
+    sbw = 0.105
+    sgap = 0.028
+    total = len(steps) * sbw + (len(steps) - 1) * sgap
+    sx = bx + (bw - total) / 2
+    box_centers = []
+    for i, (lbl, clr) in enumerate(steps):
+        xi = sx + i * (sbw + sgap)
+        _step_box(fig, xi, pipe_y, sbw, pipe_h, lbl, fc=clr, fs=7.5)
+        box_centers.append((xi, xi + sbw))
+        if i < len(steps) - 1:
+            _arrow(fig, xi + sbw + 0.004, pipe_y + pipe_h / 2,
+                   xi + sbw + sgap - 0.004, pipe_y + pipe_h / 2,
+                   color=DARK, lw=1.8, ms=10)
+
+    # ── loop-back bracket from last box back to second box ──
+    from matplotlib.lines import Line2D
+    loop_y = pipe_y + pipe_h + 0.008
+    loop_top = loop_y + 0.018
+    x_from = box_centers[-1][0] + sbw / 2  # centre of last box
+    x_to   = box_centers[1][0] + sbw / 2   # centre of second box
+    for seg in [
+        ([x_from, x_from], [pipe_y + pipe_h, loop_top]),   # up from last
+        ([x_from, x_to],   [loop_top, loop_top]),           # across
+    ]:
+        fig.add_artist(Line2D(
+            seg[0], seg[1], color=STEP_COLORS[5], linewidth=1.8,
+            transform=fig.transFigure, clip_on=False, zorder=12,
+        ))
+    # arrow head going down into second box
+    _darrow(fig, x_to, loop_top, pipe_y + pipe_h + 0.002,
+            color=STEP_COLORS[5], lw=1.8, ms=10)
+    fig.text((x_from + x_to) / 2, loop_top + 0.008, "iterate until convergence",
+             ha="center", va="center", fontsize=7.5, color=STEP_COLORS[5],
+             fontstyle="italic", family="sans-serif",
+             transform=fig.transFigure, zorder=12)
+
+    # ── main flowchart figure ──
+    fig_h = bh * 0.53
+    fig_y = by + bh * 0.02
+    _imshow(fig, [bx, fig_y, bw, fig_h], flow_path)
+
     _save(fig, "panel_06_optimization.png")
 
 
