@@ -51,6 +51,23 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     outer_mask = filled & ((x < 0.15) | (x > 0.85) | (y < 0.15) | (y > 0.85))
     interior_mask = filled & ~(roof_mask | slab_mask | outer_mask)
 
+    exposed = np.zeros_like(filled, dtype=bool)
+    exposed[0, :, :] = filled[0, :, :]
+    exposed[-1, :, :] = filled[-1, :, :]
+    exposed[:, 0, :] = filled[:, 0, :]
+    exposed[:, -1, :] = filled[:, -1, :]
+    exposed[:, :, 0] = filled[:, :, 0]
+    exposed[:, :, -1] = filled[:, :, -1]
+    exposed[1:, :, :] |= filled[1:, :, :] & ~filled[:-1, :, :]
+    exposed[:-1, :, :] |= filled[:-1, :, :] & ~filled[1:, :, :]
+    exposed[:, 1:, :] |= filled[:, 1:, :] & ~filled[:, :-1, :]
+    exposed[:, :-1, :] |= filled[:, :-1, :] & ~filled[:, 1:, :]
+    exposed[:, :, 1:] |= filled[:, :, 1:] & ~filled[:, :, :-1]
+    exposed[:, :, :-1] |= filled[:, :, :-1] & ~filled[:, :, 1:]
+
+    # Avoid seeing interior walls through the shell in the conceptual thumbnail.
+    visible = exposed & ~interior_mask
+
     def apply_color(mask, hex_color, alpha=0.98):
         rgb = mcolors.to_rgb(hex_color)
         facecolors[mask, 0] = rgb[0]
@@ -58,10 +75,10 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
         facecolors[mask, 2] = rgb[2]
         facecolors[mask, 3] = alpha
 
-    apply_color(outer_mask, WALL)
-    apply_color(interior_mask, INTERIOR)
-    apply_color(roof_mask, ROOF)
-    apply_color(slab_mask, SLAB)
+    apply_color(outer_mask & visible, WALL)
+    apply_color(interior_mask & visible, INTERIOR)
+    apply_color(roof_mask & visible, ROOF)
+    apply_color(slab_mask & visible, SLAB)
 
     edgecolors[..., 0] = 1.0
     edgecolors[..., 1] = 1.0
@@ -69,7 +86,7 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     edgecolors[..., 3] = 0.15
 
     ax3d.voxels(
-        filled,
+        visible,
         facecolors=facecolors,
         edgecolors=edgecolors,
         linewidth=0.20,
@@ -150,20 +167,41 @@ def draw_volume_block(ax, x, y, w, h, dx, dy, face, side, top):
     ))
 
 
-def draw_model_card(ax, x, y, w, h, label):
-    """Draw a clean ensemble-member card."""
-    card = FancyBboxPatch(
-        (x, y), w, h,
-        boxstyle="round,pad=0.006,rounding_size=0.02",
-        facecolor=WHITE, edgecolor=BLUE, linewidth=1.2,
-    )
-    ax.add_patch(card)
-    ax.text(x + w / 2, y + h * 0.78, label,
-            ha="center", va="center", fontsize=7.8, color=BLUE, fontweight="bold")
-    xs = np.linspace(x + w * 0.18, x + w * 0.82, 30)
-    ys = y + h * (0.28 + 0.10 * np.sin(np.linspace(0, 2.8, 30)))
-    ax.plot(xs, ys, color=TEAL, lw=1.5)
-    ax.plot([x + w * 0.18, x + w * 0.82], [y + h * 0.22, y + h * 0.22], color="#D8E2F6", lw=1.0)
+def draw_house_thumbnail(ax, x, y, s=1.0, removed=None, selected=False):
+    """Draw a small house-like voxel thumbnail for conceptual steps."""
+    w = 0.070 * s
+    h = 0.070 * s
+    dx = 0.020 * s
+    dy = 0.018 * s
+
+    # walls
+    ax.add_patch(mpatches.Rectangle((x, y), w, h, facecolor=WALL, edgecolor=WHITE, linewidth=1.0))
+    ax.add_patch(Polygon(
+        [[x + w, y], [x + w + dx, y + dy], [x + w + dx, y + h + dy], [x + w, y + h]],
+        closed=True, facecolor="#2E5FB1", edgecolor=WHITE, linewidth=0.9,
+    ))
+    # roof
+    ax.add_patch(Polygon(
+        [[x, y + h], [x + dx, y + h + dy], [x + w + dx, y + h + dy], [x + w, y + h]],
+        closed=True, facecolor=ROOF, edgecolor=WHITE, linewidth=0.9,
+    ))
+
+    for gx in np.linspace(x + w * 0.20, x + w * 0.80, 3):
+        ax.plot([gx, gx], [y + h * 0.10, y + h * 0.90], color=WHITE, lw=0.5, alpha=0.45)
+    for gy in np.linspace(y + h * 0.20, y + h * 0.80, 3):
+        ax.plot([x + w * 0.08, x + w * 0.92], [gy, gy], color=WHITE, lw=0.5, alpha=0.45)
+
+    if removed:
+        for rx, ry in removed:
+            ax.add_patch(mpatches.Rectangle((x + rx * w, y + ry * h), w * 0.14, h * 0.14,
+                                            facecolor=RED, edgecolor=WHITE, linewidth=0.5))
+
+    if selected:
+        circ = Circle((x + w + dx * 0.65, y + h * 0.28), 0.018 * s,
+                      facecolor="#2CA02C", edgecolor=WHITE, linewidth=0.9)
+        ax.add_patch(circ)
+        ax.plot([x + w + dx * 0.56, x + w + dx * 0.64, x + w + dx * 0.80],
+                [y + h * 0.27, y + h * 0.19, y + h * 0.36], color=WHITE, lw=1.2)
 
 
 def add_card(fig, xywh, facecolor, edgecolor, lw=2.2, radius=0.02, zorder=0):
@@ -220,9 +258,9 @@ fig.text(0.1225, 0.095, "starting design represented on a voxel grid",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.132
-legend_x = [0.055, 0.102, 0.149, 0.192]
-legend_colors = [WALL, INTERIOR, ROOF, SLAB]
-legend_labels = ["Exterior", "Interior", "Roof", "Slab"]
+legend_x = [0.060, 0.115, 0.165]
+legend_colors = [WALL, ROOF, SLAB]
+legend_labels = ["Exterior", "Roof", "Slab"]
 for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
     fig.add_artist(mpatches.Rectangle((x0, legend_y), 0.010, 0.016,
                                       transform=fig.transFigure, facecolor=c0,
@@ -241,74 +279,68 @@ ax_mid.text(0.50, 0.93, "Surrogate-Guided Optimization",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
 # candidate design mini-grid
-left_cluster = FancyBboxPatch((0.05, 0.19), 0.23, 0.62,
+left_cluster = FancyBboxPatch((0.05, 0.19), 0.25, 0.62,
                               boxstyle="round,pad=0.012,rounding_size=0.025",
                               facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
 ax_mid.add_patch(left_cluster)
-ax_mid.text(0.165, 0.76, "Candidate Designs",
+ax_mid.text(0.175, 0.76, "1. Candidate Edits",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=BLUE)
 
-draw_volume_block(ax_mid, 0.090, 0.47, 0.055, 0.10, 0.015, 0.015,
-                  "#9CBBF3", "#6F95E0", "#C4D6F8")
-draw_volume_block(ax_mid, 0.145, 0.44, 0.055, 0.10, 0.015, 0.015,
-                  "#9CBBF3", "#6F95E0", "#C4D6F8")
-draw_volume_block(ax_mid, 0.115, 0.34, 0.055, 0.10, 0.015, 0.015,
-                  "#9CBBF3", "#6F95E0", "#C4D6F8")
-ax_mid.add_patch(mpatches.Rectangle((0.160, 0.47), 0.010, 0.018, facecolor=RED, edgecolor="none"))
-ax_mid.add_patch(mpatches.Rectangle((0.173, 0.47), 0.010, 0.018, facecolor=RED, edgecolor="none"))
-ax_mid.text(0.165, 0.25, "remove and test voxels",
+draw_house_thumbnail(ax_mid, 0.085, 0.50, 0.95, removed=[(0.55, 0.40)])
+draw_house_thumbnail(ax_mid, 0.155, 0.42, 0.95, removed=[(0.28, 0.55)])
+draw_house_thumbnail(ax_mid, 0.115, 0.31, 0.95, removed=[(0.44, 0.20)])
+ax_mid.text(0.175, 0.25, "try small voxel removals",
             ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
 
 # central surrogate box
-ax_mid.add_patch(FancyArrowPatch((0.295, 0.50), (0.405, 0.50), arrowstyle="-|>",
+ax_mid.add_patch(FancyArrowPatch((0.315, 0.50), (0.405, 0.50), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-sur_box = FancyBboxPatch((0.42, 0.29), 0.22, 0.42,
+sur_box = FancyBboxPatch((0.42, 0.19), 0.24, 0.62,
                          boxstyle="round,pad=0.014,rounding_size=0.025",
                          facecolor=NAVY, edgecolor=GOLD, linewidth=1.8)
 ax_mid.add_patch(sur_box)
-ax_mid.text(0.53, 0.63, "Fast Structural",
+ax_mid.text(0.54, 0.76, "2. Fast Scoring",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
-ax_mid.text(0.53, 0.57, "Surrogate",
+ax_mid.text(0.54, 0.67, "surrogate predicts",
+            ha="center", va="center", fontsize=8.5, color=WHITE, fontstyle="italic")
+ax_mid.text(0.54, 0.61, "stress, compliance,",
+            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
+ax_mid.text(0.54, 0.55, "and displacement",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
 
-chip = FancyBboxPatch((0.485, 0.40), 0.09, 0.10,
-                      boxstyle="round,pad=0.01,rounding_size=0.01",
-                      facecolor="#123A92", edgecolor=WHITE, linewidth=1.0)
-ax_mid.add_patch(chip)
-for px in np.linspace(0.488, 0.572, 7):
-    ax_mid.plot([px, px], [0.505, 0.525], color=WHITE, lw=0.8)
-    ax_mid.plot([px, px], [0.375, 0.395], color=WHITE, lw=0.8)
-for py in np.linspace(0.405, 0.495, 5):
-    ax_mid.plot([0.468, 0.485], [py, py], color=WHITE, lw=0.8)
-    ax_mid.plot([0.575, 0.592], [py, py], color=WHITE, lw=0.8)
-
-for y0, txt, fc in [(0.34, "stress", "#EAF0FB"), (0.29, "compliance", "#EAF0FB"), (0.24, "displacement", "#EAF0FB")]:
-    pill = FancyBboxPatch((0.455, y0), 0.15, 0.038,
+for y0, txt, fc in [(0.45, "stress", "#EAF0FB"), (0.39, "compliance", "#EAF0FB"), (0.33, "displacement", "#EAF0FB")]:
+    pill = FancyBboxPatch((0.465, y0), 0.15, 0.040,
                           boxstyle="round,pad=0.004,rounding_size=0.015",
                           facecolor=fc, edgecolor="none")
     ax_mid.add_patch(pill)
-    ax_mid.text(0.53, y0 + 0.019, txt,
+    ax_mid.text(0.54, y0 + 0.020, txt,
                 ha="center", va="center", fontsize=7.8, color=NAVY, fontweight="bold")
 
-# optimization loop and final choice
-ax_mid.add_patch(FancyArrowPatch((0.66, 0.50), (0.77, 0.50), arrowstyle="-|>",
+eq_box = FancyBboxPatch((0.455, 0.24), 0.17, 0.055,
+                        boxstyle="round,pad=0.006,rounding_size=0.014",
+                        facecolor="#123A92", edgecolor=WHITE, linewidth=0.8)
+ax_mid.add_patch(eq_box)
+ax_mid.text(0.54, 0.267, r"$J = V + \lambda P$",
+            ha="center", va="center", fontsize=11.0, color=WHITE, fontweight="bold")
+ax_mid.text(0.54, 0.215, "lower score is better",
+            ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
+
+# final choice
+ax_mid.add_patch(FancyArrowPatch((0.675, 0.50), (0.775, 0.50), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
-ax_mid.add_patch(FancyArrowPatch((0.78, 0.32), (0.26, 0.32), arrowstyle="-|>",
-                                 connectionstyle="arc3,rad=-0.35",
-                                 mutation_scale=16, color=BLACK, lw=1.6))
 
 right_cluster = FancyBboxPatch((0.78, 0.19), 0.17, 0.62,
                                boxstyle="round,pad=0.012,rounding_size=0.025",
                                facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
 ax_mid.add_patch(right_cluster)
-ax_mid.text(0.865, 0.76, "Best Design",
+ax_mid.text(0.865, 0.76, "3. Selected Design",
             ha="center", va="center", fontsize=11.0, fontweight="bold", color=DARK)
-draw_volume_block(ax_mid, 0.815, 0.40, 0.060, 0.12, 0.018, 0.018,
-                  "#8BB1EE", "#5D87D5", "#B9CEF6")
-ax_mid.add_patch(mpatches.Rectangle((0.845, 0.44), 0.012, 0.020, facecolor=WHITE, edgecolor="none"))
-ax_mid.text(0.865, 0.25, "keep low material, satisfy constraints",
-            ha="center", va="center", fontsize=7.9, color=DARK, fontstyle="italic", wrap=True)
+draw_house_thumbnail(ax_mid, 0.825, 0.40, 1.10, selected=True)
+ax_mid.text(0.865, 0.28, "lowest valid objective",
+            ha="center", va="center", fontsize=8.1, color=DARK, fontweight="bold")
+ax_mid.text(0.865, 0.23, "lighter but still safe",
+            ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
 
 # ── Right: full-house structural response ───────────────────────────────────
