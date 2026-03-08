@@ -30,16 +30,16 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
 ARROW_SCALE = 30
-ARROW_DX  = 0.043   # fits outer gap (0.035) and inner gaps
+ARROW_DX  = 0.045   # arrow length in figure coords
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
-LEG_Y     = 0.178   # legend / colorbar row y
+LEG_Y     = 0.183   # legend / colorbar row y
 
 # Symmetric layout grid
 PANEL_W  = 0.220
 PANEL_H  = 0.590
 PANEL_Y  = 0.205
-GAP      = 0.035    # gap on each side of mid panel
+GAP      = 0.048    # gap on each side of mid panel
 LEFT_X   = 0.010
 MID_X    = LEFT_X + PANEL_W + GAP   # 0.285
 MID_W    = 1.0 - 2*LEFT_X - 2*PANEL_W - 2*GAP  # 0.430
@@ -335,6 +335,12 @@ def add_outline_arrow(container, start, end, transform, scale=28, lw=2.8, z=15):
 
 fig = plt.figure(figsize=(20, 5.8), facecolor=WHITE)
 
+# Right panel size (hoisted here so arrow 4 can use _R_X)
+_R_W = PANEL_W + 0.010
+_R_H = PANEL_H + 0.070
+_R_Y = PANEL_Y - 0.035
+_R_X = 1.0 - LEFT_X - _R_W
+
 # Single shared arrow_y: vertical midpoint of both 3D panels
 arrow_y = PANEL_Y + PANEL_H * 0.50
 
@@ -353,7 +359,7 @@ _dec_l_fig = MID_X + MID_W * _DEC_L_AX
 _a1_cx = (LEFT_X + PANEL_W + MID_X)   / 2   # outer-left  gap centre
 _a2_cx = (_enc_r_fig + _vec_l_fig)     / 2   # inner gap 1 centre
 _a3_cx = (_vec_r_fig + _dec_l_fig)     / 2   # inner gap 2 centre
-_a4_cx = (MID_X + MID_W + RIGHT_X)    / 2   # outer-right gap centre
+_a4_cx = (MID_X + MID_W + _R_X)       / 2   # outer-right gap centre (uses actual _R_X)
 
 for _cx in [_a1_cx, _a2_cx, _a3_cx, _a4_cx]:
     _sx = _cx - ARROW_DX / 2
@@ -478,11 +484,7 @@ ax_mid.text(0.50, _ay - _vh/2 - 0.13, r"$J = V + \lambda P$",
 
 
 # ── Right: predicted structural response ──────────────────────────────────────
-# Right panel is larger than the left to emphasise the output
-_R_W = PANEL_W + 0.025
-_R_H = PANEL_H + 0.070
-_R_Y = PANEL_Y - 0.035
-_R_X = 1.0 - LEFT_X - _R_W
+# Right panel size already defined above (hoisted for arrow centering)
 ax_right = fig.add_axes([_R_X, _R_Y, _R_W, _R_H], projection="3d")
 render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
             color_mode="stress", elev=22, azim=-55, ambient=0.84)
