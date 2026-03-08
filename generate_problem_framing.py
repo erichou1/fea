@@ -101,6 +101,9 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     ax3d.set_box_aspect([sx, sy, sz])
     ax3d.view_init(elev=elev, azim=azim)
     ax3d.set_facecolor(WHITE)
+    for axis in (ax3d.xaxis, ax3d.yaxis, ax3d.zaxis):
+        axis.pane.set_facecolor((1, 1, 1, 0))
+        axis.pane.set_edgecolor((1, 1, 1, 0))
     ax3d.set_axis_off()
 
 
@@ -320,7 +323,13 @@ add_outline_arrow(fig, (0.725, 0.50), (0.762, 0.50), transform=fig.transFigure, 
 
 # ── Left: actual voxelized structure ─────────────────────────────────────────
 ax_left = fig.add_axes([0.018, 0.165, 0.228, 0.64], projection="3d")
-render_reference_voxel_house(ax_left)
+render_voxelized_house(
+    ax_left,
+    "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
+    pitch_div=30,
+    elev=22,
+    azim=-55,
+)
 
 fig.text(0.132, 0.805, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=DARK)
