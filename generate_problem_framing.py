@@ -30,8 +30,19 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW = 3.2
 ARROW_SCALE = 30
-ARROW_DX = 0.037
-TITLE_Y = 0.835
+ARROW_DX = 0.056
+TITLE_Y = 0.865
+
+# Shared layout grid
+LEFT_X   = 0.010
+PANEL_W  = 0.215
+MID_X    = 0.270
+MID_W    = 0.460
+RIGHT_X  = 1.0 - LEFT_X - PANEL_W   # 0.775
+PANEL_Y  = 0.190
+PANEL_H  = 0.600
+LEFT_CX  = LEFT_X  + PANEL_W / 2    # 0.1175
+RIGHT_CX = RIGHT_X + PANEL_W / 2    # 0.8825
 
 OUT = Path("poster_images_extracted/problem_framing.png")
 
@@ -321,19 +332,28 @@ def add_outline_arrow(container, start, end, transform, scale=28, lw=2.8, z=15):
 
 fig = plt.figure(figsize=(20, 5.8), facecolor=WHITE)
 
-left = (0.015, 0.08, 0.215, 0.84)
-mid = (0.280, 0.08, 0.440, 0.84)
-right = (0.770, 0.08, 0.215, 0.84)
-arrow_y = mid[1] + mid[3] * 0.47
+# Arrow y = vertical mid of 3D panels in figure coordinates
+arrow_y = PANEL_Y + PANEL_H * 0.50
 
-# keep the background clean like the reference figure
+# Four arrows: outer-left, inner-left, inner-right, outer-right
+# All identical: same length ARROW_DX, same y, same style
+_gap_outer = MID_X - (LEFT_X + PANEL_W)               # gap between left panel and mid
+_a1_x = LEFT_X + PANEL_W + _gap_outer/2 - ARROW_DX/2  # centred in left gap
+_gap_right = RIGHT_X - (MID_X + MID_W)
+_a2_x = MID_X + MID_W + _gap_right/2 - ARROW_DX/2     # centred in right gap
+# Inner arrows: centred in the gaps between enc/vec and vec/dec boxes (in ax_mid)
+# enc right edge at ax fraction 0.26, vec left at 0.42 → fig centre = MID_X + MID_W*0.34
+_a3_x = MID_X + MID_W * 0.34 - ARROW_DX/2
+# vec right edge at 0.58, dec left at 0.74 → fig centre = MID_X + MID_W*0.66
+_a4_x = MID_X + MID_W * 0.66 - ARROW_DX/2
 
-add_outline_arrow(fig, (0.238, arrow_y), (0.238 + ARROW_DX, arrow_y), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
-add_outline_arrow(fig, (0.725, arrow_y), (0.725 + ARROW_DX, arrow_y), transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
+for _ax in [_a1_x, _a3_x, _a4_x, _a2_x]:
+    add_outline_arrow(fig, (_ax, arrow_y), (_ax + ARROW_DX, arrow_y),
+                      transform=fig.transFigure, scale=ARROW_SCALE, lw=ARROW_LW)
 
 
-# ── Left: actual voxelized structure ─────────────────────────────────────────
-ax_left = fig.add_axes([0.018, 0.165, 0.228, 0.64], projection="3d")
+# ── Left: voxelized structure ─────────────────────────────────────────────────
+ax_left = fig.add_axes([LEFT_X, PANEL_Y, PANEL_W, PANEL_H], projection="3d")
 render_voxelized_house(
     ax_left,
     "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
@@ -342,94 +362,93 @@ render_voxelized_house(
     azim=-55,
 )
 
-fig.text(0.132, TITLE_Y, "Voxelized Structure",
+fig.text(LEFT_CX, TITLE_Y, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=DARK)
-fig.text(0.132, 0.132, "part-labeled voxel grid of the starting design",
+fig.text(LEFT_CX, 0.118, "part-labeled voxel grid of starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
-legend_y = 0.168
-legend_x = [0.100, 0.139, 0.178, 0.214]
-legend_colors = [WALL, INTERIOR, ROOF, SLAB]
+# Legend centred under left panel
 legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
-for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
-    fig.add_artist(mpatches.Rectangle((x0, legend_y), 0.010, 0.016,
+legend_colors  = [WALL,      INTERIOR,   ROOF,   SLAB]
+_SWATCH = 0.011
+_GAP    = 0.004
+_TXT    = 0.042
+_item_w = _SWATCH + _GAP + _TXT
+_total_w = len(legend_labels) * _item_w + (len(legend_labels)-1) * 0.006
+legend_x0 = LEFT_CX - _total_w / 2
+legend_y   = 0.143
+for i, (c0, txt) in enumerate(zip(legend_colors, legend_labels)):
+    xi = legend_x0 + i * (_item_w + 0.006)
+    fig.add_artist(mpatches.Rectangle((xi, legend_y), _SWATCH, 0.016,
                                       transform=fig.transFigure, facecolor=c0,
                                       edgecolor=BLACK, linewidth=0.6, zorder=10))
-    fig.text(x0 + 0.013, legend_y + 0.008, txt,
-             ha="left", va="center", fontsize=7.0, color=DARK)
+    fig.text(xi + _SWATCH + _GAP, legend_y + 0.008, txt,
+             ha="left", va="center", fontsize=7.2, color=DARK)
 
 
-# ── Middle: conceptual optimization panel ────────────────────────────────────
-ax_mid = fig.add_axes([mid[0], mid[1], mid[2], mid[3]], facecolor="none")
+# ── Middle: surrogate model panel ─────────────────────────────────────────────
+MID_Y, MID_H = 0.08, 0.84
+ax_mid = fig.add_axes([MID_X, MID_Y, MID_W, MID_H], facecolor="none")
 ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-fig.text(0.500, TITLE_Y, "Surrogate Model",
+fig.text(MID_X + MID_W/2, TITLE_Y, "Surrogate Model",
          ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
-# simple reference-style flow
-enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
+# Convert arrow_y to ax_mid axis fraction for box vertical alignment
+_ay_ax = (arrow_y - MID_Y) / MID_H   # arrow in ax_mid y-fraction
+_bh = 0.22                            # box half-height in ax units
+
+enc_box = FancyBboxPatch((0.05, _ay_ax - _bh/2), 0.21, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#F2F5FA", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.17, 0.50, "3D House\nEncoder",
-            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1, multialignment="center")
-ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
+ax_mid.text(0.155, _ay_ax, "3D House\nEncoder",
+            ha="center", va="center", fontsize=11.5, color=DARK,
+            fontweight="bold", linespacing=1.15, multialignment="center")
+ax_mid.text(0.155, _ay_ax - _bh/2 - 0.055, "voxel geometry to structural features",
             ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
-add_outline_arrow(
-    fig,
-    (mid[0] + mid[2] * 0.315, arrow_y),
-    (mid[0] + mid[2] * 0.315 + ARROW_DX, arrow_y),
-    transform=fig.transFigure,
-    scale=ARROW_SCALE,
-    lw=ARROW_LW,
-)
-
-vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
+vec_box = FancyBboxPatch((0.40, _ay_ax - 0.30), 0.20, 0.60,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
                          facecolor="#FFF6E5", edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(vec_box)
-ax_mid.text(0.50, 0.76, "Structural Code",
+ax_mid.text(0.50, _ay_ax + 0.22, "Structural Code",
             ha="center", va="center", fontsize=10.5, color=DARK, fontweight="bold")
-ax_mid.text(0.50, 0.63, r"$z_{\mathrm{shape}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
-ax_mid.text(0.50, 0.53, r"$z_{\mathrm{load}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
-ax_mid.text(0.50, 0.43, r"$\vdots$", ha="center", va="center", fontsize=16, color=DARK)
-ax_mid.text(0.50, 0.33, r"$z_{\mathrm{stiff}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
-ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
+for idx, lbl in enumerate([r"$z_{\mathrm{shape}}$", r"$z_{\mathrm{load}}$",
+                             r"$\cdot\!\cdot\!\cdot$",
+                             r"$z_{\mathrm{stiff}}$"]):
+    yy = _ay_ax + 0.10 - idx * 0.12
+    ax_mid.text(0.50, yy, lbl, ha="center", va="center",
+                fontsize=11.4 if idx != 2 else 14.0,
+                color=DARK, fontweight="bold" if idx != 2 else "normal")
+ax_mid.text(0.50, _ay_ax - 0.38, r"$J = V + \lambda P$",
             ha="center", va="center", fontsize=11.5, color=NAVY, fontweight="bold")
 
-add_outline_arrow(
-    fig,
-    (mid[0] + mid[2] * 0.605, arrow_y),
-    (mid[0] + mid[2] * 0.605 + ARROW_DX, arrow_y),
-    transform=fig.transFigure,
-    scale=ARROW_SCALE,
-    lw=ARROW_LW,
-)
-
-dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
+dec_box = FancyBboxPatch((0.74, _ay_ax - _bh/2), 0.21, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#FDEEEF", edgecolor=BLACK, linewidth=1.8)
 ax_mid.add_patch(dec_box)
-ax_mid.text(0.83, 0.50, "Structural\nSurrogate",
-            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1, multialignment="center")
-ax_mid.text(0.83, 0.31, "predicts stress, compliance, and displacement",
+ax_mid.text(0.845, _ay_ax, "Structural\nSurrogate",
+            ha="center", va="center", fontsize=11.5, color=DARK,
+            fontweight="bold", linespacing=1.15, multialignment="center")
+ax_mid.text(0.845, _ay_ax - _bh/2 - 0.055,
+            "predicts stress, compliance,\nand displacement",
             ha="center", va="center", fontsize=7.4, color=DARK, fontstyle="italic")
 
 
-# ── Right: full-house structural response ───────────────────────────────────
-ax_right = fig.add_axes([0.787, 0.18, 0.178, 0.64], projection="3d")
+# ── Right: predicted structural response ──────────────────────────────────────
+ax_right = fig.add_axes([RIGHT_X, PANEL_Y, PANEL_W, PANEL_H], projection="3d")
 render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
             color_mode="stress", elev=22, azim=-55, ambient=0.84)
 
-fig.text(0.8775, TITLE_Y, "Predicted Structural Response",
+fig.text(RIGHT_CX, TITLE_Y, "Predicted Structural Response",
          ha="center", va="center", fontsize=13, fontweight="bold", color=DARK)
-fig.text(0.8775, 0.082, "full-house stress prediction",
+fig.text(RIGHT_CX, 0.118, "full-house stress prediction",
          ha="center", va="center", fontsize=8.7, color=DARK, fontstyle="italic")
 
-ax_cb = fig.add_axes([0.815, 0.115, 0.125, 0.028])
+ax_cb = fig.add_axes([RIGHT_CX - 0.065, 0.143, 0.130, 0.026])
 cb = fig.colorbar(
     plt.cm.ScalarMappable(mcolors.Normalize(0, 1), cmap=plt.get_cmap("jet")),
     cax=ax_cb,
