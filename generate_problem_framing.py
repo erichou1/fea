@@ -30,7 +30,7 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
 ARROW_SCALE = 30
-ARROW_DX  = 0.050   # fits outer gap (0.055) and enlarged inner gaps (0.065)
+ARROW_DX  = 0.030   # fits outer gap (0.035) and inner gaps
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
 LEG_Y     = 0.147   # legend / colorbar row y
@@ -39,7 +39,7 @@ LEG_Y     = 0.147   # legend / colorbar row y
 PANEL_W  = 0.220
 PANEL_H  = 0.590
 PANEL_Y  = 0.205
-GAP      = 0.055    # gap on each side of mid panel
+GAP      = 0.035    # gap on each side of mid panel
 LEFT_X   = 0.010
 MID_X    = LEFT_X + PANEL_W + GAP   # 0.285
 MID_W    = 1.0 - 2*LEFT_X - 2*PANEL_W - 2*GAP  # 0.430
@@ -426,10 +426,26 @@ ax_mid.text(_ENC_CX, _ay - _bh/2 - 0.055,
 _VEC_CX = 0.50
 _vw = _VEC_R_AX - _VEC_L_AX   # = 0.18
 _vh = 0.50
-vec_box = FancyBboxPatch((_VEC_L_AX, _ay - _vh/2), _vw, _vh,
-                         boxstyle="round,pad=0.008,rounding_size=0.010",
-                         facecolor="#FFF6E5", edgecolor=BLACK, linewidth=1.6)
-ax_mid.add_patch(vec_box)
+# White background (no visible border)
+vec_bg = FancyBboxPatch((_VEC_L_AX + 0.028, _ay - _vh/2), _vw - 0.056, _vh,
+                         boxstyle="square,pad=0.0",
+                         facecolor=WHITE, edgecolor="none", linewidth=0)
+ax_mid.add_patch(vec_bg)
+# Square brackets [ ] drawn as L-shaped line segments
+_blw   = 3.0          # bracket line width
+_btick = 0.030        # horizontal tick length
+_bxi_l = _VEC_L_AX + 0.008   # vertical stem x, left bracket
+_bxi_r = _VEC_R_AX - 0.008   # vertical stem x, right bracket
+_by_top = _ay + _vh / 2 - 0.006
+_by_bot = _ay - _vh / 2 + 0.006
+# Left bracket  [ : tick-right → down → tick-right
+ax_mid.plot([_bxi_l + _btick, _bxi_l, _bxi_l, _bxi_l + _btick],
+            [_by_top, _by_top, _by_bot, _by_bot],
+            color=DARK, lw=_blw, solid_capstyle='butt', solid_joinstyle='miter')
+# Right bracket ] : tick-left ← down → tick-left
+ax_mid.plot([_bxi_r - _btick, _bxi_r, _bxi_r, _bxi_r - _btick],
+            [_by_top, _by_top, _by_bot, _by_bot],
+            color=DARK, lw=_blw, solid_capstyle='butt', solid_joinstyle='miter')
 # Vertical stack of z labels, centred on _ay, evenly spaced
 _z_labels = [r"$z_{\mathrm{shape}}$", r"$z_{\mathrm{load}}$",
              r"$\vdots$",            r"$z_{\mathrm{stiff}}$"]
