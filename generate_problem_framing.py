@@ -32,6 +32,14 @@ SLAB = "#D6B48A"
 OUT = Path("poster_images_extracted/problem_framing.png")
 
 
+def load_cropped_voxel_panel():
+    """Load only the 3D voxel-house panel from the repo-generated figure."""
+    img = Image.open("figures/fig_voxel_house.png").convert("RGBA")
+    # Crop the left 3D panel tightly so the poster shows only the voxelized house.
+    crop_box = (220, 500, 1390, 1835)
+    return img.crop(crop_box)
+
+
 def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     """Voxelize the full-house mesh and color major building parts heuristically."""
     mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
@@ -154,7 +162,12 @@ def render_mesh(ax3d, ply_path, color_mode="stress", elev=22, azim=-55, ambient=
     ax3d.set_zlim(-0.5 - pad, 0.5 + pad)
     ax3d.set_box_aspect([span_real[0], span_real[1], span_real[2]])
     ax3d.view_init(elev=elev, azim=azim)
-    ax3d.set_facecolor(LBLUE)
+    ax3d.set_facecolor(WHITE)
+    for axis in (ax3d.xaxis, ax3d.yaxis, ax3d.zaxis):
+        try:
+            axis.pane.set_visible(False)
+        except Exception:
+            pass
     ax3d.set_axis_off()
 
 
@@ -252,18 +265,18 @@ add_arrow(fig, (0.725, 0.50), (0.762, 0.50), lw=3.6, scale=30)
 
 
 # ── Left: actual voxelized structure ─────────────────────────────────────────
-ax_left = fig.add_axes([0.030, 0.18, 0.182, 0.64])
+ax_left = fig.add_axes([0.032, 0.20, 0.178, 0.58])
 ax_left.set_axis_off()
-voxel_img = Image.open("thumb_voxel_house.png")
+voxel_img = load_cropped_voxel_panel()
 ax_left.imshow(voxel_img)
 ax_left.set_aspect("equal")
 
-fig.text(0.1225, 0.905, "Voxelized Structure",
+fig.text(0.1225, 0.852, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.1225, 0.095, "part-colored voxel grid of the starting design",
+fig.text(0.1225, 0.118, "part-colored voxel grid of the starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
-legend_y = 0.132
+legend_y = 0.146
 legend_x = [0.036, 0.079, 0.122, 0.167]
 legend_colors = [WALL, INTERIOR, ROOF, SLAB]
 legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
@@ -281,25 +294,25 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.93, "Surrogate Model",
+ax_mid.text(0.50, 0.86, "Surrogate Model",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
 # simple reference-style flow
-enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
+enc_box = FancyBboxPatch((0.05, 0.38), 0.22, 0.18,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
-                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
+                         facecolor="#EAF2FF", edgecolor=BLUE, linewidth=1.8)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.17, 0.50, "3D House\nEncoder",
-            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1)
-ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
+ax_mid.text(0.16, 0.47, "3D House Encoder",
+            ha="center", va="center", fontsize=11.3, color=DARK, fontweight="bold")
+ax_mid.text(0.16, 0.34, "voxel geometry to structural features",
             ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
-ax_mid.add_patch(FancyArrowPatch((0.28, 0.47), (0.39, 0.47), arrowstyle="-|>",
+ax_mid.add_patch(FancyArrowPatch((0.29, 0.47), (0.39, 0.47), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=2.8))
 
 vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
-                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.4)
+                         facecolor="#FFF6DE", edgecolor=GOLD, linewidth=1.6)
 ax_mid.add_patch(vec_box)
 ax_mid.text(0.50, 0.76, "Structural Code",
             ha="center", va="center", fontsize=10.5, color=DARK, fontweight="bold")
@@ -313,27 +326,27 @@ ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
 ax_mid.add_patch(FancyArrowPatch((0.60, 0.47), (0.71, 0.47), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=2.8))
 
-dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
+dec_box = FancyBboxPatch((0.71, 0.38), 0.22, 0.18,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
-                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
+                         facecolor="#EAF8F2", edgecolor=TEAL, linewidth=1.8)
 ax_mid.add_patch(dec_box)
-ax_mid.text(0.83, 0.50, "Structural\nSurrogate",
-            ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold", linespacing=1.1)
-ax_mid.text(0.83, 0.31, "predicts stress, compliance, and displacement",
+ax_mid.text(0.82, 0.47, "Structural Surrogate",
+            ha="center", va="center", fontsize=11.3, color=DARK, fontweight="bold")
+ax_mid.text(0.82, 0.34, "predicts stress, compliance, and displacement",
             ha="center", va="center", fontsize=7.4, color=DARK, fontstyle="italic")
 
 
 # ── Right: full-house structural response ───────────────────────────────────
-ax_right = fig.add_axes([0.787, 0.18, 0.178, 0.64], projection="3d")
+ax_right = fig.add_axes([0.787, 0.20, 0.178, 0.58], projection="3d")
 render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
             color_mode="stress", elev=22, azim=-55, ambient=0.84)
 
-fig.text(0.8775, 0.905, "Predicted Structural Response",
+fig.text(0.8775, 0.852, "Predicted Structural Response",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.8775, 0.082, "full-house stress prediction",
+fig.text(0.8775, 0.106, "full-house stress prediction",
          ha="center", va="center", fontsize=8.7, color=DARK, fontstyle="italic")
 
-ax_cb = fig.add_axes([0.815, 0.115, 0.125, 0.028])
+ax_cb = fig.add_axes([0.815, 0.138, 0.125, 0.028])
 cb = fig.colorbar(
     plt.cm.ScalarMappable(mcolors.Normalize(0, 1), cmap=plt.get_cmap("jet")),
     cax=ax_cb,
