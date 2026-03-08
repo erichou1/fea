@@ -279,7 +279,7 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.93, "Surrogate Model",
+ax_mid.text(0.50, 0.93, "Project Representation",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
 # simple reference-style flow
@@ -287,9 +287,11 @@ enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.17, 0.47, "Encoder",
+ax_mid.text(0.17, 0.47, "3D House",
             ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
-ax_mid.text(0.17, 0.31, "geometry to learned features",
+ax_mid.text(0.17, 0.41, "Encoder",
+            ha="center", va="center", fontsize=11.0, color=DARK, fontweight="bold")
+ax_mid.text(0.17, 0.31, "voxel geometry to structural features",
             ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
 ax_mid.add_patch(FancyArrowPatch((0.28, 0.47), (0.39, 0.47), arrowstyle="-|>",
@@ -299,10 +301,12 @@ vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
                          boxstyle="round,pad=0.008,rounding_size=0.010",
                          facecolor=WHITE, edgecolor=BLACK, linewidth=1.4)
 ax_mid.add_patch(vec_box)
-ax_mid.text(0.50, 0.63, r"$z_1$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
-ax_mid.text(0.50, 0.53, r"$z_2$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.76, "Structural Code",
+            ha="center", va="center", fontsize=10.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.63, r"$z_{\mathrm{shape}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.53, r"$z_{\mathrm{load}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
 ax_mid.text(0.50, 0.43, r"$\vdots$", ha="center", va="center", fontsize=16, color=DARK)
-ax_mid.text(0.50, 0.33, r"$z_k$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.33, r"$z_{\mathrm{stiff}}$", ha="center", va="center", fontsize=11.4, color=DARK, fontweight="bold")
 ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
             ha="center", va="center", fontsize=11.5, color=NAVY, fontweight="bold")
 
@@ -313,9 +317,11 @@ dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(dec_box)
-ax_mid.text(0.83, 0.47, "Predictor",
+ax_mid.text(0.83, 0.47, "Structural",
             ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
-ax_mid.text(0.83, 0.31, "stress, compliance, displacement",
+ax_mid.text(0.83, 0.41, "Surrogate",
+            ha="center", va="center", fontsize=11.0, color=DARK, fontweight="bold")
+ax_mid.text(0.83, 0.31, "predicts stress, compliance, and displacement",
             ha="center", va="center", fontsize=7.4, color=DARK, fontstyle="italic")
 
 
