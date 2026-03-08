@@ -30,7 +30,7 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
 ARROW_SCALE = 30
-ARROW_DX  = 0.038   # fits inside smallest gap (0.047) with clearance
+ARROW_DX  = 0.050   # fits outer gap (0.055) and enlarged inner gaps (0.065)
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
 LEG_Y     = 0.147   # legend / colorbar row y
@@ -340,10 +340,10 @@ arrow_y = PANEL_Y + PANEL_H * 0.50
 
 # ── All 4 identical arrows in figure coordinates ──────────────────────────────
 # Box edges in ax_mid fractions (must match FancyBboxPatch positions below)
-_ENC_R_AX = 0.30   # enc box right edge in ax_mid
+_ENC_R_AX = 0.26   # enc box right edge in ax_mid  (pushed in to widen gaps)
 _VEC_L_AX = 0.41   # vec box left  edge in ax_mid
 _VEC_R_AX = 0.59   # vec box right edge in ax_mid
-_DEC_L_AX = 0.70   # dec box left  edge in ax_mid
+_DEC_L_AX = 0.74   # dec box left  edge in ax_mid  (pushed in to widen gaps)
 
 _enc_r_fig = MID_X + MID_W * _ENC_R_AX
 _vec_l_fig = MID_X + MID_W * _VEC_L_AX
@@ -405,11 +405,11 @@ fig.text(MID_X + MID_W / 2, TITLE_Y, "Surrogate Model",
 
 # Convert shared arrow_y to ax_mid fraction
 _ay = (arrow_y - MID_Y_AX) / MID_H_AX
-_bh = 0.20   # box height in ax_mid units (reduced to avoid clipping)
-_bw = 0.28   # box width in ax_mid units
+_bh = 0.20   # box height in ax_mid units
+_bw = _ENC_R_AX - 0.02   # box width = from left anchor 0.02 to _ENC_R_AX = 0.24
 
-# Encoder box: anchored at left=0.02, right=_ENC_R_AX=0.30
-_ENC_CX = (_ENC_R_AX + 0.02) / 2   # = 0.16
+# Encoder box: anchored at left=0.02, right=_ENC_R_AX=0.26
+_ENC_CX = (0.02 + _ENC_R_AX) / 2   # = 0.14
 enc_box = FancyBboxPatch((0.02, _ay - _bh/2), _bw, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#F2F5FA", edgecolor=BLACK, linewidth=1.8)
@@ -442,8 +442,8 @@ for k, (lbl, fs) in enumerate(zip(_z_labels, _z_fs), 0):
                 ha="center", va="center", fontsize=fs, color=DARK,
                 fontweight="bold" if r"\vdots" not in lbl else "normal")
 
-# Surrogate/Decoder box: anchored at left=_DEC_L_AX=0.70, right=0.98
-_DEC_CX = (_DEC_L_AX + 0.98) / 2   # = 0.84
+# Surrogate/Decoder box: anchored at left=_DEC_L_AX=0.74, right=0.98
+_DEC_CX = (_DEC_L_AX + 0.98) / 2   # = 0.86
 dec_box = FancyBboxPatch((_DEC_L_AX, _ay - _bh/2), _bw, _bh,
                          boxstyle="round,pad=0.010,rounding_size=0.018",
                          facecolor="#FDEEEF", edgecolor=BLACK, linewidth=1.8)
@@ -462,7 +462,12 @@ ax_mid.text(0.50, _ay - _vh/2 - 0.13, r"$J = V + \lambda P$",
 
 
 # ── Right: predicted structural response ──────────────────────────────────────
-ax_right = fig.add_axes([RIGHT_X, PANEL_Y, PANEL_W, PANEL_H], projection="3d")
+# Right panel is larger than the left to emphasise the output
+_R_W = PANEL_W + 0.025
+_R_H = PANEL_H + 0.070
+_R_Y = PANEL_Y - 0.035
+_R_X = 1.0 - LEFT_X - _R_W
+ax_right = fig.add_axes([_R_X, _R_Y, _R_W, _R_H], projection="3d")
 render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
             color_mode="stress", elev=22, azim=-55, ambient=0.84)
 
