@@ -1,13 +1,15 @@
 """
-Generate a simplified calibration-flow diagram for the Visual Abstract.
+Generate a single calibration icon for the Visual Abstract.
 
-4-step horizontal flow (clean boxes, no scatter, no diamonds):
-  [Voxel Field]  →  [Ensemble Predict]  →  [Conservative Bound]  →  [Commit or Undo]
+Icon: confidence-interval bar chart — prediction bounds vs. threshold line.
+Per-design error bars (μ + kσ), gold threshold, teal accept / red reject colouring.
+Matches the 5 diagram-icon style (3.2 × 2.6 in, CARD background, set_title label).
 """
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.patches import FancyBboxPatch
 
 # ── Palette ─────────────────────────────────────────────────────────────────
@@ -20,148 +22,80 @@ RED   = "#D7263D"
 DARK  = "#0B1736"
 CARD  = "#F7F9FC"
 WHITE = "#FFFFFF"
-EQbg  = "#E8EEF2"
 
 OUT = "poster_images_extracted/icon_calibration.png"
 
-# ── Canvas ───────────────────────────────────────────────────────────────────
-W, H = 11.0, 3.2
+W, H = 3.2, 2.6
+DPI  = 220
+
+rng = np.random.default_rng(42)
+
+# ── Fake per-design data (6 designs) ─────────────────────────────────────────
+n       = 6
+# "true" compliance ratios spread around 1.0
+true_c  = np.array([0.75, 0.88, 0.96, 1.05, 1.10, 1.20])
+# surrogate mean (slightly under-predicts true)
+mu      = true_c * rng.uniform(0.90, 0.98, n)
+# surrogate std
+sigma   = rng.uniform(0.04, 0.09, n)
+k       = 1.0                     # operating k
+bound   = mu + k * sigma          # conservative upper bound
+thresh  = 1.15                    # acceptance threshold
+
+xs = np.arange(n)
+
+# ── Figure ────────────────────────────────────────────────────────────────────
 fig, ax = plt.subplots(figsize=(W, H), facecolor=CARD)
 ax.set_facecolor(CARD)
-ax.set_xlim(0, W)
-ax.set_ylim(0, H)
-ax.axis("off")
 
-# ── Layout constants ─────────────────────────────────────────────────────────
-STEPS = [
-    {
-        "num": "1",
-        "title": "Voxel Field",
-        "eq":    None,
-        "sub":   "5-member ensemble\noutput predictions",
-        "fc":    LBLUE,
-        "ec":    BLUE,
-        "tc":    BLUE,
-    },
-    {
-        "num": "2",
-        "title": "Ensemble Predict",
-        "eq":    r"$\mu_C,\ \sigma_C$",
-        "sub":   "mean & std from\n5 forward passes",
-        "fc":    EQbg,
-        "ec":    BLUE,
-        "tc":    BLUE,
-    },
-    {
-        "num": "3",
-        "title": "Conservative Bound",
-        "eq":    r"$\hat{C}^+ = \mu + k\sigma$",
-        "sub":   r"$k\!=\!1.0$ operating pt.",
-        "fc":    "#FFF7E0",
-        "ec":    GOLD,
-        "tc":    DARK,
-    },
-    {
-        "num": "4",
-        "title": "Commit or Undo",
-        "eq":    r"$\hat{C}^+/C_0 \leq 1.15$",
-        "sub":   "accept step → commit\nfail → halve budget",
-        "fc":    "#E8F8F5",
-        "ec":    TEAL,
-        "tc":    TEAL,
-    },
-]
+# ── Bars: μ as dot, error bar showing [μ, μ+kσ] ──────────────────────────────
+for i in range(n):
+    accept = bound[i] <= thresh
+    bar_col  = TEAL  if accept else RED
+    edge_col = TEAL  if accept else RED
 
-N      = len(STEPS)
-MARGIN = 0.35          # left/right page margin
-ARROW  = 0.38          # horizontal gap for arrow
-BH     = 1.72          # box height
-BY     = H / 2         # box centre-y
-BADGE  = 0.28          # step-badge radius
-TITLE_H = 0.38         # bottom title bar height
+    # vertical bar from μ up to bound
+    ax.plot([xs[i], xs[i]], [mu[i], bound[i]],
+            color=bar_col, lw=3.5, solid_capstyle="round", zorder=3)
+    # cap at top (bound)
+    ax.plot([xs[i]-0.18, xs[i]+0.18], [bound[i], bound[i]],
+            color=bar_col, lw=2.2, zorder=4)
+    # dot at μ
+    ax.plot(xs[i], mu[i], 'o', color=bar_col, ms=6, zorder=5,
+            markeredgecolor=DARK, markeredgewidth=0.5)
 
-# available width for boxes
-usable = W - 2 * MARGIN - (N - 1) * ARROW
-BW     = usable / N    # box width
+# ── Gold threshold line ───────────────────────────────────────────────────────
+ax.axhline(thresh, color=GOLD, lw=2.0, ls="--", zorder=6)
+ax.text(n - 0.1, thresh + 0.022,
+        r"$\hat{C}^+/C_0 \leq 1.15$",
+        ha="right", va="bottom", fontsize=7.5, color=GOLD,
+        fontweight="bold", zorder=7)
 
-def box_cx(i):
-    return MARGIN + i * (BW + ARROW) + BW / 2
+# ── Legend dots ───────────────────────────────────────────────────────────────
+ax.plot([], [], 'o-', color=TEAL, lw=2, label="Accept  ✓", ms=5)
+ax.plot([], [], 'o-', color=RED,  lw=2, label="Reject  ✗",  ms=5)
+ax.legend(fontsize=7, loc="upper left", frameon=False,
+          labelcolor=DARK, handlelength=1.2)
 
-def draw_box(i, step):
-    cx = box_cx(i)
-    cy = BY
+# ── Axes cosmetics ────────────────────────────────────────────────────────────
+ax.set_xlim(-0.55, n - 0.45)
+ax.set_ylim(0.58, 1.38)
+ax.set_xticks(xs)
+ax.set_xticklabels([f"D{i+1}" for i in range(n)],
+                   fontsize=7.5, color=DARK)
+ax.set_ylabel(r"Compliance ratio  $\hat{C}^+/C_0$",
+              fontsize=7.5, color=DARK)
+ax.tick_params(axis="y", labelsize=7, colors=DARK)
+ax.spines[["top","right"]].set_visible(False)
+ax.spines[["left","bottom"]].set_color("#C0CADC")
+ax.tick_params(colors="#C0CADC", which="both")
+for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+    lbl.set_color(DARK)
 
-    # main card
-    card = FancyBboxPatch(
-        (cx - BW / 2, cy - BH / 2), BW, BH,
-        boxstyle="round,pad=0.12",
-        facecolor=step["fc"], edgecolor=step["ec"],
-        linewidth=1.6, zorder=3,
-    )
-    ax.add_patch(card)
+ax.set_title("Calibration Bound", fontsize=11, fontweight="bold",
+             color=DARK, pad=5)
 
-    # step badge (circle at top-left corner of box)
-    badge_x = cx - BW / 2 + 0.02
-    badge_y = cy + BH / 2 - 0.02
-    badge = plt.Circle((badge_x, badge_y), BADGE,
-                        facecolor=step["ec"], edgecolor="none", zorder=5)
-    ax.add_patch(badge)
-    ax.text(badge_x, badge_y, step["num"],
-            ha="center", va="center", fontsize=8, color=WHITE,
-            fontweight="bold", zorder=6)
-
-    # title
-    ax.text(cx, cy + BH / 2 - 0.42, step["title"],
-            ha="center", va="center", fontsize=9.5, color=step["tc"],
-            fontweight="bold", zorder=5)
-
-    # equation (if present)
-    if step["eq"]:
-        ax.text(cx, cy + 0.10, step["eq"],
-                ha="center", va="center", fontsize=11, color=DARK,
-                fontweight="bold", zorder=5)
-
-    # subtitle lines
-    sub_y = cy - BH / 2 + 0.42
-    for j, line in enumerate(step["sub"].split("\n")):
-        ax.text(cx, sub_y + j * 0.26, line,
-                ha="center", va="center", fontsize=7.5, color=DARK,
-                fontstyle="italic", zorder=5)
-
-def draw_arrow(i):
-    """Draw gold arrow between box i and box i+1."""
-    x0 = box_cx(i)     + BW / 2 + 0.04
-    x1 = box_cx(i + 1) - BW / 2 - 0.04
-    ax.annotate(
-        "", xy=(x1, BY), xytext=(x0, BY),
-        arrowprops=dict(arrowstyle="-|>", color=GOLD, lw=2.2,
-                        mutation_scale=16),
-        zorder=4,
-    )
-
-# ── Draw all boxes and arrows ─────────────────────────────────────────────────
-for i, step in enumerate(STEPS):
-    draw_box(i, step)
-    if i < N - 1:
-        draw_arrow(i)
-
-# ── Bottom title bar ──────────────────────────────────────────────────────────
-bar = FancyBboxPatch(
-    (0.0, 0.0), W, TITLE_H,
-    boxstyle="round,pad=0.03",
-    facecolor=NAVY, edgecolor="none", zorder=2,
-)
-ax.add_patch(bar)
-ax.text(W / 2, TITLE_H / 2,
-        "Calibration Pipeline  ·  Ensemble Uncertainty  →  Conservative Bound  →  Accept / Undo",
-        ha="center", va="center", fontsize=8, color=WHITE,
-        fontweight="bold", zorder=5)
-
-# ── Gold rule above title bar ─────────────────────────────────────────────────
-ax.plot([0, W], [TITLE_H + 0.01, TITLE_H + 0.01],
-        color=GOLD, lw=1.4, zorder=3)
-
-plt.tight_layout(pad=0.0)
-plt.savefig(OUT, dpi=280, bbox_inches="tight", facecolor=CARD)
+plt.tight_layout(pad=0.3)
+plt.savefig(OUT, dpi=DPI, bbox_inches="tight", facecolor=CARD)
 plt.close()
 print(f"Saved → {OUT}")
