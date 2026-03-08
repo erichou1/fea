@@ -434,24 +434,18 @@ ax_mid.text(_ENC_CX, _ay - _bh/2 - 0.055,
 _VEC_CX = 0.50
 _vw = _VEC_R_AX - _VEC_L_AX   # = 0.18
 _vh = 0.50
-# Colored fill between bracket stems
-_bxi_l_inner = _VEC_L_AX + 0.028
-_bxi_r_inner = _VEC_R_AX - 0.028
-vec_fill = FancyBboxPatch((_bxi_l_inner, _ay - _vh/2 + 0.004),
-                          _bxi_r_inner - _bxi_l_inner, _vh - 0.008,
+# Colored fill spanning stem-to-stem (full interior of brackets)
+_bxi_l = _VEC_L_AX + 0.008   # left stem x  (also used below for bracket lines)
+_bxi_r = _VEC_R_AX - 0.008   # right stem x
+vec_fill = FancyBboxPatch((_bxi_l, _ay - _vh/2),
+                          _bxi_r - _bxi_l, _vh,
                           boxstyle="square,pad=0.0",
                           facecolor="#FFF0D8", edgecolor="none", linewidth=0, zorder=1)
 ax_mid.add_patch(vec_fill)
-# White bleed behind brackets so they sit cleanly on fill
-vec_bg = FancyBboxPatch((_VEC_L_AX + 0.028, _ay - _vh/2), _vw - 0.056, _vh,
-                         boxstyle="square,pad=0.0",
-                         facecolor="none", edgecolor="none", linewidth=0)
-ax_mid.add_patch(vec_bg)
 # Square brackets [ ] drawn as L-shaped line segments
 _blw   = 3.0          # bracket line width
 _btick = 0.030        # horizontal tick length
-_bxi_l = _VEC_L_AX + 0.008   # vertical stem x, left bracket
-_bxi_r = _VEC_R_AX - 0.008   # vertical stem x, right bracket
+# _bxi_l and _bxi_r already defined above when drawing fill
 _by_top = _ay + _vh / 2 - 0.006
 _by_bot = _ay - _vh / 2 + 0.006
 # Left bracket  [ : tick-right → down → tick-right
