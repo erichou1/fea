@@ -1,17 +1,4 @@
-﻿"""
-Generate the poster problem-framing diagram.
-
-New layout:
-  [real voxelized house] -> [single surrogate-model panel] -> [full-house stress response]
-
-The middle panel contains:
-  - 3D CNN encoder cue
-  - latent feature matrix
-  - deep ensemble predictor
-  - compact physics/training equation strip
-
-Output: poster_images_extracted/problem_framing.png
-"""
+﻿"""Generate a simplified problem-framing diagram for the poster."""
 
 import matplotlib
 matplotlib.use("Agg")
@@ -21,7 +8,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Polygon
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 
@@ -35,31 +22,51 @@ RED = "#D7263D"
 DARK = "#0B1736"
 CARD = "#F7F9FF"
 WHITE = "#FFFFFF"
+BLACK = "#111111"
+WALL = "#4477CC"
+INTERIOR = "#E88843"
+ROOF = "#54A24B"
+SLAB = "#D6B48A"
 
 OUT = Path("poster_images_extracted/problem_framing.png")
 
 
 def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
-    """Voxelize the full-house mesh and render the filled voxel shell."""
+    """Voxelize the full-house mesh and color major building parts heuristically."""
     mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
     pitch = float(mesh.extents.max() / pitch_div)
     vox = mesh.voxelized(pitch)
     filled = np.asarray(vox.matrix, dtype=bool)
 
     sx, sy, sz = filled.shape
-    zgrad = np.linspace(0, 1, sz)[None, None, :]
     facecolors = np.zeros(filled.shape + (4,), dtype=float)
     edgecolors = np.zeros_like(facecolors)
 
-    facecolors[..., 0] = 0.08 + 0.10 * zgrad
-    facecolors[..., 1] = 0.30 + 0.35 * zgrad
-    facecolors[..., 2] = 0.78 + 0.15 * zgrad
-    facecolors[..., 3] = 0.98
+    x = np.linspace(0, 1, sx)[:, None, None]
+    y = np.linspace(0, 1, sy)[None, :, None]
+    z = np.linspace(0, 1, sz)[None, None, :]
+
+    roof_mask = filled & (z > 0.78)
+    slab_mask = filled & (z < 0.14)
+    outer_mask = filled & ((x < 0.15) | (x > 0.85) | (y < 0.15) | (y > 0.85))
+    interior_mask = filled & ~(roof_mask | slab_mask | outer_mask)
+
+    def apply_color(mask, hex_color, alpha=0.98):
+        rgb = mcolors.to_rgb(hex_color)
+        facecolors[mask, 0] = rgb[0]
+        facecolors[mask, 1] = rgb[1]
+        facecolors[mask, 2] = rgb[2]
+        facecolors[mask, 3] = alpha
+
+    apply_color(outer_mask, WALL)
+    apply_color(interior_mask, INTERIOR)
+    apply_color(roof_mask, ROOF)
+    apply_color(slab_mask, SLAB)
 
     edgecolors[..., 0] = 1.0
     edgecolors[..., 1] = 1.0
     edgecolors[..., 2] = 1.0
-    edgecolors[..., 3] = 0.12
+    edgecolors[..., 3] = 0.15
 
     ax3d.voxels(
         filled,
@@ -129,6 +136,36 @@ def render_mesh(ax3d, ply_path, color_mode="stress", elev=22, azim=-55, ambient=
     ax3d.set_axis_off()
 
 
+def draw_volume_block(ax, x, y, w, h, dx, dy, face, side, top):
+    """Draw a simple perspective feature-volume block."""
+    front = mpatches.Rectangle((x, y), w, h, facecolor=face, edgecolor=WHITE, linewidth=1.2)
+    ax.add_patch(front)
+    ax.add_patch(Polygon(
+        [[x + w, y], [x + w + dx, y + dy], [x + w + dx, y + h + dy], [x + w, y + h]],
+        closed=True, facecolor=side, edgecolor=WHITE, linewidth=1.0,
+    ))
+    ax.add_patch(Polygon(
+        [[x, y + h], [x + dx, y + h + dy], [x + w + dx, y + h + dy], [x + w, y + h]],
+        closed=True, facecolor=top, edgecolor=WHITE, linewidth=1.0,
+    ))
+
+
+def draw_model_card(ax, x, y, w, h, label):
+    """Draw a clean ensemble-member card."""
+    card = FancyBboxPatch(
+        (x, y), w, h,
+        boxstyle="round,pad=0.006,rounding_size=0.02",
+        facecolor=WHITE, edgecolor=BLUE, linewidth=1.2,
+    )
+    ax.add_patch(card)
+    ax.text(x + w / 2, y + h * 0.78, label,
+            ha="center", va="center", fontsize=7.8, color=BLUE, fontweight="bold")
+    xs = np.linspace(x + w * 0.18, x + w * 0.82, 30)
+    ys = y + h * (0.28 + 0.10 * np.sin(np.linspace(0, 2.8, 30)))
+    ax.plot(xs, ys, color=TEAL, lw=1.5)
+    ax.plot([x + w * 0.18, x + w * 0.82], [y + h * 0.22, y + h * 0.22], color="#D8E2F6", lw=1.0)
+
+
 def add_card(fig, xywh, facecolor, edgecolor, lw=2.2, radius=0.02, zorder=0):
     x, y, w, h = xywh
     fig.add_artist(FancyBboxPatch(
@@ -145,7 +182,7 @@ def add_card(fig, xywh, facecolor, edgecolor, lw=2.2, radius=0.02, zorder=0):
     ))
 
 
-def add_arrow(fig, start, end, color=BLUE, lw=2.6, scale=26, z=15):
+def add_arrow(fig, start, end, color=BLACK, lw=2.6, scale=26, z=15):
     fig.add_artist(FancyArrowPatch(
         start,
         end,
@@ -179,11 +216,19 @@ render_voxelized_house(ax_left, "figures/screenshot_stls/REF_original_colored.pl
 
 fig.text(0.1225, 0.905, "Voxelized Structure",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.1225, 0.115,
-         r"$\rho \in \{0,1\}^{n_x \times n_y \times n_z}$",
-         ha="center", va="center", fontsize=11.5, color=DARK, fontweight="bold")
-fig.text(0.1225, 0.082, "binary occupancy tensor",
-         ha="center", va="center", fontsize=8.7, color=DARK, fontstyle="italic")
+fig.text(0.1225, 0.095, "colored by roof, slab, exterior, and interior parts",
+         ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
+
+legend_y = 0.132
+legend_x = [0.055, 0.102, 0.149, 0.192]
+legend_colors = [WALL, INTERIOR, ROOF, SLAB]
+legend_labels = ["Exterior", "Interior", "Roof", "Slab"]
+for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
+    fig.add_artist(mpatches.Rectangle((x0, legend_y), 0.010, 0.016,
+                                      transform=fig.transFigure, facecolor=c0,
+                                      edgecolor=WHITE, linewidth=0.6, zorder=10))
+    fig.text(x0 + 0.013, legend_y + 0.008, txt,
+             ha="left", va="center", fontsize=7.4, color=DARK)
 
 
 # ── Middle: one coherent surrogate-model panel ───────────────────────────────
@@ -192,102 +237,57 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.945, "Physics-Informed Surrogate Model",
+ax_mid.text(0.50, 0.93, "Surrogate Model",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
-# encoder block
-enc_box = FancyBboxPatch((0.035, 0.20), 0.255, 0.62,
+# encoder area
+enc_box = FancyBboxPatch((0.05, 0.19), 0.28, 0.62,
                          boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.8)
+                         facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.162, 0.78, "3D CNN Encoder",
-            ha="center", va="center", fontsize=11.5, fontweight="bold", color=BLUE)
+ax_mid.text(0.19, 0.76, "3D CNN Encoder",
+            ha="center", va="center", fontsize=11.2, fontweight="bold", color=BLUE)
+draw_volume_block(ax_mid, 0.105, 0.37, 0.085, 0.17, 0.020, 0.020,
+                  "#A9C3F5", "#7BA1EA", "#C7D8FA")
+draw_volume_block(ax_mid, 0.155, 0.40, 0.065, 0.135, 0.018, 0.018,
+                  "#6E97E4", "#4B77CF", "#94B5F0")
+draw_volume_block(ax_mid, 0.197, 0.425, 0.045, 0.105, 0.014, 0.014,
+                  "#25B4C3", "#0E90A2", "#6FD2DA")
+ax_mid.text(0.19, 0.25, "learns geometry features",
+            ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
 
-for w, h, dx, dy, c in [
-    (0.120, 0.28, 0.000, 0.000, "#91B2F0"),
-    (0.095, 0.22, 0.030, 0.025, "#5E8BDE"),
-    (0.072, 0.17, 0.056, 0.045, TEAL),
-]:
-    x0 = 0.078 + dx
-    y0 = 0.39 + dy
-    ax_mid.add_patch(mpatches.Rectangle((x0, y0), w, h,
-                                        facecolor=c, edgecolor=WHITE, linewidth=1.0))
-    ax_mid.add_patch(mpatches.Rectangle((x0 + 0.016, y0 + 0.016), w, h,
-                                        facecolor="none", edgecolor=DARK,
-                                        linewidth=0.8, alpha=0.22))
-    for gx in np.linspace(x0 + 0.02, x0 + w - 0.02, 4):
-        ax_mid.plot([gx, gx], [y0, y0 + h], color=WHITE, lw=0.45, alpha=0.40)
-    for gy in np.linspace(y0 + 0.03, y0 + h - 0.03, 4):
-        ax_mid.plot([x0, x0 + w], [gy, gy], color=WHITE, lw=0.45, alpha=0.40)
+# clean black arrow to ensemble
+ax_mid.add_patch(FancyArrowPatch((0.35, 0.50), (0.43, 0.50), arrowstyle="-|>",
+                                 mutation_scale=18, color=BLACK, lw=1.9))
 
-ax_mid.text(0.162, 0.28, r"$\mathbf{z}=E_{\theta}(\rho)$",
-            ha="center", va="center", fontsize=11.2, color=DARK, fontweight="bold")
-ax_mid.text(0.162, 0.235, "learned structural features",
-            ha="center", va="center", fontsize=8.1, color=DARK, fontstyle="italic")
-
-# latent matrix block
-lat_box = FancyBboxPatch((0.370, 0.20), 0.235, 0.62,
+# ensemble area
+ens_box = FancyBboxPatch((0.45, 0.19), 0.50, 0.62,
                          boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#0D2E73", edgecolor=GOLD, linewidth=1.8)
-ax_mid.add_patch(lat_box)
-ax_mid.text(0.4875, 0.78, "Latent Feature Matrix",
-            ha="center", va="center", fontsize=11.3, fontweight="bold", color=WHITE)
-
-ax_lat = fig.add_axes([mid[0] + mid[2] * 0.405, mid[1] + mid[3] * 0.35,
-                       mid[2] * 0.165, mid[3] * 0.31])
-latent = np.outer(np.sin(np.linspace(0.2, 2.8, 14)), np.cos(np.linspace(0.1, 2.6, 10))).T
-latent += 0.18 * np.outer(np.linspace(0, 1, 10), np.linspace(1, 0, 14))
-ax_lat.imshow(latent, cmap="viridis", aspect="auto", interpolation="nearest")
-ax_lat.set_xticks([])
-ax_lat.set_yticks([])
-for spine in ax_lat.spines.values():
-    spine.set_color(WHITE)
-    spine.set_linewidth(0.9)
-
-ax_mid.text(0.4875, 0.285, r"$\mathbf{z} \in \mathbb{R}^{d \times c}$",
-            ha="center", va="center", fontsize=10.8, color=GOLD, fontweight="bold")
-ax_mid.text(0.4875, 0.238, r"$K(\rho)\,\mathbf{u}=\mathbf{f}$",
-            ha="center", va="center", fontsize=11.2, color=WHITE, fontweight="bold")
-ax_mid.text(0.4875, 0.192, "trained against FEA response",
-            ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
-
-# ensemble block
-ens_box = FancyBboxPatch((0.685, 0.20), 0.280, 0.62,
-                         boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.8)
+                         facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
 ax_mid.add_patch(ens_box)
-ax_mid.text(0.825, 0.78, "Deep Ensemble Predictor",
+ax_mid.text(0.70, 0.76, "Deep Ensemble",
             ha="center", va="center", fontsize=11.2, fontweight="bold", color=DARK)
+ax_mid.text(0.70, 0.70, "five independently trained models",
+            ha="center", va="center", fontsize=8.3, color=DARK, fontstyle="italic")
 
-member_x = np.linspace(0.725, 0.875, 5)
-for i, mx in enumerate(member_x):
-    ax_mid.add_patch(FancyBboxPatch((mx - 0.020, 0.50), 0.040, 0.11,
-                                    boxstyle="round,pad=0.006,rounding_size=0.01",
-                                    facecolor="#DCEBFA", edgecolor=BLUE, linewidth=1.0))
-    ax_mid.text(mx, 0.555, rf"$f_{i+1}$", ha="center", va="center",
-                fontsize=8.6, color=BLUE, fontweight="bold")
-    ax_mid.plot([mx, mx], [0.45, 0.50], color=TEAL, lw=1.3)
-    ax_mid.plot([mx, 0.915], [0.45, 0.34], color=TEAL, lw=0.9, alpha=0.55)
+start_x = 0.50
+gap = 0.083
+for i in range(5):
+    draw_model_card(ax_mid, start_x + i * gap, 0.39, 0.060, 0.18, f"Model {i+1}")
 
-stats = Circle((0.915, 0.34), 0.070, facecolor=TEAL, edgecolor=WHITE, linewidth=1.2)
-ax_mid.add_patch(stats)
-ax_mid.text(0.915, 0.355, r"$\mu$", ha="center", va="center",
-            fontsize=12, color=WHITE, fontweight="bold")
-ax_mid.text(0.915, 0.315, r"$\sigma$", ha="center", va="center",
-            fontsize=10, color=WHITE, fontweight="bold")
+for i in range(5):
+    xm = start_x + i * gap + 0.030
+    ax_mid.plot([xm, 0.86], [0.36, 0.29], color=BLACK, lw=0.9, alpha=0.45)
 
-ax_mid.text(0.805, 0.24, r"$\mu = \frac{1}{M}\sum_{m=1}^{M} y_m$",
-            ha="center", va="center", fontsize=9.8, color=DARK, fontweight="bold")
-ax_mid.text(0.805, 0.195, r"$\sigma^2 = \frac{1}{M}\sum_{m=1}^{M}(y_m-\mu)^2$",
-            ha="center", va="center", fontsize=8.8, color=DARK)
+summary = Circle((0.86, 0.29), 0.080, facecolor=TEAL, edgecolor=WHITE, linewidth=1.2)
+ax_mid.add_patch(summary)
+ax_mid.text(0.86, 0.31, "Mean",
+            ha="center", va="center", fontsize=10.0, color=WHITE, fontweight="bold")
+ax_mid.text(0.86, 0.265, "+ spread",
+            ha="center", va="center", fontsize=8.2, color=WHITE, fontweight="bold")
 
-# internal arrows and output label
-ax_mid.add_patch(FancyArrowPatch((0.300, 0.51), (0.355, 0.51), arrowstyle="-|>",
-                                 mutation_scale=18, color=BLUE, lw=2.0))
-ax_mid.add_patch(FancyArrowPatch((0.615, 0.51), (0.670, 0.51), arrowstyle="-|>",
-                                 mutation_scale=18, color=BLUE, lw=2.0))
-ax_mid.text(0.92, 0.63, r"$\hat{\sigma}_{VM},\;\hat{C},\;\hat{\mathbf{u}}$",
-            ha="center", va="center", fontsize=10.2, color=RED, fontweight="bold")
+ax_mid.text(0.70, 0.22, "trained on FEA simulations",
+            ha="center", va="center", fontsize=8.2, color=DARK, fontstyle="italic")
 
 
 # ── Right: full-house structural response ───────────────────────────────────
@@ -297,7 +297,7 @@ render_mesh(ax_right, "figures/screenshot_stls/REF_SASTO_PA_colored.ply",
 
 fig.text(0.8775, 0.905, "Predicted Structural Response",
          ha="center", va="center", fontsize=13, fontweight="bold", color=BLUE)
-fig.text(0.8775, 0.082, "full-house von Mises stress field",
+fig.text(0.8775, 0.082, "full-house stress prediction",
          ha="center", va="center", fontsize=8.7, color=DARK, fontstyle="italic")
 
 ax_cb = fig.add_axes([0.815, 0.115, 0.125, 0.028])
@@ -311,7 +311,7 @@ cb.set_ticklabels(["Low", "High"])
 cb.ax.tick_params(labelsize=8, size=0, colors=DARK)
 cb.outline.set_edgecolor(DARK)
 cb.outline.set_linewidth(0.7)
-ax_cb.set_title(r"$\sigma_{VM}$", fontsize=8.5, color=DARK, pad=2)
+ax_cb.set_title("Stress", fontsize=8.5, color=DARK, pad=2)
 
 
 plt.savefig(str(OUT), dpi=240, bbox_inches="tight", facecolor=WHITE, edgecolor="none")
