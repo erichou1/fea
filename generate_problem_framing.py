@@ -36,6 +36,10 @@ def render_voxelized_house(ax3d, mesh_path, pitch_div=28, elev=24, azim=-55):
     mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
     pitch = float(mesh.extents.max() / pitch_div)
     vox = mesh.voxelized(pitch)
+    try:
+        vox = vox.fill()
+    except Exception:
+        pass
     filled = np.asarray(vox.matrix, dtype=bool)
 
     sx, sy, sz = filled.shape
@@ -258,7 +262,7 @@ fig.text(0.1225, 0.095, "part-colored voxel grid of the starting design",
          ha="center", va="center", fontsize=8.8, color=DARK, fontstyle="italic")
 
 legend_y = 0.132
-legend_x = [0.045, 0.095, 0.145, 0.190]
+legend_x = [0.040, 0.082, 0.126, 0.170]
 legend_colors = [WALL, INTERIOR, ROOF, SLAB]
 legend_labels = ["Exterior", "Interior", "Roof", "Floor"]
 for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
@@ -266,7 +270,7 @@ for x0, c0, txt in zip(legend_x, legend_colors, legend_labels):
                                       transform=fig.transFigure, facecolor=c0,
                                       edgecolor=WHITE, linewidth=0.6, zorder=10))
     fig.text(x0 + 0.013, legend_y + 0.008, txt,
-             ha="left", va="center", fontsize=7.4, color=DARK)
+             ha="left", va="center", fontsize=7.0, color=DARK)
 
 
 # ── Middle: conceptual optimization panel ────────────────────────────────────
@@ -275,73 +279,44 @@ ax_mid.set_xlim(0, 1)
 ax_mid.set_ylim(0, 1)
 ax_mid.set_axis_off()
 
-ax_mid.text(0.50, 0.93, "Surrogate-Guided Optimization",
+ax_mid.text(0.50, 0.93, "Surrogate Model",
             ha="center", va="center", fontsize=14, fontweight="bold", color=DARK)
 
-# encode box
-enc_box = FancyBboxPatch((0.05, 0.19), 0.23, 0.62,
-                         boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#EEF4FF", edgecolor=BLUE, linewidth=1.6)
+# simple reference-style flow
+enc_box = FancyBboxPatch((0.08, 0.37), 0.18, 0.20,
+                         boxstyle="round,pad=0.010,rounding_size=0.018",
+                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
 ax_mid.add_patch(enc_box)
-ax_mid.text(0.165, 0.76, "Encode Geometry",
-            ha="center", va="center", fontsize=11.0, fontweight="bold", color=BLUE)
-draw_volume_block(ax_mid, 0.095, 0.42, 0.085, 0.16, 0.020, 0.020,
-                  "#A9C3F5", "#7BA1EA", "#C7D8FA")
-draw_volume_block(ax_mid, 0.145, 0.45, 0.060, 0.12, 0.016, 0.016,
-                  "#6F97E4", "#4E79CF", "#98B7F0")
-draw_volume_block(ax_mid, 0.182, 0.47, 0.036, 0.085, 0.012, 0.012,
-                  "#29B8C7", "#1095A6", "#73D4DC")
-ax_mid.text(0.165, 0.28, "compact features from the voxel grid",
-            ha="center", va="center", fontsize=8.1, color=DARK, fontstyle="italic")
+ax_mid.text(0.17, 0.47, "Encoder",
+            ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
+ax_mid.text(0.17, 0.31, "geometry to learned features",
+            ha="center", va="center", fontsize=7.8, color=DARK, fontstyle="italic")
 
-ax_mid.add_patch(FancyArrowPatch((0.295, 0.50), (0.385, 0.50), arrowstyle="-|>",
+ax_mid.add_patch(FancyArrowPatch((0.28, 0.47), (0.39, 0.47), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-# score matrix box
-mat_box = FancyBboxPatch((0.40, 0.19), 0.26, 0.62,
-                         boxstyle="round,pad=0.014,rounding_size=0.025",
-                         facecolor=NAVY, edgecolor=GOLD, linewidth=1.8)
-ax_mid.add_patch(mat_box)
-ax_mid.text(0.53, 0.76, "Score Matrix",
-            ha="center", va="center", fontsize=11.0, fontweight="bold", color=WHITE)
-ax_mid.text(0.53, 0.69, "candidate edits scored by the surrogate",
-            ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
+vec_box = FancyBboxPatch((0.42, 0.22), 0.16, 0.50,
+                         boxstyle="round,pad=0.008,rounding_size=0.010",
+                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.4)
+ax_mid.add_patch(vec_box)
+ax_mid.text(0.50, 0.63, r"$z_1$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.53, r"$z_2$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.43, r"$\vdots$", ha="center", va="center", fontsize=16, color=DARK)
+ax_mid.text(0.50, 0.33, r"$z_k$", ha="center", va="center", fontsize=12.5, color=DARK, fontweight="bold")
+ax_mid.text(0.50, 0.16, r"$J = V + \lambda P$",
+            ha="center", va="center", fontsize=11.5, color=NAVY, fontweight="bold")
 
-mx0, my0 = 0.455, 0.36
-mw, mh = 0.145, 0.22
-for r in range(3):
-    for c in range(3):
-        val = 0.20 + 0.22 * r + 0.14 * c
-        color = plt.get_cmap("viridis")(val)
-        ax_mid.add_patch(mpatches.Rectangle((mx0 + c * mw / 3, my0 + (2 - r) * mh / 3),
-                                            mw / 3, mh / 3, facecolor=color,
-                                            edgecolor=WHITE, linewidth=0.8))
-for i, row_label in enumerate(["A", "B", "C"]):
-    ax_mid.text(mx0 - 0.020, my0 + mh * (5 / 6 - i / 3), row_label,
-                ha="center", va="center", fontsize=8.5, color=WHITE, fontweight="bold")
-for i, col_label in enumerate(["stress", "comp.", "disp."]):
-    ax_mid.text(mx0 + mw * (1 / 6 + i / 3), my0 + mh + 0.025, col_label,
-                ha="center", va="center", fontsize=7.2, color=WHITE)
-ax_mid.text(0.53, 0.28, r"$J = V + \lambda P$",
-            ha="center", va="center", fontsize=12.0, color=GOLD, fontweight="bold")
-ax_mid.text(0.53, 0.23, "lower score means a better edit",
-            ha="center", va="center", fontsize=8.0, color=WHITE, fontstyle="italic")
-
-ax_mid.add_patch(FancyArrowPatch((0.675, 0.50), (0.765, 0.50), arrowstyle="-|>",
+ax_mid.add_patch(FancyArrowPatch((0.60, 0.47), (0.71, 0.47), arrowstyle="-|>",
                                  mutation_scale=18, color=BLACK, lw=1.9))
 
-# select box
-sel_box = FancyBboxPatch((0.78, 0.19), 0.17, 0.62,
-                         boxstyle="round,pad=0.012,rounding_size=0.025",
-                         facecolor="#F8F1E0", edgecolor=TEAL, linewidth=1.6)
-ax_mid.add_patch(sel_box)
-ax_mid.text(0.865, 0.76, "Select Best Edit",
-            ha="center", va="center", fontsize=11.0, fontweight="bold", color=DARK)
-draw_house_thumbnail(ax_mid, 0.815, 0.42, 1.05, removed=[(0.44, 0.20)], selected=True)
-ax_mid.text(0.865, 0.30, "apply the safest",
-            ha="center", va="center", fontsize=8.1, color=DARK, fontweight="bold")
-ax_mid.text(0.865, 0.25, "lowest-score change",
-            ha="center", va="center", fontsize=7.9, color=DARK, fontstyle="italic")
+dec_box = FancyBboxPatch((0.74, 0.37), 0.18, 0.20,
+                         boxstyle="round,pad=0.010,rounding_size=0.018",
+                         facecolor=WHITE, edgecolor=BLACK, linewidth=1.6)
+ax_mid.add_patch(dec_box)
+ax_mid.text(0.83, 0.47, "Predictor",
+            ha="center", va="center", fontsize=12.0, color=DARK, fontweight="bold")
+ax_mid.text(0.83, 0.31, "stress, compliance, displacement",
+            ha="center", va="center", fontsize=7.4, color=DARK, fontstyle="italic")
 
 
 # ── Right: full-house structural response ───────────────────────────────────
