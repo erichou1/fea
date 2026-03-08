@@ -30,10 +30,10 @@ ROOF = "#54A24B"
 SLAB = "#D6B48A"
 ARROW_LW  = 3.2
 ARROW_SCALE = 30
-ARROW_DX  = 0.030   # fits outer gap (0.035) and inner gaps
+ARROW_DX  = 0.043   # fits outer gap (0.035) and inner gaps
 TITLE_Y   = 0.870
 SUB_Y     = 0.118   # subtitle row y
-LEG_Y     = 0.147   # legend / colorbar row y
+LEG_Y     = 0.178   # legend / colorbar row y
 
 # Symmetric layout grid
 PANEL_W  = 0.220
