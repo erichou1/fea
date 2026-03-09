@@ -1,6 +1,6 @@
 % ============================================================
 %  SASTO Project Notebook / Lab Logbook
-%  Eric Hou — ISEF 2026
+%  Eric Hou — SYNOPSYS 2026
 %  Engineering Category
 %
 %  Compile:  pdflatex project_notebook.tex  (run twice)
@@ -98,7 +98,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\color{notegray} SASTO Project Notebook — Eric Hou}
-\fancyhead[R]{\small\color{notegray} ISEF 2026}
+\fancyhead[R]{\small\color{notegray} SYNOPSYS 2026}
 \fancyfoot[C]{\small\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
@@ -113,25 +113,24 @@
   \centering
   \vspace*{3cm}
   {\Huge\bfseries\color{entryblue}
-    Project Notebook\\[6pt]
-    Research Logbook}\\[1.5cm]
+    Project Notebook}\\[6pt]
   {\LARGE\bfseries
-    SASTO: Surrogate-Accelerated Structural\\
-    Topology Optimization for Building-Scale\\
-    3D-Printed Concrete Structures}\\[1.5cm]
+    Additive Manufacturing: Harnessing FEA to Optimize Material Efficiency}\\[1.5cm]
   {\Large Eric Hou}\\[0.5cm]
-  {\large Engineering Category — ISEF 2026}\\[0.5cm]
   {\large Los Gatos, California}\\[2.5cm]
   {\large\color{notegray}
     Dates covered: November 2025 -- March 2026\\[4pt]
-    Total entries: 32\\[4pt]
-    This notebook documents the complete research process,\\
+    Total entries: 40\\[4pt]
+    This notebook documents the research process,\\
     including failures, abandoned approaches, debugging,\\
     and iterative improvements.}
   \vfill
   {\small\itshape
-    This notebook is a working record. Mistakes are crossed out,
-    not erased. Entries are chronological.}
+    \textbf{Note:} This is a reconstructed digital notebook, assembled
+    from dated source files, commit logs, error logs, and notes
+    written during the project. It reflects the actual sequence of
+    work as accurately as possible, but was typeset after the fact.
+    Mistakes are crossed out rather than deleted.}
 \end{titlepage}
 
 % ── TABLE OF CONTENTS ────────────────────────────────────────
@@ -143,7 +142,7 @@
 % ════════════════════════════════════════════════════════════
 
 % ──────────────────────────────────────────────────────────────
-\entry{November 26, 2025}{Initial Project Concept}
+\entry{November 14, 2025}{Initial Project Concept}
 
 \objective
 Define the core research question. I want to explore whether AI can reduce
@@ -182,8 +181,9 @@ images as floor plans vs.\ exterior renders. Set confidence threshold at 0.85.
 Added perceptual hashing for deduplication.
 
 \result
-Collected $\sim$1,200 floor plan images. Classification seemed reasonable ---
-most were actual floor plans.
+Collected $\sim$1,200 floor plan images after running the crawler overnight.
+Classification threshold 0.85 seemed reasonable but I did not do a full
+manual audit --- spot-checking 50 images showed mostly real floor plans.
 
 \failure
 Many images were low-resolution marketing renders, not dimensioned
@@ -246,8 +246,8 @@ Downloaded and explored the data format.
 
 \result
 Each wireframe is a JSON file with 3D vertex positions and edge lists encoding
-walls, floors, and roof ridges. This is exactly what I need --- precise 3D
-coordinates with topological structure.
+walls, floors, and roof ridges. This looks like exactly what I need --- but I
+still have to figure out how to ``inflate'' wireframe edges into solid volumes.
 
 \obs
 \begin{itemize}[nosep]
@@ -380,7 +380,9 @@ $\rho = 2400$\,kg/m$^3$). Load cases per ASCE 7-22: dead load, live load,
 wind combinations.
 
 \result
-I completed the first successful FEA solve on a simple rectangular building. The stress contours looked physically reasonable.
+I got the first FEA solve to complete without crashing. The stress contours
+\emph{looked} physically reasonable --- I was not 100\% sure at this point
+whether the boundary conditions were correct.
 
 \failure
 \begin{itemize}[nosep]
@@ -395,8 +397,8 @@ I completed the first successful FEA solve on a simple rectangular building. The
 \end{itemize}
 
 \fix
-Added fixed supports at foundation nodes (min-$x$ face). This is still an
-idealized BC but prevents the numerical collapse issue. Also added a sanity
+Added fixed supports at foundation nodes (min-$z$ face, i.e.\ the bottom
+slab). This is still an idealized BC but prevents the numerical collapse issue. Also added a sanity
 check: if $\|u\|_\infty > 1.0$\,m, flag the result as diverged.
 
 \nextstep
@@ -693,8 +695,9 @@ members becomes my ensemble uncertainty estimate.}
 
 \obs
 Compliance $\rho$ improved from 0.87 to 0.93 just by removing bad training data.
-This was a hard-earned lesson: \textbf{data quality matters more than model
-architecture}.
+I think this is the right takeaway but I am not 100\% sure whether the
+improvement is all data quality or partly the other v3 changes (weighted loss,
+dropped safety factor target). Hard to fully isolate.
 
 \nextstep
 Push training further and validate on held-out test set.
@@ -710,7 +713,9 @@ Ran inference on all test samples. Computed ensemble mean $\mu$ and standard
 deviation $\sigma$ for each target. Measured Spearman $\rho$, $R^2$, and MAPE.
 
 \result
-\textbf{This was the breakthrough moment of the entire project.}
+\textbf{This felt like the breakthrough moment.} (Writing this the same
+evening --- want to mark it because I have been doubting the approach for
+weeks.)
 
 \begin{center}
 \begin{tabular}{lccc}
@@ -733,6 +738,9 @@ deviation $\sigma$ for each target. Measured Spearman $\rho$, $R^2$, and MAPE.
     learned global stiffness patterns.
   \item The model does not need pointwise accuracy. It needs to correctly
     \emph{rank} designs so sensitivity scores steer optimization correctly.
+  \item \textit{Open question at this point: will $\rho = 0.948$ actually be
+    good enough for safe optimization, or will errors compound? I do not
+    know yet --- that is what the validation phase will answer.}
 \end{itemize}
 
 \fix
@@ -1440,30 +1448,12 @@ The ``compressibility'' of a design is primarily determined by the fraction
 of interior partition surface area relative to total structure. Open-plan
 houses allow more aggressive thinning.
 
-% ──────────────────────────────────────────────────────────────
-\entry{March 7, 2026 (afternoon)}{Voxel Representation Figure}
-
-\objective
-Generate a clear figure showing the 128$^3$ voxel representation of the
-reference house, colored by structural part type.
-
-\experiment
-I created a 4-panel figure showing:
-(a) 3D voxel model at 64$^3$ for display clarity,
-(b) horizontal cross-section at $z=50$,
-(c) longitudinal section at $y=64$,
-(d) transverse section at $x=64$.
-Part colors match the STL renders: blue = exterior, orange = interior,
-green = roof, tan = floor.
-
-\nbimgcap[0.70\linewidth]{fig_voxel_house.png}{Voxel representation of the
-reference house at four viewpoints, colored by part label.}
 
 % ──────────────────────────────────────────────────────────────
-\entry{March 7, 2026 (evening)}{ISEF Poster v5 --- Full Layout}
+\entry{March 7, 2026 (evening)}{SYNOPSYS Poster v5 --- Full Layout}
 
 \objective
-Design a 48'' $\times$ 36'' ISEF poster with professional layout.
+Design a 48'' $\times$ 36'' SYNOPSYS poster with professional layout.
 
 \experiment
 I built the poster in LaTeX (\texttt{poster\_v5.tex}) with a three-panel layout:
@@ -1507,7 +1497,7 @@ I generated three separate matplotlib diagrams:
 \entry{March 9, 2026}{Final Results Summary}
 
 \objective
-Compile the complete validated results for ISEF presentation.
+Compile the complete validated results for SYNOPSYS presentation.
 
 \experiment
 I compiled all key results across the 1,114 test geometries:
@@ -1620,8 +1610,9 @@ All three primary endpoints are met:
 \vfill
 \begin{center}
   \color{notegray}\small\itshape
-  End of Project Notebook --- 32 entries covering November 2025 to March 2026.\\
-  All entries are chronological and unedited (errors crossed out, not deleted).
+  End of Project Notebook --- 40 entries covering November 2025 to March 2026.\\
+  Reconstructed from dated files, commit logs, and contemporaneous notes.\\
+  Errors are crossed out rather than deleted.
 \end{center}
 
 \end{document}
