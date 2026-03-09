@@ -918,11 +918,19 @@ def fig_diag_optimization():
             color=C_R, ha="center", va="center", zorder=6)
     _arr(ax, cx + 0.55, DY - 0.65, cx + 0.55, CY + BH/2, clr=C_R)
 
-    # loop-back arrow
-    ax.annotate("", xy=(W - 0.22, ys[1]),
-        xytext=(cx + 1.65 + 1.30, CY),
+    # loop-back arrow – explicit elbow: right → up → left (no curve)
+    xr = W - 0.18
+    ax.plot([cx + 1.65 + 1.30, xr, xr],
+            [CY, CY, ys[1]],
+            color=C_R, lw=2.0, zorder=5,
+            solid_capstyle="round", solid_joinstyle="round")
+    ax.annotate("", xy=(cx + BW/2, ys[1]), xytext=(xr, ys[1]),
         arrowprops=dict(arrowstyle="-|>", color=C_R, lw=2.0,
-            connectionstyle="arc3,rad=-0.38"), zorder=5)
+            mutation_scale=18,
+            connectionstyle="arc3,rad=0.0"), zorder=5)
+    ax.text(xr + 0.06, (CY + ys[1]) / 2, "retry", fontsize=8,
+            color=C_R, va="center", ha="left", rotation=90, zorder=6,
+            fontweight="bold")
 
     # Phase 2/3
     PY = CY - BH/2 - GAP - 0.10
