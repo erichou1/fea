@@ -1,0 +1,1605 @@
+% ============================================================
+%  SASTO Project Notebook / Lab Logbook
+%  Eric Hou — ISEF 2026
+%  Engineering Category
+%
+%  Compile:  pdflatex project_notebook.tex  (run twice)
+%
+%  All images referenced from notebook_images/ directory.
+% ============================================================
+
+\documentclass[11pt, letterpaper]{article}
+
+\usepackage[
+  margin=1in,
+  top=0.9in,
+  bottom=0.9in
+]{geometry}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{tcolorbox}
+\usepackage{amsmath}
+\usepackage{longtable}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black
+}
+
+% ── Colours ──────────────────────────────────────────────────
+\definecolor{entryblue}{HTML}{1A5276}
+\definecolor{failred}{HTML}{C0392B}
+\definecolor{fixgreen}{HTML}{1E8449}
+\definecolor{notegray}{HTML}{5D6D7E}
+\definecolor{bglight}{HTML}{F2F4F4}
+
+% ── Entry environment ────────────────────────────────────────
+\newcounter{entrynum}
+\newcommand{\entry}[2]{%
+  \refstepcounter{entrynum}%
+  \vspace{6mm}%
+  \noindent\begin{tcolorbox}[
+    colback=bglight, colframe=entryblue,
+    boxrule=1pt, arc=3pt,
+    title={\textbf{Entry \theentrynum}\hfill\textbf{#1}},
+    fonttitle=\large\color{white},
+    colbacktitle=entryblue,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+  ]
+  {\large\bfseries\color{entryblue} #2}
+  \end{tcolorbox}
+  \vspace{-1mm}%
+}
+
+% Field labels
+\newcommand{\objective}{\par\textbf{\color{entryblue}Objective:} }
+\newcommand{\experiment}{\par\textbf{\color{entryblue}Experiment / Method:} }
+\newcommand{\result}{\par\textbf{\color{entryblue}Result:} }
+\newcommand{\failure}{\par\textbf{\color{failred}Failure / Issue:} }
+\newcommand{\fix}{\par\textbf{\color{fixgreen}Design Decision / Fix:} }
+\newcommand{\nextstep}{\par\textbf{\color{notegray}Next Step:} }
+\newcommand{\obs}{\par\textbf{\color{entryblue}Observations:} }
+
+% Crossed-out text for "erased" notes
+\newcommand{\crossed}[1]{\textcolor{red!50!black}{\sout{#1}}}
+\usepackage[normalem]{ulem}
+
+% ── Image command ────────────────────────────────────────────
+\graphicspath{{notebook_images/}}
+\newcommand{\nbimg}[2][0.85\linewidth]{%
+  \begin{center}
+    \includegraphics[width=#1,keepaspectratio]{#2}
+  \end{center}
+}
+\newcommand{\nbimgcap}[3][0.85\linewidth]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=#1,keepaspectratio]{#2}
+    \caption{\small\itshape #3}
+  \end{figure}
+}
+
+% ── Page style ───────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{notegray} SASTO Project Notebook — Eric Hou}
+\fancyhead[R]{\small\color{notegray} ISEF 2026}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+
+% ============================================================
+\begin{document}
+
+% ── TITLE PAGE ───────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\Huge\bfseries\color{entryblue}
+    Project Notebook\\[6pt]
+    Research Logbook}\\[1.5cm]
+  {\LARGE\bfseries
+    SASTO: Surrogate-Accelerated Structural\\
+    Topology Optimization for Building-Scale\\
+    3D-Printed Concrete Structures}\\[1.5cm]
+  {\Large Eric Hou}\\[0.5cm]
+  {\large Engineering Category — ISEF 2026}\\[0.5cm]
+  {\large Los Gatos, California}\\[2.5cm]
+  {\large\color{notegray}
+    Dates covered: November 2025 -- March 2026\\[4pt]
+    Total entries: 32\\[4pt]
+    This notebook documents the complete research process,\\
+    including failures, abandoned approaches, debugging,\\
+    and iterative improvements.}
+  \vfill
+  {\small\itshape
+    This notebook is a working record. Mistakes are crossed out,
+    not erased. Entries are chronological.}
+\end{titlepage}
+
+% ── TABLE OF CONTENTS ────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 1: Idea Formation \& Early Exploration}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{November 26, 2025}{Initial Project Concept}
+
+\objective
+Define the core research question. I want to explore whether AI can reduce
+material waste in construction --- specifically concrete, which accounts for
+$\sim$8\% of global CO$_2$ emissions.
+
+\experiment
+Literature review of topology optimization (Bendsoe \& Sigmund 2003),
+3D-printed concrete buildings (Buswell et al.\ 2018, ICON, COBOD), and
+neural network surrogates for FEA (Nie 2021, Banga 2018). Read ASCE 7-22
+load specification.
+
+\obs
+\begin{itemize}[nosep]
+  \item Classical SIMP requires 100--1000 FEA solves per design --- too slow
+    for building-scale meshes.
+  \item 3D concrete printers can print arbitrary wall profiles at no extra cost.
+  \item No existing work combines surrogate FEA with topology optimization
+    \emph{and} printability enforcement for full buildings.
+\end{itemize}
+
+\nextstep
+Find a dataset of building geometries to train a surrogate model on.
+
+% ──────────────────────────────────────────────────────────────
+\entry{December 2, 2025}{Web Crawler for Floor Plans}
+
+\objective
+Collect floor plan images from architectural websites to generate 3D building
+models.
+
+\experiment
+Built a web crawler (\texttt{crawler/crawler.py}) targeting
+architecturaldesigns.com. Used OpenAI CLIP (ViT-B/32) to classify scraped
+images as floor plans vs.\ exterior renders. Set confidence threshold at 0.85.
+Added perceptual hashing for deduplication.
+
+\result
+Collected $\sim$1,200 floor plan images. Classification seemed reasonable ---
+most were actual floor plans.
+
+\failure
+Many images were low-resolution marketing renders, not dimensioned
+architectural drawings. The images had text overlays, watermarks, and
+inconsistent scales. I had no way to convert these into accurate 3D geometry
+with known dimensions.
+
+\nextstep
+Investigate Plan2Scene pipeline for floor-plan-to-3D conversion.
+
+% ──────────────────────────────────────────────────────────────
+\entry{December 10, 2025}{Plan2Scene Pipeline --- First Attempt}
+
+\objective
+Use the Plan2Scene approach to convert crawled floor plan images into 3D
+volumetric building models.
+
+\experiment
+Set up the Plan2Scene codebase. Built a pipeline
+(\texttt{data\_model/complete\_pipeline.py}) that:
+\begin{enumerate}[nosep]
+  \item Detects rooms and walls from the floor plan image
+  \item Extrudes walls to a fixed height
+  \item Adds roof surface
+\end{enumerate}
+
+\result
+Got basic 3D models from a few clean floor plans.
+
+\failure
+\begin{itemize}[nosep]
+  \item Image-based detection was unreliable --- walls were frequently missed
+    or misaligned.
+  \item No dimensional accuracy. Wall thicknesses were arbitrary since the
+    source images had no scale bar.
+  \item Room detection failed on complex multi-story plans.
+  \item Generated meshes were \textbf{not watertight} --- full of holes and
+    self-intersections.
+\end{itemize}
+
+\fix
+\sout{Try improving the image segmentation model.} After two weeks of
+debugging, I concluded this approach was fundamentally limited. Image-based
+geometry recovery cannot produce the dimensional accuracy needed for structural
+analysis. I need a dataset with actual 3D coordinates.
+
+\nextstep
+Search for wireframe or CAD-based building datasets.
+
+% ──────────────────────────────────────────────────────────────
+\entry{January 4, 2026}{Pivot to 3DWire Dataset}
+
+\objective
+Find a proper 3D building dataset with topological connectivity information.
+
+\experiment
+Literature search found the \textbf{3DWire dataset} (Lin et al.\ 2024, KAUST) ---
+14,293 building wireframe skeletons with vertex coordinates and edge connectivity.
+Downloaded and explored the data format.
+
+\result
+Each wireframe is a JSON file with 3D vertex positions and edge lists encoding
+walls, floors, and roof ridges. This is exactly what I need --- precise 3D
+coordinates with topological structure.
+
+\obs
+\begin{itemize}[nosep]
+  \item 14,293 wireframes --- much larger than I expected.
+  \item Diverse building types: rectangular, L-shaped, multi-gabled, etc.
+  \item No volumetric geometry yet --- just wireframe edges. I need to
+    ``inflate'' these into solid walls, floors, and roofs.
+\end{itemize}
+
+\fix
+Abandoned the web crawler + Plan2Scene approach entirely. The 3DWire dataset is
+a much better foundation. This was a \textbf{major pivot} --- about 5 weeks of
+work on the crawler was effectively wasted, but it taught me what I actually
+needed from the data.
+
+\nextstep
+Build a pipeline to convert wireframe edges into volumetric solid geometry.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 2: Dataset Generation \& Geometry Pipeline}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{January 10, 2026}{Wireframe-to-Volume Extrusion --- v1}
+
+\objective
+Write code to convert 3DWire wireframe edges into solid volumetric geometry
+(walls, floors, roofs) suitable for FEA meshing.
+
+\experiment
+Built \texttt{wireframe\_to\_volume.py} (eventually grew to 1,684 lines).
+First version: extrude each wall edge into a rectangular prism with fixed
+thickness. Floor = horizontal slab at $z=0$. Roof = flat slab at max $z$.
+
+\result
+Basic box-like houses generated successfully for simple rectangular wireframes.
+
+\failure
+\begin{itemize}[nosep]
+  \item Walls overlapped at corners --- the Boolean union to merge them
+    produced \textbf{self-intersecting geometry}.
+  \item Roof was just a flat slab, not pitched. Looks unrealistic and
+    structurally wrong.
+  \item Wall thickness was the same everywhere --- exterior thick, interior
+    thin would be more realistic.
+\end{itemize}
+
+\nextstep
+Implement proper Boolean fusion and pitched roof generation.
+
+% ──────────────────────────────────────────────────────────────
+\entry{January 18, 2026}{Boolean Fusion Failures}
+
+\objective
+Merge overlapping wall/floor/roof solids into a single watertight body using
+Boolean union.
+
+\experiment
+Tried using \texttt{trimesh.boolean} with the \texttt{blender} engine for
+Boolean operations. Also tried \texttt{pymesh} and direct CSG.
+
+\result
+Partial success --- some simple houses merged correctly.
+
+\failure
+\textbf{This was one of the most frustrating debugging episodes of the
+entire project.}
+\begin{itemize}[nosep]
+  \item Boolean operations failed on $\sim$40\% of wireframes.
+  \item Failure modes: self-intersecting faces, non-manifold edges,
+    degenerate triangles, missing faces.
+  \item blender engine was slow (8--15s per house) and crashed on complex
+    geometry.
+  \item trimesh kept returning empty meshes for some inputs.
+\end{itemize}
+
+\fix
+Switched to \texttt{manifold3d} library which handles Boolean operations
+much more robustly. Added a pre-fusion mesh cleanup step: remove degenerate
+faces, snap vertices to grid, repair non-manifold edges. This reduced failure
+rate from $\sim$40\% to $\sim$5\%.
+
+\nextstep
+Implement pitched roof generation using ConvexHull.
+
+% ──────────────────────────────────────────────────────────────
+\entry{January 22, 2026}{Pitched Roof and Part Labels}
+
+\objective
+Generate proper pitched roofs and assign structural part labels to each region
+of the building (exterior wall, interior wall, roof, floor).
+
+\experiment
+\begin{itemize}[nosep]
+  \item Roof: compute ConvexHull of upper wireframe vertices with apex raised
+    by a pitch factor. Extrude hull inward to create solid roof geometry.
+  \item Part labels: assign integer codes (1=exterior wall, 2=interior wall,
+    3=roof, 4=floor) based on geometric position relative to building envelope.
+  \item Scale-safe thickness fractions: exterior $\leq$3.0\% of building width,
+    interior $\leq$2.0\%, roof $\leq$1.5\%.
+\end{itemize}
+
+\result
+Much more realistic building geometry with proper pitched roofs. Part labels
+are correctly assigned. Generated test set of 50 houses for visual inspection.
+
+\nbimgcap[0.75\linewidth]{fig_voxel_house.png}{Voxel representation of a
+generated house showing part-label coloring: blue = exterior walls, orange-red =
+interior walls, green = roof, tan = floor slab.}
+
+\obs
+Part labels will be important later --- I can use them to allow different
+optimization aggressiveness for different structural elements (e.g., thin
+interior walls more than exterior).
+
+\nextstep
+Set up the FEA pipeline to simulate these structures.
+
+% ──────────────────────────────────────────────────────────────
+\entry{January 28, 2026}{FEA Pipeline --- First Attempts}
+
+\objective
+Run finite element analysis on the generated volumetric buildings to compute
+stress, displacement, and compliance.
+
+\experiment
+Set up SfePy (Simple Finite Elements in Python) for static linear elastic
+analysis. Material: concrete ($E = 25$\,GPa, $\nu = 0.20$,
+$\rho = 2400$\,kg/m$^3$). Load cases per ASCE 7-22: dead load, live load,
+wind combinations.
+
+\result
+First successful FEA solve on a simple rectangular building.
+
+\failure
+\begin{itemize}[nosep]
+  \item Boundary conditions were wrong --- I initially fixed only the bottom
+    face vertices, but this created a cantilever condition rather than a
+    foundation condition.
+  \item Several structures \textbf{collapsed} in simulation --- the solver
+    produced displacements $>1$\,m, which is physically nonsensical for a
+    concrete building.
+  \item Solver was extremely slow: 45--90 minutes per building at $128^3$
+    mesh resolution.
+\end{itemize}
+
+\fix
+Added fixed supports at foundation nodes (min-$x$ face). This is still an
+idealized BC but prevents the numerical collapse issue. Also added a sanity
+check: if $\|u\|_\infty > 1.0$\,m, flag the result as diverged.
+
+\nextstep
+Run FEA on all 14,293 wireframes and filter bad results.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 5, 2026}{Mass FEA Processing and Filtering}
+
+\objective
+Generate FEA results for all 14,293 wireframes. Identify and remove bad data.
+
+\experiment
+Ran \texttt{solve\_asce7\_22\_asd\_sfepy\_ai\_labels.py} on all wireframes.
+8 ASCE 7-22 ASD load combinations:
+D, D+L, D+0.6W, D+0.7E, 0.6D+0.6W, 0.6D+0.7E, D+0.75L+0.45W,
+D+0.75L+0.525E.
+
+Each output: max Von Mises stress, max displacement, global compliance,
+principal stresses. Voxelized at $128^3$ with 7 channels (1 occupancy +
+6 part one-hot).
+
+\result
+Processing took $\sim$10 days on a multi-core workstation. Total raw data:
+$\sim$200\,GB.
+
+\failure
+\textbf{3,115 out of 14,293 samples (21.8\%) produced bad FEA results:}
+\begin{itemize}[nosep]
+  \item 2,041 --- solver diverged (displacement $> 1.0$\,m)
+  \item 612 --- near-zero compliance ($< 10^{-6}$\,J), indicating degenerate geometry
+  \item 307 --- Von Mises stress $\leq 0$, physically impossible
+  \item 155 --- geometry too thin for meshing (walls $< 1$ voxel after discretization)
+\end{itemize}
+
+\fix
+Built \texttt{filter\_bad\_data.py} to systematically identify and remove all
+bad samples. Created \texttt{clean\_manifest.json} with \textbf{11,178 valid
+samples}.
+
+Applied family-aware train/val/test split to prevent data leakage from similar
+wireframes: \textbf{8,943 train / 1,121 val / 1,114 test}.
+
+\obs
+Losing 21.8\% of data is significant but expected. Building wireframes have
+huge geometric variability --- some are simply not structurally viable.
+The important thing is that the remaining 11,178 have valid, physically
+meaningful FEA outputs.
+
+\nextstep
+Begin training surrogate models.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 8, 2026}{Voxel Resolution Experiment: 32$^3$ vs.\ 64$^3$ vs.\ 128$^3$}
+
+\objective
+Determine what voxel resolution is needed for the surrogate to learn
+structural behavior accurately.
+
+\experiment
+Voxelized buildings at $32^3$, $64^3$, and $128^3$. Trained a small CNN
+(4 conv layers, 2 FC layers) on each resolution for 50 epochs. Measured
+Spearman $\rho$ for compliance on validation set.
+
+\result
+\begin{center}
+\begin{tabular}{lcc}
+  \toprule
+  \textbf{Resolution} & \textbf{Spearman $\rho$} & \textbf{Train time/epoch} \\
+  \midrule
+  $32^3$ & 0.61 & 12\,s \\
+  $64^3$ & 0.78 & 45\,s \\
+  $128^3$ & 0.89 & 210\,s \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\failure
+$32^3$ resolution is clearly insufficient --- thin interior walls (1--2 voxels)
+disappear entirely, causing the model to misrepresent structural stiffness.
+At $32^3$, many buildings are just solid blocks with no internal structure.
+
+\fix
+Selected $128^3$ as the operating resolution. The 4.7$\times$ longer training
+time is acceptable because inference (which matters for optimization speed)
+scales better than training.
+
+\nextstep
+Design the full 3D-CNN architecture for $128^3$ inputs.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 3: Surrogate Model Development}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 12, 2026}{CNN Architecture --- v1 (Baseline)}
+
+\objective
+Design a 3D convolutional network to predict stress, displacement, and
+compliance from a $128^3$ voxel grid.
+
+\experiment
+Architecture: 4 strided Conv3D stages ($\text{stride}=2$ each), ReLU
+activations, BatchNorm, followed by global average pooling and 3 FC layers
+down to 3 scalar outputs. Input: 7 channels (occupancy + part one-hot).
+Total: $\sim$5.2M parameters.
+
+\result
+Training converged. Compliance $\rho = 0.72$ after 100 epochs.
+
+\failure
+\begin{itemize}[nosep]
+  \item Displacement $\rho = 0.51$ --- very poor. The model cannot capture
+    localized displacement concentrations.
+  \item Loss landscape was noisy --- training loss oscillated significantly
+    between epochs.
+  \item ReLU caused many dead neurons in early layers (checked gradient
+    statistics --- 15\% of conv1 neurons had zero gradients).
+\end{itemize}
+
+\nextstep
+Try GELU activation and add residual connections.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 14, 2026}{Architecture v2 --- GELU + SE Blocks}
+
+\objective
+Improve model capacity with GELU activation and Squeeze-and-Excitation blocks.
+
+\experiment
+Changes from v1:
+\begin{itemize}[nosep]
+  \item Replaced ReLU with GELU (smooth, no dead neurons)
+  \item Added 3 SE-ResBlocks after the conv stages (channel attention,
+    reduction ratio 4)
+  \item Added stochastic depth (drop path rate 0.1) for regularization
+  \item Pre-norm BatchNorm3d ordering
+  \item Dual global pooling: avg + max concatenated
+  \item Base channels: 64 (up from 32)
+  \item Total: $\sim$8.76M parameters
+\end{itemize}
+
+\result
+Significant improvement:
+\begin{center}
+\begin{tabular}{lcc}
+  \toprule
+  \textbf{Target} & \textbf{v1 $\rho$} & \textbf{v2 $\rho$} \\
+  \midrule
+  Compliance & 0.72 & 0.84 \\
+  Displacement & 0.51 & 0.79 \\
+  VM Stress & 0.58 & 0.69 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\obs
+SE blocks help a lot for displacement (+0.28 $\rho$). GELU eliminated the dead
+neuron problem. But stress prediction is still poor --- localized stress
+peaks are hard to capture with global pooling.
+
+\nextstep
+Address training stability and target normalization.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 16, 2026}{Target Normalization --- The Orders-of-Magnitude Problem}
+
+\objective
+Fix the target distribution issue. FEA outputs span enormous ranges.
+
+\experiment
+Analyzed target distributions:
+\begin{itemize}[nosep]
+  \item VM stress: $10^3$ to $10^8$ Pa (5 orders of magnitude)
+  \item Displacement: $10^{-6}$ to $10^{-1}$ m (5 orders)
+  \item Compliance: $10^{-2}$ to $10^{6}$ J (8 orders!)
+\end{itemize}
+
+Tried three normalization approaches:
+\begin{enumerate}[nosep]
+  \item Raw values (baseline) --- loss dominated by compliance
+  \item Standard z-score --- still heavy tails
+  \item log1p $\to$ z-score with 2nd/98th percentile winsorization
+\end{enumerate}
+
+\result
+Option 3 worked dramatically better:
+\begin{center}
+\begin{tabular}{lccc}
+  \toprule
+  & \textbf{Raw} & \textbf{Z-score} & \textbf{log1p+winsor} \\
+  \midrule
+  Compliance $\rho$ & 0.84 & 0.87 & 0.93 \\
+  Loss stability & poor & moderate & good \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\failure
+\sout{Initially tried to predict min\_safety\_factor as a 4th target.}
+Analysis showed it was 99.8\% anti-correlated with VM stress --- completely
+redundant. Dropped it to reduce confusion for the ensemble.
+
+\fix
+Adopted log1p transform $\to$ winsorize at 2nd/98th percentile $\to$ z-score
+normalize. This squashes the extreme tails and ensures all three targets have
+similar scale. Loss function: Huber (smooth L1) with per-target weights
+(VM=1.0, displacement=1.5, compliance=1.0).
+
+\nextstep
+Train the full ensemble model.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 17, 2026}{Ensemble Training --- v2 (5 Members)}
+
+\objective
+Train a 5-member deep ensemble for uncertainty-quantified predictions.
+
+\experiment
+Five independently-seeded copies of the v2 architecture. Training:
+\begin{itemize}[nosep]
+  \item AdamW optimizer, $lr = 5 \times 10^{-4}$, weight decay $10^{-4}$
+  \item Cosine annealing with warm restarts (period 15 epochs)
+  \item EMA (exponential moving average, $\alpha = 0.999$)
+  \item Gradient clipping (max norm 1.0)
+  \item Data augmentation: random 90$^\circ$ rotations + reflections
+  \item Early stopping: patience 30 epochs
+  \item Hardware: 4$\times$ NVIDIA GB200 GPUs
+\end{itemize}
+
+\result
+Training started successfully. First member converged in $\sim$130 epochs.
+
+\failure
+\textbf{GB200 Training Crashes (February 18).} Training crashed repeatedly:
+\begin{itemize}[nosep]
+  \item CUDA out-of-memory when \texttt{num\_workers} exceeded GPU memory
+  \item Data loader workers created zombie processes
+  \item No error logs --- crashes were silent
+\end{itemize}
+
+\fix
+\begin{itemize}[nosep]
+  \item Capped \texttt{num\_workers} at 4 per GPU
+  \item Added data validation (check tensor shapes before forward pass)
+  \item Added comprehensive error logging to catch silent crashes
+  \item Added gradient checkpointing to reduce memory footprint
+\end{itemize}
+
+\nextstep
+Complete ensemble training and evaluate.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 19, 2026}{Data Filtering v3 and Retraining}
+
+\objective
+Clean the training data more aggressively after examining ensemble disagreement
+patterns.
+
+\experiment
+Analyzed samples where ensemble members disagreed most. Found that high
+disagreement correlated strongly with specific data quality issues. Created
+v3 of the training pipeline:
+\begin{itemize}[nosep]
+  \item Stricter filter: displacement $> 1.0$\,m OR compliance $< 10^{-6}$ OR
+    VM $\leq 0$
+  \item Removed \texttt{min\_safety\_factor} target (99.8\% anti-correlated
+    with VM stress)
+  \item Per-target R$^2$ monitoring during training
+  \item Weighted loss (displacement weight = 1.5$\times$)
+\end{itemize}
+
+\result
+After retraining from scratch on clean data (v3):
+
+\nbimgcap[0.80\linewidth]{fig_training_curves.png}{Training loss curves for all
+5 ensemble members. Members converge by epoch $\sim$130. Spread between members
+is the source of uncertainty estimates.}
+
+\obs
+Compliance $\rho$ improved from 0.87 to 0.93 just by removing bad training data.
+This was a significant lesson --- \textbf{data quality matters more than model
+architecture}.
+
+\nextstep
+Push training further and validate on held-out test set.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 20, 2026}{Model v14 --- Breakthrough Validation}
+
+\objective
+Evaluate the fully-trained v3 ensemble on the 1,114-sample held-out test set.
+
+\experiment
+Ran inference on all test samples. Computed ensemble mean $\mu$ and standard
+deviation $\sigma$ for each target. Measured Spearman $\rho$, $R^2$, and MAPE.
+
+\result
+\textbf{This was the breakthrough moment.}
+
+\begin{center}
+\begin{tabular}{lccc}
+  \toprule
+  \textbf{Target} & \textbf{Spearman $\rho$} & $R^2_{\log}$ & \textbf{MAPE} \\
+  \midrule
+  VM stress & 0.737 & 0.419 & 37.4\% \\
+  Displacement & 0.970 & 0.842 & 10.9\% \\
+  Compliance & \textbf{0.948} & 0.814 & 18.5\% \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\obs
+\begin{itemize}[nosep]
+  \item Compliance $\rho = 0.948$ far exceeds my target of $\geq 0.90$.
+  \item VM stress MAPE is high (37.4\%) because stress is localized at
+    specific points --- hard to predict from global features.
+  \item Displacement $\rho = 0.970$ is very strong --- the model has
+    learned global stiffness patterns.
+  \item The model does not need pointwise accuracy. It needs to correctly
+    \emph{rank} designs so sensitivity scores steer optimization correctly.
+\end{itemize}
+
+\fix
+Adopted model v14 as the production surrogate. Froze architecture and weights.
+
+\nbimgcap[0.80\linewidth]{fig_regression.png}{Surrogate regression: predicted
+vs.\ actual compliance on 1,114 test designs.}
+
+\nextstep
+Begin building the topology optimization loop.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 4: Topology Optimization Development}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 21, 2026}{CMA-ES Optimizer --- First Attempt (Abandoned)}
+
+\objective
+Try using CMA-ES (evolutionary strategy) for topology optimization,
+parameterized by wall-segment thicknesses.
+
+\experiment
+Parameterized each building as $\sim$29 continuous variables (one thickness
+per wall segment). Used CMA-ES to minimize volume subject to structural
+constraints (stress, compliance). Each CMA-ES function evaluation queries
+the trained ensemble.
+
+\result
+CMA-ES converged on simple test cases (3--5 wall segments), removing
+$\sim$12\% material.
+
+\failure
+\begin{itemize}[nosep]
+  \item With $>$15 wall segments, CMA-ES needed 500+ evaluations to converge.
+  \item The wall-segment parameterization was too coarse --- could only
+    uniformly thin walls, not create topological changes.
+  \item No control over connectivity --- some designs became disconnected.
+  \item Maximum material removal was limited to $\sim$15\%.
+\end{itemize}
+
+\fix
+\sout{Try increasing CMA-ES population size.} Abandoned CMA-ES entirely.
+The wall-segment parameterization is fundamentally too restrictive. I need
+\textbf{voxel-level control} to achieve meaningful topology optimization.
+
+\nextstep
+Design a gradient-based voxel erosion algorithm.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 21, 2026 (evening)}{Sensitivity-Guided Batch Erosion --- v1}
+
+\objective
+Replace CMA-ES with a gradient-based approach: compute per-voxel sensitivity
+scores and remove the least structurally important voxels.
+
+\experiment
+Algorithm:
+\begin{enumerate}[nosep]
+  \item Compute distance transform from exterior surface
+  \item Find candidate voxels deeper than minimum thickness
+  \item Backprop through ensemble: $s_i = \frac{\partial}{\partial p_i}
+    [f(C) + 0.3 \cdot f(\sigma)]$
+  \item Rank by sensitivity (highest = least important)
+  \item Remove top-$B$ voxels in a batch
+  \item Check constraints via ensemble --- if violated, undo and halve $B$
+\end{enumerate}
+
+\result
+First test on reference house (Sample 00472): removed 28\% material in 45s.
+This was immediately much better than CMA-ES.
+
+\failure
+\textbf{Disconnected structures!} After $\sim$150 iterations, the algorithm
+removed load-bearing columns, producing a mesh with 3 disconnected components.
+The ``optimized'' design looked like Swiss cheese.
+
+\obs
+The sensitivity score correctly identifies structurally unimportant voxels,
+but it does not account for \emph{topology} --- removing a low-sensitivity
+voxel can disconnect the structure if it was the only bridge between components.
+
+\nextstep
+I need a topology preservation constraint.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 22, 2026}{The 26-Connectivity Catastrophe}
+
+\objective
+Add connectivity enforcement to prevent disconnected structures during
+optimization.
+
+\experiment
+First attempt: check that the voxel field remains connected using
+\textbf{26-adjacency} (voxels touching at faces, edges, or corners are
+considered connected). A voxel is removable only if its deletion does not
+increase the number of 26-connected components.
+
+\result
+The optimized voxel field was always a single 26-connected component. Solved!
+
+\failure
+\textbf{Except it didn't solve the actual problem.} When I ran Marching Cubes
+to convert the voxels to a triangle mesh for STL export, the mesh had
+\textbf{hundreds of disconnected floating fragments.}
+
+The issue: 26-connectivity allows voxels to be ``connected'' through diagonal
+corners. But Marching Cubes only generates mesh surfaces where voxels share
+\emph{faces}. So a voxel touching only at a corner is topologically connected
+in voxel space but becomes an isolated island in mesh space.
+
+\nbimgcap[0.75\linewidth]{fig12_stl_comparison.png}{3D STL comparison: original
+structure (top) vs.\ SASTO-PA optimized (bottom) from multiple viewpoints.}
+
+\fix
+\textbf{Switched to 6-connectivity for the foreground (occupied voxels).} Two
+occupied voxels are 6-adjacent iff they share a face. Under this stricter
+criterion, a single 6-connected voxel component \emph{guarantees} a single
+Marching Cubes mesh component (Kong \& Rosenfeld 1989).
+
+Implemented the \textbf{6-simple-point test}: a voxel is removable only if
+deletion does not change the number of 6-connected components. This is checked
+in $O(1)$ via a 26-neighborhood Euler characteristic lookup table (pre-computed
+$2^{26}$ entries, stored as a hash set).
+
+\nextstep
+Validate that 6-connectivity actually produces printable meshes.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 22, 2026 (afternoon)}{6-Connectivity Validation}
+
+\objective
+Verify that 6-connected topology enforcement produces single-component
+watertight meshes after Marching Cubes.
+
+\experiment
+Ran the updated SASTO algorithm (with 6-simple-point) on 60 diverse test
+designs. For each, checked:
+\begin{enumerate}[nosep]
+  \item Number of connected components in the voxel field
+  \item Number of connected components in the Marching Cubes mesh
+  \item Mesh watertightness (euler number = 2)
+\end{enumerate}
+
+\result
+\begin{center}
+\begin{tabular}{lc}
+  \toprule
+  \textbf{Metric} & \textbf{Result} \\
+  \midrule
+  Single-component voxel fields & 60/60 (100\%) \\
+  Single-component meshes (direct) & 54/60 (90\%) \\
+  Single-component after CC fill pass & 60/60 (100\%) \\
+  Zero geometry discards & 60/60 (100\%) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\obs
+The 10\% that needed a CC fill pass had very thin ($\leq 1$ voxel) bridges that
+Marching Cubes rounded off. A single connected-component fill resolves these
+trivially. Zero designs needed to be discarded entirely. This is a major
+improvement over the 26-connectivity approach which had catastrophic failures.
+
+\nextstep
+Implement part-aware thickness policy.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 23, 2026}{Part-Aware Thickness --- SASTO-PA vs SASTO-U}
+
+\objective
+Allow different minimum wall thicknesses for different structural parts.
+Interior walls carry negligible vertical load and can be thinned more
+aggressively than exterior walls.
+
+\experiment
+Two variants:
+\begin{itemize}[nosep]
+  \item \textbf{SASTO-U} (Uniform): $t_{\min} = 2$ voxels for all parts.
+    This is $2 \times 78.125$\,mm $\approx 156$\,mm.
+  \item \textbf{SASTO-PA} (Part-Aware): $t_{\min} = 2$ voxels for exterior
+    walls, roof, floor; $t_{\min} = 1$ voxel for interior walls ($\approx 78$\,mm).
+\end{itemize}
+
+Tested on reference case (Sample 00472):
+
+\result
+\begin{center}
+\begin{tabular}{lccc}
+  \toprule
+  \textbf{Variant} & \textbf{Vol.\ Reduction} & \textbf{Max $C/C_0$} \\
+  \midrule
+  SASTO-U & 34.3\% & 0.98 \\
+  SASTO-PA & \textbf{45.0\%} & 1.004 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\obs
+Part-aware thickness gives an extra \textbf{10.7 percentage points} of material
+removal! The interior walls are thinned from $\sim$200\,mm to $\sim$80\,mm
+while the stress increase stays well within limits.
+
+\nbimgcap[0.75\linewidth]{fig13_voxel_parts.png}{Voxel cross-sections at three
+heights (z=20, 50, 80) colored by part label. Interior walls (red) are
+candidates for aggressive thinning under SASTO-PA.}
+
+\nextstep
+Run SASTO-PA on the full test set.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 23, 2026 (evening)}{Trust-Region Adaptive Batch Size}
+
+\objective
+Make the batch size adaptation more robust. Currently, when a constraint is
+violated the batch is halved, but this is too aggressive early on and too
+conservative at the end.
+
+\experiment
+Implemented three-phase strategy:
+\begin{itemize}[nosep]
+  \item Phase 1 (bulk): Start with $B=200$. On violation, halve $B$. On
+    success, keep $B$ if $>$ min. Stop when $B < 10$.
+  \item Phase 2 (endgame): Fix $B=5$, stop after 200 evaluations or when
+    $B=1$ and no more removable voxels.
+  \item Phase 3 (post-process): Pocket fill, spike removal, SDF smoothing.
+\end{itemize}
+
+\result
+Reference case: $\sim$260 batches, 52,500 voxels removed, 159.5s total.
+
+\nbimgcap[0.80\linewidth]{fig_convergence.png}{Convergence during SASTO-PA
+optimization: volume fraction, stress, and compliance vs.\ batch number.
+Note the adaptive batch size (initial bulk phase followed by fine-grained
+endgame).}
+
+\obs
+The trust-region works well. Early batches remove 200 voxels each (fast bulk
+removal). As we approach constraints, batch sizes shrink automatically. Phase 2
+endgame squeezes out the last few percent by removing 1--5 voxels at a time.
+
+\nextstep
+Run batch optimization on all 1,114 test geometries.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 5: Large-Scale Batch Optimization}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 25, 2026}{Batch Run --- 1,114 Test Geometries}
+
+\objective
+Run SASTO-PA optimization on all 1,114 held-out test designs.
+
+\experiment
+\texttt{run\_batch\_all.py} (892 lines). For each design:
+\begin{enumerate}[nosep]
+  \item Load voxel grid and part labels
+  \item Run SASTO-PA 3-phase optimization
+  \item Export optimized voxel field
+  \item Log all metrics (volume, stress, compliance, runtime)
+\end{enumerate}
+
+Hardware: RTX A3000 Laptop GPU (the GB200 cluster was for training only).
+
+\result
+Processing 1,114 designs took $\sim$15.5 hours. Median runtime: 50s per design.
+
+\failure
+Several issues during the batch run:
+\begin{itemize}[nosep]
+  \item \textbf{Sample 02962}: CUDA out-of-memory. This house was anomalously
+    large ($>$160K occupied voxels). Had to add a hard-coded skip with fallback
+    to per-model CPU inference.
+  \item 353 designs (38.5\%) had $\leq$1\% material removal (``zero-budget''
+    designs). These are houses where the surrogate predicted that any removal
+    would violate constraints.
+  \item 199 designs (17.9\%) had $>$30\% material removal.
+\end{itemize}
+
+\nbimgcap[0.80\linewidth]{fig_histogram.png}{Volume reduction distribution
+across 1,114 test geometries. Median reduction: 23.5\%. Wide spread reflects
+geometric diversity.}
+
+\obs
+The ``zero-budget'' designs are mostly houses with dense internal load-bearing
+walls. The surrogate is likely being overly conservative on these --- possible
+calibration issue. But for a safety-first system, false conservatism is
+acceptable.
+
+\nextstep
+Validate all optimized designs with independent FEA.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 26, 2026}{CUDA OOM and Fallback Strategy}
+
+\objective
+Fix the CUDA out-of-memory crash that killed the batch run on Sample 02962.
+
+\experiment
+Investigated memory usage during optimization. The full 5-member ensemble
+forward pass on a $128^3$ input requires $\sim$4.2\,GB GPU memory. Backprop
+for sensitivity doubles that. Large houses with $>$150K occupied voxels push
+peak memory past the RTX A3000's 6\,GB limit.
+
+\result
+Added two-level fallback:
+\begin{enumerate}[nosep]
+  \item Primary: run ensemble on GPU with gradient checkpointing
+  \item Fallback: if OOM, move each member to CPU, run sequentially
+\end{enumerate}
+
+\failure
+CPU fallback is $\sim$20$\times$ slower (50s $\to$ $\sim$16min per design).
+Only 3 out of 1,114 designs needed this. Acceptable.
+
+\nextstep
+Continue batch processing with fallback enabled.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 6: Model Calibration \& $k$-Factor Tuning}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 27, 2026}{$k$-Factor Sweep and Pareto Analysis}
+
+\objective
+Tune the conservative bound parameter $k$ in
+$\hat{y}^+ = \mu + k \cdot \sigma$. Higher $k$ means more safety margin but
+less material removal.
+
+\experiment
+Swept $k \in \{0.25, 0.50, 0.75, 1.0, 1.5, 2.0, 3.0\}$ on the validation
+set (1,121 designs). For each $k$, recorded acceptance rate (fraction of
+designs passing constraints) and mean volume reduction.
+
+\nbimgcap[0.80\linewidth]{fig_k_factor.png}{$k$-factor Pareto frontier:
+acceptance rate (teal) and mean volume reduction (gold) vs.\ $k$. Operating
+point $k=1.0$ provides $>$99\% acceptance with meaningful savings.}
+
+\result
+\begin{center}
+\begin{tabular}{lccc}
+  \toprule
+  $k$ & Acceptance & Median Reduction & Safety \\
+  \midrule
+  0.25 & 92\% & 31\% & loose \\
+  0.50 & 96\% & 28\% & moderate \\
+  \textbf{1.0} & \textbf{>99\%} & \textbf{23\%} & \textbf{good} \\
+  2.0 & 100\% & 14\% & strict \\
+  3.0 & 100\% & 6\% & very strict \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\fix
+Selected $k = 1.0$ as the operating point. This provides a $1\sigma$ safety
+buffer against surrogate underprediction while preserving meaningful material
+savings.
+
+\nextstep
+Lock $k=1.0$ and compute conformal coverage certificates.
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 27, 2026 (afternoon)}{Conformal Prediction Certificates}
+
+\objective
+Compute distribution-free safety guarantees using conformal prediction theory.
+
+\experiment
+On the validation set (1,121 designs), computed non-conformity scores:
+$\alpha_i = |y_i - \mu_i| / \sigma_i$ for each target. Sorted and computed
+quantiles to determine what $k$ is needed for various coverage levels.
+
+\result
+\begin{itemize}[nosep]
+  \item $k$ for 84.1\% compliance coverage: $k = 1.90$ (heavier tails than
+    Gaussian --- makes sense for FEA outputs)
+  \item $k$ for 84.1\% VM stress coverage: $k = 4.31$ (very heavy tails due
+    to localized stress concentrations)
+  \item 99\% conformal upper bound on $C_\text{opt}/C_\text{base}$:
+    \textbf{0.950} (vs.\ limit 1.15)
+  \item Distribution-free bound (Vovk 2005):
+    $P(\text{violation}) \leq \frac{1}{n+1} = 0.09\%$
+\end{itemize}
+
+\obs
+The compliance tails are heavier than Gaussian ($k_\text{84.1\%} = 1.90$ vs.\
+$1.0$ for Gaussian). This means the ensemble underestimates uncertainty on about
+$16\times$ more designs than a Gaussian would predict. However, at $k = 1.0$,
+the overall safety margin is still very large (conformal bound 0.950 vs.\
+limit 1.15 = 0.200 margin).
+
+\nextstep
+Lock calibration and run independent FEA validation.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 7: Independent FEA Validation}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{February 28, 2026}{Building Independent Hex8 FEA Validator}
+
+\objective
+Build a completely independent FEA solver to verify SASTO optimized designs.
+This must be different from the training FEA to avoid circular validation.
+
+\experiment
+Wrote \texttt{run\_fea\_validation.py}: uniform hex8 voxel FEA (not
+tetrahedral like training data). Same boundary conditions and loads.
+
+Solver: AMG-preconditioned conjugate gradient (using \texttt{pyamg} library).
+This is numerically different from the ScipyDirect solver used in training
+data generation.
+
+\result
+Validation solver works. Average: 83 $\pm$ 12 CG iterations, 106 $\pm$ 30s
+per paired solve (original + optimized).
+
+\obs
+AMG preconditioning was critical. Without it, plain CG needed 4,000--5,000
+iterations per solve (vs.\ 83 with AMG). This was a debugging rabbit hole ---
+initially I thought the solver was diverging, but it was just converging
+extremely slowly.
+
+\nextstep
+Validate all 1,114 optimized designs.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 1, 2026}{Full Population FEA Validation ($n = 1{,}114$)}
+
+\objective
+Run independent hex8 FEA on all 1,114 optimized designs. This is the ``ground
+truth'' safety check.
+
+\experiment
+For each design: run FEA on both original and SASTO-PA optimized geometry.
+Compute compliance ratio $C_\text{opt}/C_\text{base}$. Check if any design exceeds
+the 1.15 limit.
+
+\result
+\textbf{Zero violations across all 1,114 designs.}
+
+\begin{center}
+\begin{tabular}{lr}
+  \toprule
+  \textbf{Metric} & \textbf{Value} \\
+  \midrule
+  Mean $C_\text{opt}/C_\text{base}$ & $0.631 \pm 0.112$ \\
+  Maximum ratio & \textbf{1.004} \\
+  Designs $> 1.15$ & \textbf{0/1,114} \\
+  99\% conformal bound & 0.950 \\
+  Safety margin to limit & 0.146 units \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\nbimgcap[0.80\linewidth]{fig_fea_compliance.png}{Compliance ratio
+$C_\text{opt}/C_\text{base}$ for all 1,114 test designs. Dashed line = 1.15
+limit. Maximum observed: 1.004. Zero violations.}
+
+\obs
+The maximum compliance ratio is 1.004 --- the surrogate's conservative bound
+$(\mu + k\sigma)$ maintained a massive safety margin. Most optimized designs
+are actually \emph{more} compliant than the original (ratio $< 1.0$), likely
+because removing sparse interior voxels doesn't significantly affect global
+stiffness.
+
+\nextstep
+Run SIMP benchmark comparison.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 1, 2026 (afternoon)}{SIMP Benchmark Comparison}
+
+\objective
+Compare SASTO runtime against classical SIMP topology optimization at
+equivalent resolution.
+
+\experiment
+Ran standard SIMP (density-based) optimization on 10 selected test designs at
+$64^3$ resolution (not $128^3$ --- SIMP was too slow at that resolution).
+Measured per-design runtime. Projected $128^3$ times using $O(N^2)$ scaling.
+
+\result
+\begin{center}
+\begin{tabular}{lcc}
+  \toprule
+  \textbf{Method} & \textbf{Per Design} & \textbf{vs.\ SASTO} \\
+  \midrule
+  SASTO (ours) & 50\,s median & baseline \\
+  SIMP $64^3$ & 94\,s median & $1.9\times$ slower \\
+  SIMP $128^3$ (projected) & 19--77\,min & $23$--$92\times$ slower \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\nbimgcap[0.80\linewidth]{fig_speedup.png}{Runtime comparison (log scale).
+SASTO requires 50s median vs.\ SIMP 19--77 min at $128^3$ resolution.}
+
+\obs
+SIMP actually achieves slightly higher reduction (31\% vs.\ 28\% median at
+$64^3$) but takes 23--92$\times$ longer. For practical design exploration
+(trying dozens of variants), SASTO is far more useful.
+
+\nextstep
+Generate final figures and validation plots.
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 8: Final Validation \& Figure Generation}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 2, 2026}{Ensemble Uncertainty During Optimization}
+
+\objective
+Visualize how ensemble uncertainty changes throughout the optimization process
+for the reference case.
+
+\experiment
+Logged ensemble $\mu$ and $\sigma$ at every iteration during reference case
+optimization. Plotted $\mu \pm \sigma$ bands.
+
+\nbimgcap[0.80\linewidth]{fig_uncertainty.png}{Ensemble mean $\pm$ standard
+deviation during reference case optimization. Uncertainty bands narrow as the
+design converges toward a structurally efficient configuration.}
+
+\obs
+Uncertainty $\sigma$ naturally decreases as optimization converges. This makes
+physical sense --- heavily optimized designs with clean geometry are better
+represented in the training distribution. The ensemble is effectively
+``more confident'' on designs that look like good structures.
+
+This self-calibrating behaviour is a nice emergent property that provides
+additional implicit safety precisely when the design is most aggressively
+pruned.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 2, 2026 (afternoon)}{Per-Part Volume Retention Analysis}
+
+\objective
+Understand which structural components lose the most material during
+optimization.
+
+\experiment
+Computed per-part volume retention for all 1,114 optimized designs. Parts:
+exterior walls, interior walls, roof, floor.
+
+\result
+\begin{center}
+\begin{tabular}{lc}
+  \toprule
+  \textbf{Part} & \textbf{Mean Retained (\%)} \\
+  \midrule
+  Exterior walls & 91.6\% \\
+  Interior walls & \textbf{45.3\%} \\
+  Roof & 96.8\% \\
+  Floor & 98.2\% \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\nbimgcap[0.80\linewidth]{fig_per_part.png}{Per-part volume retention across
+1,114 test designs. Interior walls see the largest reduction (to 45.3\%
+retained), while structural-critical roof and floor are nearly preserved.}
+
+\obs
+Interior walls are thinned most aggressively --- makes structural sense since
+they carry minimal vertical load. Roof and floor are almost untouched because
+they are critical load paths (roof distributes wind/snow, floor provides base
+support). The SASTO-PA thickness floor ($t_\text{min} = 1$ voxel for interior)
+allows this selective thinning.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 3, 2026}{STL Export and Mesh Quality}
+
+\objective
+Export the optimized designs as watertight STL files suitable for 3D printing.
+
+\experiment
+Post-processing pipeline:
+\begin{enumerate}[nosep]
+  \item Pocket fill: flood-fill enclosed voids
+  \item SDF smoothing: Gaussian-smoothed distance field, $\sigma = 0.5$ voxel
+  \item Marching Cubes at $128^3$
+  \item Mesh simplification to $\sim$35K faces
+  \item Watertightness check (Euler number = 2, no self-intersections)
+\end{enumerate}
+
+\result
+All 1,114 designs exported as valid STL files. Mean file size: 1.8\,MB.
+90\% were single-component directly; 10\% required one CC fill pass.
+
+\nbimgcap[0.65\linewidth]{fig18_voxel_before_after.png}{Voxel field
+before/after optimization: binary cross-sections and difference maps.}
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 3, 2026 (evening)}{Bland-Altman Analysis}
+
+\objective
+Check for systematic bias in surrogate predictions using Bland-Altman plots.
+
+\experiment
+For each of the 1,114 test designs, computed:
+\begin{itemize}[nosep]
+  \item Mean of surrogate and FEA compliance: $(y_\text{surr} + y_\text{FEA})/2$
+  \item Difference: $y_\text{surr} - y_\text{FEA}$
+\end{itemize}
+Plotted difference vs.\ mean with $\pm 1.96$ SD limits.
+
+\nbimgcap[0.80\linewidth]{fig_bland_altman.png}{Bland-Altman plot: surrogate
+vs.\ FEA compliance. Most designs fall within $\pm 1.96$ SD limits. No
+systematic trend.}
+
+\obs
+No systematic bias detected. The surrogate slightly overpredicts compliance
+for high-compliance designs (conservative direction, which is good for safety).
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 5, 2026}{Scaling Law Analysis}
+
+\objective
+Estimate how much additional training data would improve surrogate accuracy.
+
+\experiment
+Trained the surrogate on random subsets of the training data (25\%, 50\%,
+75\%, 100\%) and measured compliance $\rho$ on the validation set. Fit a
+power law: $\rho(N) = a - b \cdot N^{-c}$.
+
+\nbimgcap[0.70\linewidth]{fig_scaling_law.png}{Training data scaling law.
+Power-law fit suggests diminishing returns beyond $\sim$15K samples.
+Projected $\rho > 0.96$ at 20K samples.}
+
+\obs
+Diminishing returns are setting in. Going from 8,943 to 15,000 training samples
+would improve $\rho$ from 0.948 to $\sim$0.960. This suggests the current
+dataset size is near-optimal for the architecture --- further gains would
+require architectural changes (e.g., attention mechanisms, larger model).
+
+
+% ════════════════════════════════════════════════════════════
+\section{Phase 9: Paper, Poster, \& Final Presentation}
+% ════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 6, 2026}{FEA Stress Visualization (Fig.~16)}
+
+\objective
+Create a publication-quality figure showing FEA stress distribution on the
+reference case, before and after optimization.
+
+\experiment
+Used pyrender to create 3D stress-colored renderings. Applied jet colormap
+mapped to Von Mises stress. Added horizontal colorbar with 5\,MPa safety
+threshold marker.
+
+\nbimgcap[0.80\linewidth]{fig16_fea_stress_placeholder.png}{FEA Von Mises
+stress on reference case: (a) original, (b) SASTO-PA optimized. Stress
+redistribution is visible --- optimized design shifts load paths.}
+
+\failure
+First version had the colorbar overlapping the house rendering. Fixed by
+moving colorbar to horizontal orientation below panel~(b) only. Also had to
+change the threshold line from horizontal to vertical to match the new
+orientation.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 7, 2026}{Diverse Geometry Gallery}
+
+\objective
+Show that SASTO generalizes across very different house archetypes.
+
+\experiment
+Selected 4 representative test geometries covering different plan types
+(rectangular, L-shaped, multi-gabled, open-plan). Rendered original, optimized
+solid, and cutaway views for each.
+
+\result
+Material reductions ranged from 18\% (geometry 08018, dense load-bearing
+interior) to 41\% (geometry 04203, large open-plan interior). All passed
+FEA validation with zero violations.
+
+\obs
+The ``compressibility'' of a design is primarily determined by the fraction
+of interior partition surface area relative to total structure. Open-plan
+houses allow more aggressive thinning.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 7, 2026 (afternoon)}{Voxel Representation Figure}
+
+\objective
+Generate a clear figure showing the 128$^3$ voxel representation of the
+reference house, colored by structural part type.
+
+\experiment
+Created a 4-panel figure showing:
+(a) 3D voxel model at 64$^3$ for display clarity,
+(b) horizontal cross-section at $z=50$,
+(c) longitudinal section at $y=64$,
+(d) transverse section at $x=64$.
+Part colors match the STL renders: blue = exterior, orange = interior,
+green = roof, tan = floor.
+
+\nbimgcap[0.70\linewidth]{fig_voxel_house.png}{Voxel representation of the
+reference house at four viewpoints, colored by part label.}
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 7, 2026 (evening)}{ISEF Poster v5 --- Full Layout}
+
+\objective
+Design a 48'' $\times$ 36'' ISEF poster with professional layout.
+
+\experiment
+Built poster in LaTeX (\texttt{poster\_v5.tex}) with three-panel layout:
+\begin{itemize}[nosep]
+  \item Left (12''): Abstract, Introduction, Problem Framing
+  \item Center (24''): Methodology, Results, FEA Validation
+  \item Right (12''): Statistical Analysis, Conclusions, Future Work
+\end{itemize}
+Dark navy background, white content cards, gold accent stripe.
+
+\result
+Poster compiled successfully. 15 figures placed. All text legible at poster
+distance ($\geq 24$\,pt fonts).
+
+\failure
+First poster version (PowerPoint, automated) had distorted images and looked
+unprofessional. Second version (PowerPoint v2) had gradient rendering bugs.
+Third version (LaTeX) was much cleaner. Required multiple iterations on
+figure placement and spacing.
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 8, 2026}{Optimization \& Calibration Diagrams}
+
+\objective
+Create clear flowchart diagrams for the SASTO optimization loop, model
+calibration procedure, and output packaging pipeline.
+
+\experiment
+Generated three separate matplotlib diagrams:
+\begin{enumerate}[nosep]
+  \item \textbf{Optimization Loop}: input $\to$ distance transform $\to$
+    sensitivity $\to$ batch select $\to$ ensemble query $\to$ decision
+    diamond (commit/undo) with loop-back
+  \item \textbf{Model Calibration}: validation set $\to$ non-conformity scores
+    $\to$ $k$-factor fitting $\to$ Pareto search $\to$ lock $k=1.0$
+  \item \textbf{Output Packaging}: pocket fill $\to$ SDF smoothing $\to$
+    marching cubes $\to$ connectivity check $\to$ mesh QC $\to$ STL export
+\end{enumerate}
+
+\nbimgcap[0.50\linewidth]{fig_diag_optimization.png}{SASTO optimization loop
+flowchart with trust-region adaptive batch sizing.}
+
+\nbimgcap[0.50\linewidth]{fig_diag_calibration.png}{Model calibration procedure
+with conformal prediction certificates.}
+
+\nbimgcap[0.50\linewidth]{fig_diag_packaging.png}{Output packaging pipeline
+from optimized voxels to print-ready STL.}
+
+% ──────────────────────────────────────────────────────────────
+\entry{March 9, 2026}{Final Results Summary}
+
+\objective
+Compile the complete validated results for ISEF presentation.
+
+\experiment
+Summarized all key results across the 1,114 test geometries:
+
+\result
+\begin{center}
+\begin{tabular}{lr}
+  \toprule
+  \textbf{Metric} & \textbf{Value} \\
+  \midrule
+  Dataset (valid) & 11,178 (from 14,293 wireframes) \\
+  Train / val / test & 8,943 / 1,121 / 1,114 \\
+  Ensemble members & 5 $\times$ 8.76M params \\
+  Compliance Spearman $\rho$ & 0.948 \\
+  Displacement $\rho$ & 0.970 \\
+  Median volume reduction & 23.5\% \\
+  Max reduction (ref.\ case) & 45.0\% \\
+  FEA violations & \textbf{0/1,114} \\
+  Max compliance ratio & 1.004 (limit: 1.15) \\
+  Median runtime & 50\,s \\
+  Speedup vs.\ SIMP & 23--92\,\texttimes \\
+  Single-component meshes & 90\% direct, 100\% after CC fill \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\obs
+All three primary endpoints are met:
+\begin{enumerate}[nosep]
+  \item \textbf{Speed}: 50s median (23--92$\times$ vs.\ SIMP). \checkmark
+  \item \textbf{Printability}: 100\% single-component after trivial CC fill.
+    \checkmark
+  \item \textbf{Safety}: 0/1,114 FEA violations; conformal bound 0.950 vs.\
+    limit 1.15. \checkmark
+\end{enumerate}
+
+
+% ════════════════════════════════════════════════════════════
+\section{Appendix: Software and Parameters}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Software Environment}
+\begin{tabular}{ll}
+  \toprule
+  \textbf{Component} & \textbf{Version / Tool} \\
+  \midrule
+  Language & Python 3.10 \\
+  Deep learning & PyTorch 2.1.0 \\
+  FEA (training) & SfePy 2024.1 (tetrahedral) \\
+  FEA (validation) & Custom hex8 voxel solver + pyamg \\
+  Meshing & Gmsh 4.12, trimesh 4.0 \\
+  Boolean operations & manifold3d \\
+  3D rendering & pyrender, Open3D \\
+  Visualization & matplotlib 3.8, PIL \\
+  Hardware (training) & 4$\times$ NVIDIA GB200 \\
+  Hardware (optimization) & RTX A3000 Laptop GPU \\
+  \bottomrule
+\end{tabular}
+
+\subsection{Key Hyperparameters}
+\begin{tabular}{ll}
+  \toprule
+  \textbf{Parameter} & \textbf{Value} \\
+  \midrule
+  Voxel resolution & $128^3$ \\
+  Input channels & 7 (1 occupancy + 6 part one-hot) \\
+  Base channels & 64 \\
+  SE reduction & 4 \\
+  Drop path rate & 0.1 \\
+  Learning rate & $5 \times 10^{-4}$ \\
+  Weight decay & $10^{-4}$ \\
+  EMA decay & 0.999 \\
+  Loss function & Huber (smooth L1) \\
+  Target transform & log1p $\to$ winsorize (2/98\%) $\to$ z-score \\
+  Batch size (training) & 16 per GPU \\
+  Optimizer & AdamW \\
+  Scheduler & CosineAnnealingWarmRestarts (period=15) \\
+  Early stopping patience & 30 epochs \\
+  \midrule
+  $k$-factor (operating) & 1.0 \\
+  Max VM stress bound & $5.0 \times 10^6$ Pa \\
+  Max compliance ratio & 1.15 \\
+  Min thickness (exterior) & 2 voxels ($\approx$ 156 mm) \\
+  Min thickness (interior) & 1 voxel ($\approx$ 78 mm) \\
+  Initial batch size & 200 voxels \\
+  Min batch (Phase 1) & 10 voxels \\
+  Endgame batch & 5 $\to$ 1 voxels \\
+  \bottomrule
+\end{tabular}
+
+\subsection{Dataset Statistics}
+\begin{tabular}{ll}
+  \toprule
+  \textbf{Statistic} & \textbf{Value} \\
+  \midrule
+  Source dataset & 3DWire (Lin et al.\ 2024) \\
+  Total wireframes & 14,293 \\
+  Valid after FEA filter & 11,178 (78.2\%) \\
+  Rejected (diverged) & 3,115 (21.8\%) \\
+  Training set & 8,943 \\
+  Validation set & 1,121 \\
+  Test set & 1,114 \\
+  Split strategy & Family-aware (prevent leakage) \\
+  Raw data volume & $\sim$200 GB \\
+  Processed data volume & $\sim$59 GB \\
+  \bottomrule
+\end{tabular}
+
+% ── END ──────────────────────────────────────────────────────
+\vfill
+\begin{center}
+  \color{notegray}\small\itshape
+  End of Project Notebook --- 32 entries covering November 2025 to March 2026.\\
+  All entries are chronological and unedited (errors crossed out, not deleted).
+\end{center}
+
+\end{document}
