@@ -1418,9 +1418,33 @@ I selected 4 representative test geometries covering different plan types
 solid, and cutaway views for each.
 
 \result
-I saw material reductions ranging from 18\% (geometry 08018, dense load-bearing
-interior) to 41\% (geometry 04203, large open-plan interior). All four passed
-FEA validation with zero violations.
+I saw material reductions ranging from 18\% (geometry 01440, rectangular plan)
+to 45\% (geometry 04203, large open-plan interior). All four passed FEA
+validation with zero violations.
+
+\begin{center}
+\begin{tabular}{lcc}
+  \toprule
+  \textbf{Design} & \textbf{Plan Type} & \textbf{Reduction} \\
+  \midrule
+  01440 & Rectangular & 18.6\% \\
+  04203 & Open-plan   & 45.0\% \\
+  05728 & L-shaped    & 29.8\% \\
+  REF   & Multi-gabled & 27.4\% \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\begin{tabular}{cc}
+  \includegraphics[width=0.46\linewidth,keepaspectratio]{01440_original_colored_iso.png} &
+  \includegraphics[width=0.46\linewidth,keepaspectratio]{01440_optimized_cutaway_iso.png} \\
+  {\small\itshape House 01440 original} & {\small\itshape After SASTO-PA (18.6\% removed)} \\[6pt]
+  \includegraphics[width=0.46\linewidth,keepaspectratio]{04203_original_colored_iso.png} &
+  \includegraphics[width=0.46\linewidth,keepaspectratio]{04203_optimized_cutaway_iso.png} \\
+  {\small\itshape House 04203 original} & {\small\itshape After SASTO-PA (45\% removed)} \\
+\end{tabular}
+\end{center}
 
 \obs
 The ``compressibility'' of a design is primarily determined by the fraction

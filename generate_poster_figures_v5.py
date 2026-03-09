@@ -897,26 +897,26 @@ def fig_diag_optimization():
         _arr(ax, cx, ys[i]-BH/2, cx, ys[i+1]+BH/2)
 
     # ── Decision diamond ──────────────────────────────────────
-    DY = ys[-1] - BH/2 - GAP - 0.72
-    _diamond(ax, cx, DY, BW, 1.30, C_DL, C_D)
-    _lbl(ax, cx, DY + 0.18, "Constraint Check", fs=10.5, bold=True, color=C_D)
-    _lbl(ax, cx, DY - 0.22, "s+ <= allow  |  C/C0 <= 1.15", fs=8.5, bold=False, color=C_D)
-    _arr(ax, cx, ys[-1]-BH/2, cx, DY+0.65)
+    DY = ys[-1] - BH/2 - GAP - 0.82
+    _diamond(ax, cx, DY, BW, 1.55, C_DL, C_D)
+    _lbl(ax, cx, DY + 0.30, "Constraint Check", fs=10.5, bold=True, color=C_D)
+    _lbl(ax, cx, DY - 0.10, ["Stress  <=  5 MPa", "C / C0  <=  1.15"], fs=8.5, bold=False, color=C_D)
+    _arr(ax, cx, ys[-1]-BH/2, cx, DY+0.775)
 
     # YES – commit (left)
-    CY = DY - 1.52
+    CY = DY - 1.62
     _rbox(ax, cx - 1.65, CY, 2.60, BH, C_OL, C_O)
     _lbl(ax, cx - 1.65, CY, ["COMMIT"], fs=11, color=C_O)
-    ax.text(cx - 0.56, DY - 0.90, "YES", fontsize=9, fontweight="bold",
+    ax.text(cx - 0.56, DY - 0.95, "YES", fontsize=9, fontweight="bold",
             color=C_O, ha="center", va="center", zorder=6)
-    _arr(ax, cx - 0.55, DY - 0.65, cx - 0.55, CY + BH/2, clr=C_O)
+    _arr(ax, cx - 0.55, DY - 0.775, cx - 0.55, CY + BH/2, clr=C_O)
 
     # NO – undo (right)
     _rbox(ax, cx + 1.65, CY, 2.60, BH, C_RL, C_R)
     _lbl(ax, cx + 1.65, CY, ["UNDO  +  B/2"], fs=11, color=C_R)
-    ax.text(cx + 0.56, DY - 0.90, "NO", fontsize=9, fontweight="bold",
+    ax.text(cx + 0.56, DY - 0.95, "NO", fontsize=9, fontweight="bold",
             color=C_R, ha="center", va="center", zorder=6)
-    _arr(ax, cx + 0.55, DY - 0.65, cx + 0.55, CY + BH/2, clr=C_R)
+    _arr(ax, cx + 0.55, DY - 0.775, cx + 0.55, CY + BH/2, clr=C_R)
 
     # loop-back arrow – explicit elbow: right → up → left (no curve)
     xr = W - 0.18
@@ -935,7 +935,7 @@ def fig_diag_optimization():
     # Phase 2/3
     PY = CY - BH/2 - GAP - 0.10
     _rbox(ax, cx, PY, BW, BH, C_PL, C_P)
-    _lbl(ax, cx, PY, ["Phase 2 / 3  Endgame", "Swap Moves"], fs=10.5, color=C_P)
+    _lbl(ax, cx, PY, ["Phase 2 / 3  Endgame", "Batch 5 -> 1"], fs=10.5, color=C_P)
     _arr(ax, cx - 1.65, CY - BH/2, cx - 0.70, PY + BH/2, clr=C_O)
 
     # Converged
@@ -965,15 +965,15 @@ def fig_diag_calibration():
     _lbl(ax, cx, H - 0.55, "MODEL  CALIBRATION", fs=13, color=WHITE)
 
     step_data = [
-        (C_P, C_PL, ["Validation Set", "n = 1,121"]),
-        (C_P, C_PL, ["Ensemble Inference", "5 members"]),
+        (C_P, C_PL, ["Validation Set  (n = 1,121)"]),
+        (C_P, C_PL, ["Ensemble Inference", "5 members -> mean & sigma"]),
         (C_P, C_PL, ["Non-Conformity Scores", "a_i = |y - mu| / sigma"]),
-        (C_D, C_DL, ["k-Factor Fitting", "compliance & stress"]),
-        (C_D, C_DL, ["Pareto  k-Grid Search", "acceptance vs. savings"]),
-        (C_P, C_PL, ["Operating Point", "k = 1.0"]),
-        (C_P, C_PL, ["Conformal Certificate", "P(viol.) <= 0.09%"]),
-        (C_P, C_PL, ["99%-Bound  C_opt/C_base", "upper bound: 0.950"]),
-        (C_O, C_OL, ["k = 1.0  LOCKED", "blind test"]),
+        (C_D, C_DL, ["k-Factor Fitting", "compliance k=1.90  |  stress k=4.31"]),
+        (C_D, C_DL, ["Pareto k-Grid Search", "acceptance rate vs. savings"]),
+        (C_P, C_PL, ["Operating Point  k = 1.0", "99% coverage on compliance"]),
+        (C_P, C_PL, ["Conformal Certificate", "P(violation) <= 0.09%"]),
+        (C_P, C_PL, ["99%-Upper Bound", "C_opt / C_base <= 0.950"]),
+        (C_O, C_OL, ["k = 1.0  LOCKED", "applied to blind test set"]),
     ]
 
     top_step = H - 1.42
@@ -982,20 +982,10 @@ def fig_diag_calibration():
         y = top_step - i * (BH + GAP)
         ys.append(y)
         _rbox(ax, cx, y, BW, BH, fc, ec, lw=2.5 if i == len(step_data)-1 else 2.0)
-        _lbl(ax, cx, y, lines, fs=10.5, color=ec)
+        _lbl(ax, cx, y, lines, fs=10.0, color=ec)
 
     for i in range(len(ys)-1):
         _arr(ax, cx, ys[i]-BH/2, cx, ys[i+1]+BH/2)
-
-    # side callout boxes for k values
-    for y, label in [(ys[3], "k=1.90\nk=4.31"), (ys[5], "k=1.0")]:
-        bx2 = W - 0.50
-        _rbox(ax, bx2, y, 0.85, 0.68, "#E8EEF2", SEC_BAR, lw=1.2, rad=0.10)
-        ax.text(bx2, y, label, fontsize=8.5, fontweight="bold",
-                color=SEC_BAR, ha="center", va="center", zorder=6,
-                multialignment="center")
-        ax.plot([cx + BW/2, bx2 - 0.42], [y, y],
-                color=SEC_BAR, lw=1.0, linestyle="--", zorder=4)
 
     savefig(fig, "fig_diag_calibration.png")
 
