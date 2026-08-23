@@ -68,11 +68,19 @@ family allocation, and role isolation rather than trusting its digest alone.
 declared split-artifact logical ID and canonical family-split digest, plus
 SHA-256 digests for every declared input and output. Record paths are portable
 POSIX-relative paths beneath the manifest's artifact root. Build and verification
-reject absolute/traversal paths, symlinks (including any lexical component of
-the caller-supplied manifest path or smoke output root), non-regular files, files outside that root,
-malformed records, and changed hashes. `verify_run_manifest` recomputes the
-canonical digest after parsing the declared split artifact and then validates
-its semantics. Zero-failure
+reject absolute/traversal paths, symlinks (including lexical manifest-path or
+artifact-root components), non-regular files, files outside that root, malformed
+records, and changed hashes. Verification opens the artifact root and every path
+component through held directory descriptors with `O_NOFOLLOW` where supported;
+leaves use `O_NOFOLLOW|O_NONBLOCK`, are `fstat`-checked as regular on that same
+descriptor, and are read and hashed from that descriptor. `_verify_records`
+returns those exact byte snapshots, so the split is parsed and semantically
+validated from the bytes whose record digest passed rather than from a later
+pathname reread. Before returning, the verifier reopens the manifest and every
+declared record through the held root descriptor and rejects observed inode,
+metadata, byte, or hash drift. This is a bounded verification snapshot only:
+external mutation after return is outside the snapshot and no filesystem
+immutability or continuing-soundness claim is made. Zero-failure
 binomial helpers are intentionally separate from conformal coverage; do not
 translate one claim into the other.
 
@@ -81,10 +89,11 @@ translate one claim into the other.
 The manifest is a payload, not its own authenticator. Every verification requires
 a caller-supplied lowercase SHA-256 digest of the **exact manifest bytes** via
 `expected_manifest_sha256` (or `--expected-manifest-sha256` in the CLI). The
-verifier `lstat`s and rejects a symlink or any non-regular manifest leaf before
-opening it, hashes the bytes before parsing, and returns the parsed object from
-those exact bytes. Consequently, changing a run ID, target, record path, or a
-self-consistent path/hash pair changes the anchored digest and is rejected.
+verifier opens the manifest leaf no-follow and nonblocking through its held
+artifact-root descriptor, `fstat`s that same descriptor as a regular file, and
+hashes before parsing exact captured bytes. Consequently, changing a run ID,
+target, record path, or a self-consistent path/hash pair changes the anchored
+digest and is rejected.
 An unauthenticated sidecar in the artifact directory is not an external trust
 anchor and is insufficient. The expected digest must be retained or transmitted
 by a separately protected control plane. Identical manifest bytes remain valid

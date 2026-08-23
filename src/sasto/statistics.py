@@ -11,7 +11,7 @@ def one_sided_zero_failure_upper_bound(n: int, *, alpha: float = 0.05) -> float:
     This estimates a binomial failure-rate upper bound only under the declared
     Bernoulli/exchangeability assumptions.  It is not a conformal coverage result.
     """
-    if not isinstance(n, int) or n <= 0:
+    if isinstance(n, bool) or not isinstance(n, int) or n <= 0:
         raise ValueError("n must be a positive integer")
     if not 0.0 < alpha < 1.0:
         raise ValueError("alpha must be strictly between 0 and 1")

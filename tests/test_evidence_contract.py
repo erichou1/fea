@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from sasto.manifest import ManifestVerificationError, build_run_manifest, verify_run_manifest
@@ -14,7 +15,7 @@ from sasto.splits import (
     validate_family_split,
 )
 from sasto.sasto_pa import evaluate_erosion_candidate
-from sasto.statistics import minimum_zero_failure_sample_size, one_sided_zero_failure_upper_bound
+from sasto.statistics import format_zero_failure_evidence, minimum_zero_failure_sample_size, one_sided_zero_failure_upper_bound
 from sasto.targets import TargetRegistry, TargetSpec
 from sasto.topology import is_simple_point_6_26
 
@@ -87,7 +88,13 @@ def test_canonical_locked_environment_contract() -> None:
     assert "uv sync --frozen" in makefile
     assert "uv run --frozen --group test python -m pytest -q" in makefile
     assert "EXPECTED_MANIFEST_SHA256 is required from an external trust anchor" in makefile
-    assert '--expected-manifest-sha256 "$(EXPECTED_MANIFEST_SHA256)"' in makefile
+    assert '--expected-manifest-sha256 "$$EXPECTED_MANIFEST_SHA256"' in makefile
+    assert "export ARTIFACT_DIR" in makefile
+    assert '"$$ARTIFACT_DIR/run-manifest.json"' in makefile
+    assert "$(MAKE) verify-artifact" not in makefile
+    assert "awk" not in makefile
+    assert "sha256_file" in makefile
+    assert "read_bytes" not in makefile
 
 
 @pytest.mark.parametrize(
@@ -388,3 +395,13 @@ def test_zero_failure_upper_bound_uses_exact_one_sided_formula() -> None:
     assert minimum_zero_failure_sample_size(0.02, alpha=0.05) == 149
     with pytest.raises(ValueError):
         one_sided_zero_failure_upper_bound(0)
+
+
+@pytest.mark.parametrize("invalid_n", (True, np.bool_(True)))
+def test_zero_failure_sample_count_rejects_python_and_numpy_booleans(invalid_n: object) -> None:
+    import numpy as np
+
+    with pytest.raises(ValueError, match="positive integer"):
+        one_sided_zero_failure_upper_bound(invalid_n)
+    with pytest.raises(ValueError, match="positive integer"):
+        format_zero_failure_evidence(invalid_n)

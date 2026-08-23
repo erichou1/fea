@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 from pathlib import Path
 
-from .manifest import ManifestVerificationError, build_run_manifest, has_lexical_symlink_component
+from .manifest import ManifestVerificationError, build_run_manifest, has_lexical_symlink_component, sha256_file
 from .splits import build_family_split_manifest, split_sha256
 from .targets import TargetRegistry, TargetSpec
 from .topology import is_simple_point_6_26
@@ -97,7 +96,7 @@ def main() -> int:
     args = parser.parse_args()
     manifest_path = run_smoke(Path(args.fixture), Path(args.output))
     print("created {}".format(manifest_path))
-    print("manifest_sha256={}".format(hashlib.sha256(manifest_path.read_bytes()).hexdigest()))
+    print("manifest_sha256={}".format(sha256_file(manifest_path)))
     return 0
 
 
