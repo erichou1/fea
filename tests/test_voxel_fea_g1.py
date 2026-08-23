@@ -4,6 +4,8 @@ Every assertion is a scientific contract, not a diagnostic printout.
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -238,7 +240,7 @@ def test_disconnected_and_unstable_load_geometry_fail_closed_without_mutation() 
         _beam(), _config(expected_loaded_node_coordinates=((4, 0, 0),) * 9)
     )
     assert same_count_different_nodes["status"] == "failure"
-    assert same_count_different_nodes["reason"] == "unstable_load_node_set"
+    assert same_count_different_nodes["reason"] == "invalid_configuration"
 
 
 def test_nonconvergence_and_repeat_digest_fail_closed_and_remain_deterministic() -> None:
@@ -264,6 +266,73 @@ def test_invalid_occupancy_and_malformed_configuration_are_rejected_as_records()
     assert invalid["status"] == "failure" and invalid["reason"] == "occupancy_must_be_boolean"
     assert empty["status"] == "failure" and empty["reason"] == "empty_occupancy"
     assert bad_config["status"] == "failure" and bad_config["reason"] == "invalid_configuration"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"voxel_size": (0.05, 0.05)},
+        {"voxel_size": [0.05, 0.05, 0.05]},
+        {"voxel_size": np.asarray((0.05, 0.05, 0.05))},
+        {"voxel_size": (0.05, float("inf"), 0.05)},
+        {"gravity_m_s2": (0.0, 0.0)},
+        {"gravity_m_s2": (0.0, 0.0, float("nan"))},
+        {"fixed_total_force_n": (0.0, -100.0)},
+        {"fixed_total_force_n": (0.0, 0.0, float("inf"))},
+        {"youngs_modulus_pa": float("nan")},
+        {"poisson_ratio": float("inf")},
+        {"density_kg_m3": float("nan")},
+        {"relative_tolerance": float("inf")},
+        {"include_self_weight": 1},
+        {"include_displacement_field": 0},
+        {"maximum_iterations": True},
+        {"direct_max_dof": True},
+        {"expected_loaded_node_count": True},
+        {"expected_loaded_node_coordinates": [(4, 0, 0)]},
+        {"expected_loaded_node_coordinates": ((4, 0, 0), (4, 0, 0))},
+        {"expected_loaded_node_coordinates": ((-1, 0, 0),)},
+        {"expected_loaded_node_count": 2, "expected_loaded_node_coordinates": ((4, 0, 0),)},
+    ),
+)
+def test_every_configuration_field_rejects_malformed_values_as_canonical_failure_records(overrides: dict[str, object]) -> None:
+    from sasto.voxel_fea import solve_voxels
+
+    record = solve_voxels(_beam(), _config(**overrides))
+    assert record["status"] == "failure"
+    assert record["reason"] == "invalid_configuration"
+    json.dumps(record, sort_keys=True, allow_nan=False)
+
+
+def test_failure_helper_is_safe_for_malformed_config_and_occupancy() -> None:
+    from sasto.voxel_fea import VoxelFEAConfig, _failure
+
+    malformed = VoxelFEAConfig(youngs_modulus_pa=float("nan"), gravity_m_s2=(0.0, 0.0))
+    record = _failure("invalid_configuration", malformed, object(), relative_residual=float("nan"))
+    assert record == {
+        "status": "failure", "reason": "invalid_configuration", "config_digest": None,
+        "input_digest": None, "relative_residual": None, "outputs": None,
+    }
+    json.dumps(record, sort_keys=True, allow_nan=False)
+
+
+def test_iterative_target_is_one_tenth_of_frozen_admission_bound_and_direct_has_no_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scipy.sparse import linalg as sparse_linalg
+    from sasto import voxel_fea
+
+    requested: list[float] = []
+
+    def exact_cg(matrix: object, force: object, **kwargs: object) -> tuple[np.ndarray, int]:
+        requested.append(float(kwargs["rtol"]))
+        return sparse_linalg.spsolve(matrix, force), 0
+
+    monkeypatch.setattr(voxel_fea.sparse_linalg, "cg", exact_cg)
+    iterative = voxel_fea.solve_voxels(_beam(), _config(relative_tolerance=2e-8))
+    direct = voxel_fea.solve_voxels(_beam(), _config(relative_tolerance=2e-8, solver_mode="direct"))
+    assert requested == [2e-9]
+    assert iterative["status"] == direct["status"] == "success"
+    assert iterative["iterative_requested_rtol"] == 2e-9
+    assert direct["iterative_requested_rtol"] is None
+    assert iterative["relative_residual"] <= 2e-8
 
 
 def test_fixed_load_cantilever_refinement_moves_toward_beam_theory() -> None:

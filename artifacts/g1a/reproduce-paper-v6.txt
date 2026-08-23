@@ -1,0 +1,4 @@
+G1 UNAVAILABLE: make reproduce-paper does not reproduce paper results.
+Preflight failed closed: missing config/data/runner assets: configs/paper-reproduction.json, data/paper, src/sasto/paper_runner.py.
+make: *** [reproduce-paper] Error 2
+exit_code=2

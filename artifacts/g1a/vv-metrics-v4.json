@@ -1,0 +1,58 @@
+{
+  "cantilever": {
+    "analytical_tip_m": 2.048e-05,
+    "coarse_relative_error": 0.28989727345701,
+    "fine_relative_error": 0.06594044644926367,
+    "fine_tolerance": 0.07,
+    "refinement_improves": true
+  },
+  "direct_agreement": {
+    "direct_residual": 1.588833875486151e-14,
+    "field_max_abs_m": 5.3004992498569166e-17,
+    "iterative_requested_rtol": 2e-09,
+    "iterative_residual": 1.894281661322346e-09,
+    "stress_relative_difference": 1.5709544776143503e-11
+  },
+  "element": {
+    "body_force_z_per_element_n": -0.023544000000000002,
+    "minimum_eigenvalue": -5.822846961400752e-08,
+    "rigid_null_modes": 6,
+    "symmetry_max_abs": 1.862645149230957e-09
+  },
+  "load_face": {
+    "beam_shape": [
+      4,
+      2,
+      2
+    ],
+    "loaded_x_values": [
+      4
+    ],
+    "occupied_max_element_x": 3,
+    "physical_max_face_x": 4
+  },
+  "residual_contract": {
+    "admission_relative_tolerance": 2e-08,
+    "direct_iterative_requested_rtol": null,
+    "iterative_target_fraction": 0.1
+  },
+  "scaling": {
+    "E2_compliance_ratio": 0.5000000000000007,
+    "E2_displacement_ratio": 0.5000000000000007,
+    "F2_compliance_ratio": 4.000000000000003,
+    "F2_displacement_ratio": 2.000000000000002,
+    "F2_stress_ratio": 2.0000000000000027,
+    "rho2_compliance_ratio": 4.000000000000008,
+    "rho2_displacement_ratio": 2.0000000000000044,
+    "rho2_stress_ratio": 2.000000000000004
+  },
+  "schema_version": "1.2.0",
+  "stress_contract": {
+    "aliases": {
+      "max_von_mises_pa": "max_gauss_von_mises_pa",
+      "p99_von_mises_pa": "p99_gauss_von_mises_pa"
+    },
+    "sample_count": 128,
+    "sampling": "eight_full_integration_gauss_points_per_element"
+  }
+}

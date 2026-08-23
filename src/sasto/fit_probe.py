@@ -26,14 +26,15 @@ def _role_ids(manifest: Mapping[str, object], role: str) -> set[str]:
         values = manifest["partitions"][role]["sample_ids"]  # type: ignore[index]
     except (KeyError, TypeError):
         raise FitOnlyAccessError("split manifest lacks {} membership".format(role)) from None
-    if not isinstance(values, list) or not values or any(not isinstance(value, str) or not value for value in values):
+    if (not isinstance(values, list) or not values or any(not isinstance(value, str) or not value for value in values)
+            or len(set(values)) != len(values)):
         raise FitOnlyAccessError("split manifest has invalid {} membership".format(role))
     return set(values)
 
 
 def select_fit_sample_ids(manifest: Mapping[str, object], requested: Iterable[str] | None, *, limit: int) -> list[str]:
     """Select an ordered fit-only batch after proving every other role is excluded."""
-    if not isinstance(limit, int) or limit < 1:
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
         raise FitOnlyAccessError("limit must be a positive integer")
     fit = _role_ids(manifest, "fit")
     development = _role_ids(manifest, "development")
@@ -45,17 +46,23 @@ def select_fit_sample_ids(manifest: Mapping[str, object], requested: Iterable[st
     if requested is None:
         selected = sorted(fit)[:limit]
     else:
-        selected = list(requested)[:limit]
-        if not selected or any(not isinstance(sample_id, str) or not sample_id for sample_id in selected):
+        if isinstance(requested, (str, bytes)):
+            raise FitOnlyAccessError("requested sample IDs must be a non-string iterable")
+        try:
+            complete_request = list(requested)
+        except TypeError as error:
+            raise FitOnlyAccessError("requested sample IDs must be iterable") from error
+        if not complete_request or any(not isinstance(sample_id, str) or not sample_id for sample_id in complete_request):
             raise FitOnlyAccessError("requested sample IDs must be non-empty strings")
-        if len(set(selected)) != len(selected):
+        if len(set(complete_request)) != len(complete_request):
             raise FitOnlyAccessError("requested sample IDs must be unique")
-    confirmation_requested = set(selected) & confirmation
-    if confirmation_requested:
-        raise FitOnlyAccessError("confirmation role requested; fit-only probe denies confirmation access")
-    rejected = set(selected) - fit
-    if rejected:
-        raise FitOnlyAccessError("non-fit role requested; fit-only probe denies data access")
+        confirmation_requested = set(complete_request) & confirmation
+        if confirmation_requested:
+            raise FitOnlyAccessError("confirmation role requested; fit-only probe denies confirmation access")
+        rejected = set(complete_request) - fit
+        if rejected:
+            raise FitOnlyAccessError("non-fit role requested; fit-only probe denies data access")
+        selected = complete_request[:limit]
     return selected
 
 

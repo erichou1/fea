@@ -85,6 +85,16 @@ def _config_payload(config: VoxelFEAConfig) -> dict[str, object]:
     return dataclasses.asdict(config)
 
 
+def _safe_config_digest(config: object) -> str | None:
+    """Return a config digest only when its exact value has canonical JSON."""
+    if not isinstance(config, VoxelFEAConfig):
+        return None
+    try:
+        return _canonical_json_digest(_config_payload(config))
+    except Exception:
+        return None
+
+
 def _input_digest(occupancy: np.ndarray) -> str:
     digest = hashlib.sha256()
     digest.update(str(occupancy.shape).encode("ascii"))
@@ -93,26 +103,53 @@ def _input_digest(occupancy: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def _safe_input_digest(occupancy: object) -> str | None:
+    try:
+        if isinstance(occupancy, np.ndarray) and occupancy.dtype == np.bool_:
+            return _input_digest(occupancy)
+    except Exception:
+        pass
+    return None
+
+
+def _is_finite_real(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and bool(np.isfinite(value))
+
+
+def _is_finite_vector(value: object) -> bool:
+    return isinstance(value, tuple) and len(value) == 3 and all(_is_finite_real(item) for item in value)
+
+
 def _validate_config(config: object) -> VoxelFEAConfig:
     if not isinstance(config, VoxelFEAConfig):
         raise ValueError("invalid_configuration")
-    finite = (config.youngs_modulus_pa, config.poisson_ratio, config.density_kg_m3, config.relative_tolerance,
-              *config.voxel_size, *config.gravity_m_s2, *config.fixed_total_force_n)
     expected_coordinates = config.expected_loaded_node_coordinates
     expected_coordinates_valid = (
         expected_coordinates is None
         or (isinstance(expected_coordinates, tuple) and all(
-            isinstance(point, tuple) and len(point) == 3 and all(isinstance(value, int) and not isinstance(value, bool) for value in point)
+            isinstance(point, tuple) and len(point) == 3
+            and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in point)
             for point in expected_coordinates
-        ))
+        ) and len(set(expected_coordinates)) == len(expected_coordinates))
     )
-    if (not all(isinstance(value, (int, float)) and not isinstance(value, bool) and np.isfinite(value) for value in finite)
+    if (not all(_is_finite_real(value) for value in (
+                config.youngs_modulus_pa, config.poisson_ratio, config.density_kg_m3, config.relative_tolerance))
+            or not _is_finite_vector(config.voxel_size) or not _is_finite_vector(config.gravity_m_s2)
+            or not _is_finite_vector(config.fixed_total_force_n)
             or config.youngs_modulus_pa <= 0.0 or config.density_kg_m3 <= 0.0
             or not (-1.0 < config.poisson_ratio < 0.5) or min(config.voxel_size) <= 0.0
-            or config.relative_tolerance <= 0.0 or not isinstance(config.maximum_iterations, int) or config.maximum_iterations < 1
-            or config.solver_mode not in {"iterative", "direct"} or not isinstance(config.direct_max_dof, int) or config.direct_max_dof < 1
-            or (config.expected_loaded_node_count is not None and (not isinstance(config.expected_loaded_node_count, int) or config.expected_loaded_node_count < 1))
+            or config.relative_tolerance <= 0.0
+            or not isinstance(config.include_self_weight, bool) or not isinstance(config.include_displacement_field, bool)
+            or not isinstance(config.maximum_iterations, int) or isinstance(config.maximum_iterations, bool) or config.maximum_iterations < 1
+            or not isinstance(config.solver_mode, str) or config.solver_mode not in {"iterative", "direct"}
+            or not isinstance(config.direct_max_dof, int) or isinstance(config.direct_max_dof, bool) or config.direct_max_dof < 1
+            or (config.expected_loaded_node_count is not None and (
+                not isinstance(config.expected_loaded_node_count, int) or isinstance(config.expected_loaded_node_count, bool)
+                or config.expected_loaded_node_count < 1))
             or not expected_coordinates_valid):
+        raise ValueError("invalid_configuration")
+    if (config.expected_loaded_node_count is not None and expected_coordinates is not None
+            and config.expected_loaded_node_count != len(expected_coordinates)):
         raise ValueError("invalid_configuration")
     return config
 
@@ -221,12 +258,22 @@ def assemble_voxel_system(occupancy: object, config: VoxelFEAConfig) -> Assemble
 def _failure(
     reason: str, config: object, occupancy: object, *, relative_residual: float | None = None
 ) -> dict[str, object]:
-    config_digest = _canonical_json_digest(_config_payload(config)) if isinstance(config, VoxelFEAConfig) else None
-    input_digest = _input_digest(occupancy) if isinstance(occupancy, np.ndarray) and occupancy.dtype == np.bool_ else None
-    return {
-        "status": "failure", "reason": reason, "config_digest": config_digest, "input_digest": input_digest,
-        "relative_residual": relative_residual, "outputs": None,
+    stable_reason = reason if isinstance(reason, str) and reason else "failure_record_construction_error"
+    safe_residual = relative_residual if _is_finite_real(relative_residual) else None
+    record = {
+        "status": "failure", "reason": stable_reason, "config_digest": _safe_config_digest(config),
+        "input_digest": _safe_input_digest(occupancy), "relative_residual": safe_residual, "outputs": None,
     }
+    try:
+        json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return record
+    except Exception:
+        fallback = {
+            "status": "failure", "reason": "failure_record_construction_error", "config_digest": None,
+            "input_digest": None, "relative_residual": None, "outputs": None,
+        }
+        json.dumps(fallback, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return fallback
 
 
 def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]:
@@ -249,6 +296,7 @@ def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]
             displacement_free = sparse_linalg.spsolve(reduced_stiffness, reduced_force)
             status, iterations, preconditioner = 0, 0, "none_direct_reference"
             solver_identity = "scipy.sparse.linalg.spsolve"
+            iterative_requested_rtol: float | None = None
         else:
             try:
                 import pyamg
@@ -259,8 +307,11 @@ def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]
             iterations_box = [0]
             def count_iteration(_: np.ndarray) -> None:
                 iterations_box[0] += 1
+            # The frozen relative_tolerance remains the acceptance bound;
+            # request one order of magnitude tighter from the iterative solver.
+            iterative_requested_rtol = config.relative_tolerance / 10.0
             displacement_free, status = sparse_linalg.cg(
-                reduced_stiffness, reduced_force, M=preconditioner, rtol=config.relative_tolerance,
+                reduced_stiffness, reduced_force, M=preconditioner, rtol=iterative_requested_rtol,
                 atol=0.0, maxiter=config.maximum_iterations, callback=count_iteration,
             )
             iterations, preconditioner = iterations_box[0], preconditioner_identity
@@ -304,7 +355,8 @@ def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]
             "body_force_sum_n": assembled.body_force_sum_n.tolist(), "fixed_force_sum_n": assembled.fixed_force_sum_n.tolist(),
             "applied_force_sum_n": (assembled.body_force_sum_n + assembled.fixed_force_sum_n).tolist(),
             "iterations": iterations, "relative_residual": relative_residual, "solver_identity": solver_identity,
-            "preconditioner_identity": preconditioner, "config_digest": _canonical_json_digest(_config_payload(config)),
+            "iterative_requested_rtol": iterative_requested_rtol,
+            "preconditioner_identity": preconditioner, "config_digest": _safe_config_digest(config),
             "input_digest": _input_digest(occupancy),
         }
         if config.include_displacement_field:

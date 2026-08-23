@@ -189,7 +189,16 @@ the declared load nodes while preserving its exact requested vector, and a
 caller may lock the expected load-node count and exact node-coordinate set for
 baseline/candidate comparisons.
 
-Every solve is an append-only serializable `success` or `failure` record.
+Every solve is an append-only serializable `success` or `failure` record. Before
+assembly, every `VoxelFEAConfig` field is structurally validated: the three
+physical vectors are exact length-three tuples of finite non-Boolean scalar
+numbers, Boolean switches are actual `bool`, integer limits/counts reject
+Boolean values, and optional expected load coordinates are unique non-negative
+integer triples whose count agrees with an accompanying expected count. Invalid
+or non-canonical configuration values fail with `invalid_configuration`. A
+failure record is always checked with `json.dumps(..., allow_nan=False)`;
+configuration digesting is safe and returns `null` if canonical JSON cannot be
+formed, rather than masking the original failure.
 Stress maxima and percentiles are evaluated at all eight 2x2x2 full-integration
 Gauss points per occupied Hex8 element, declared by
 `stress_sampling: "eight_full_integration_gauss_points_per_element"` and
@@ -200,8 +209,11 @@ continuum maxima. Backward-compatible `max_von_mises_pa` and
 `stress_metric_aliases`. Success records also include maximum displacement
 (m), compliance (J), counts, force sums, solver/preconditioner identity,
 iterations, residual, input/config digests, bounded timing, and a scientific
-digest. The scientific digest intentionally excludes wall time and iterative
-residual roundoff. Invalid, disconnected, undersized, unsupported, load-free,
+digest. `relative_tolerance` is the frozen residual **admission** bound (default
+`2e-8`), while CG is requested at one tenth of that bound; every success record
+and scientific digest declares `iterative_requested_rtol` (`null` for direct
+reference solves). The scientific digest intentionally excludes wall time and
+iterative residual roundoff. Invalid, disconnected, undersized, unsupported, load-free,
 non-Boolean, nonfinite, nonconvergent, or non-postprocessable inputs fail
 closed without modifying occupancy. The direct sparse path is restricted to
 small independent V&V fixtures; the canonical path requires SciPy CG with a
@@ -216,8 +228,10 @@ make test-fea-locked
 
 `make fit-only-probe` invokes `sasto.fit_probe`. It requires explicit
 `SPLIT_MANIFEST`, `FEA_ARCHIVE`, and a new `FIT_PROBE_OUTPUT`; it validates
-that every requested sample is fit-role and that fit/development/calibration/
-confirmation memberships are disjoint **before opening any archive payload**.
+the complete caller-supplied request (including elements after `limit`) for
+well-formed unique IDs and fit membership, and validates that
+fit/development/calibration/confirmation memberships are disjoint **before
+opening any archive payload**. Boolean limits are rejected.
 It has no confirmation override. The archived historical probe sample `00000`
 is calibration-role in the frozen manifest, so this command must reject it
 before payload access.
