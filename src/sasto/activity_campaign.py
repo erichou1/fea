@@ -264,13 +264,35 @@ def _expected_payload_members(ids: Sequence[str]) -> list[str]:
 
 
 def _generation_report(*, root: Path, mode: str, label: object, ids: Sequence[str]) -> dict[str, object]:
-    """Derive a resume-stable report solely from completed verified cases and protocol IDs."""
+    """Derive the immutable cumulative report solely from completed verified cases."""
     members = _expected_payload_members(ids)
     report = {"mode": mode, "label": label, "case_count": len(ids),
               "results": [{"sample_id": sample_id, "case_digest": load_verified_case(root, sample_id)["case_digest"]} for sample_id in ids],
-              "fit_payload_access_count": len(members), "nonfit_payload_access_count": 0,
-              "archive_payload_members": members}
+              "cumulative_expected_payload_count": len(members),
+              "cumulative_expected_payload_members": members}
     return {**report, "report_digest": _digest(report)}
+
+
+def _write_generation_invocation_receipt(*, root: Path, mode: str, members: Sequence[str], fit_accesses: int, nonfit_accesses: int) -> dict[str, object]:
+    """Write an immutable per-invocation ledger receipt outside the stable report."""
+    if fit_accesses != len(members) or nonfit_accesses < 0:
+        raise CampaignError("generation invocation ledger is inconsistent")
+    receipt = {"mode": mode, "invocation_measured_payload_members": list(members),
+               "invocation_measured_payload_count": fit_accesses,
+               "invocation_measured_nonfit_payload_count": nonfit_accesses}
+    receipt["invocation_receipt_digest"] = _digest(receipt)
+    path = Path(root) / "invocations" / "generation-{}-{}.json".format(mode, receipt["invocation_receipt_digest"])
+    try:
+        if path.exists():
+            snapshot = read_regular_path_snapshot(path, "generation invocation receipt")
+            existing = json.loads(snapshot.bytes)
+            if existing != receipt:
+                raise CampaignError("existing generation invocation receipt is inconsistent")
+        else:
+            write_new_regular_path(path, _canonical_bytes(receipt) + b"\n", "generation invocation receipt")
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CampaignError("cannot safely write generation invocation receipt") from error
+    return receipt
 
 
 def _load_verified_generation_report(root: Path, mode: str) -> dict[str, object]:
@@ -298,6 +320,42 @@ def _verify_generation_report(*, root: Path, mode: str, report: Mapping[str, obj
         return existing
     try:
         write_new_regular_path(report_path, _canonical_bytes(expected) + b"\n", "generation report")
+    except ManifestVerificationError as error:
+        raise CampaignError(str(error)) from error
+    return expected
+
+
+def _audit_summary(*, generation: Mapping[str, object], audit: Mapping[str, object], threshold_protocol_hash: str) -> dict[str, object]:
+    _lower_digest(threshold_protocol_hash, "threshold protocol hash")
+    summary = {"generation": dict(generation), "audit": dict(audit), "threshold_protocol_hash": threshold_protocol_hash}
+    return {**summary, "audit_summary_digest": _digest(summary)}
+
+
+def _load_verified_audit_summary(root: Path) -> dict[str, object]:
+    try:
+        snapshot = read_regular_path_snapshot(Path(root) / "audit-summary.json", "audit summary")
+        value = json.loads(snapshot.bytes)
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CampaignError("audit summary is unavailable") from error
+    if not isinstance(value, dict):
+        raise CampaignError("audit summary is malformed")
+    observed = value.get("audit_summary_digest")
+    if not isinstance(observed, str) or observed != _digest({key: item for key, item in value.items() if key != "audit_summary_digest"}):
+        raise CampaignError("audit summary digest mismatch")
+    return value
+
+
+def _verify_audit_summary(*, root: Path, summary: Mapping[str, object]) -> dict[str, object]:
+    """Append-only audit summary: accept only the exact current recomputation."""
+    expected = dict(summary)
+    path = Path(root) / "audit-summary.json"
+    if path.exists():
+        existing = _load_verified_audit_summary(root)
+        if existing != expected:
+            raise CampaignError("existing audit summary does not match recomputed generation, audit, and threshold hash")
+        return existing
+    try:
+        write_new_regular_path(path, _canonical_bytes(expected) + b"\n", "audit summary")
     except ManifestVerificationError as error:
         raise CampaignError(str(error)) from error
     return expected
@@ -336,8 +394,8 @@ def _case_for_threshold(case: Mapping[str, object], beta_compliance: float, beta
 
 _SCORE_FIELDS = [
     "has_defensive_cap",
-    "individual_range_penalty",
     "individual_distance_from_half",
+    "individual_range_penalty",
     "solver_failure_fraction",
     "co_crossing_count",
     "beta_compliance",
@@ -366,7 +424,8 @@ def select_thresholds(trajectories: Sequence[Mapping[str, object]], *, beta_grid
             caps = sum(reason == "defensive_cap" for reason in reasons.values())
             combined_named = comp + stress
             individual_named = max(comp, stress)
-            score = (caps != 0, not (0.40 <= individual_named <= 0.60), abs(individual_named - 0.50),
+            individual_range_penalty = not (0.40 <= comp <= 0.60 and 0.40 <= stress <= 0.60)
+            score = (caps != 0, abs(individual_named - 0.50), individual_range_penalty,
                      failures, co_crossings, float(beta_c), float(beta_s))
             candidates.append((score, {"beta_compliance": float(beta_c), "beta_stress": float(beta_s), "case_reasons": reasons,
                                        "constraint_activity": {"compliance": comp, "stress": stress},
@@ -427,6 +486,42 @@ def _code_hash() -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _threshold_design_protocol(*, subsets: Mapping[str, Sequence[str]], split_sha256: str, archive_sha256: str) -> dict[str, object]:
+    """Build the complete frozen threshold-design protocol from current inputs."""
+    threshold_ids = list(subsets["threshold_design"])
+    audit_ids = list(subsets["activity_audit"])
+    return {"schema_version": SCHEMA_VERSION, "namespace": NAMESPACE, "role": "fit", "mode": "threshold_design",
+            "threshold_design_ids": threshold_ids, "activity_audit_ids": audit_ids, "selected_ids": threshold_ids,
+            "split_manifest_sha256": split_sha256, "archive_sha256": archive_sha256, "code_sha256": _code_hash(),
+            "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
+                         "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
+            "topology_mode": "conservative_local_6_26", "max_batches": 40, "frozen_thresholds": None,
+            "label": "FROZEN_FIT_ONLY_PROTOCOL"}
+
+
+def _audit_compatibility_inputs(*, split_manifest: Path, expected_split_sha256: str, expected_archive_sha256: str) -> dict[str, object]:
+    """Read only the split descriptor to form audit compatibility inputs before archive access."""
+    _lower_digest(expected_split_sha256, "split anchor")
+    _lower_digest(expected_archive_sha256, "archive anchor")
+    try:
+        split = read_regular_path_snapshot(split_manifest, "split manifest")
+        sources = json.loads(split.bytes.decode("utf-8"))
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CampaignError("split manifest is unavailable for audit compatibility") from error
+    if split.sha256 != expected_split_sha256:
+        raise CampaignError("split manifest sha256 mismatch")
+    if not isinstance(sources, Mapping):
+        raise CampaignError("split manifest is malformed")
+    return _threshold_design_protocol(subsets=ranked_fit_subsets(sources), split_sha256=split.sha256, archive_sha256=expected_archive_sha256)
+
+
+def validate_threshold_audit_compatibility(frozen_selection: Mapping[str, object], audit_inputs: Mapping[str, object]) -> None:
+    """Pure fail-closed equivalence check of frozen design and current audit inputs."""
+    protocol = frozen_selection.get("protocol")
+    if not isinstance(protocol, Mapping) or dict(protocol) != dict(audit_inputs):
+        raise CampaignError("frozen threshold protocol is incompatible with current audit inputs")
+
+
 def _campaign_manifest(root: Path) -> dict[str, object]:
     try:
         snapshot = read_regular_path_snapshot(root / "campaign-manifest.json", "campaign manifest")
@@ -442,6 +537,7 @@ def _new_campaign(root: Path, manifest: Mapping[str, object]) -> None:
     try:
         with open_new_artifact_root(root) as root_fd:
             os.mkdir("cases", dir_fd=root_fd)
+            os.mkdir("invocations", dir_fd=root_fd)
         write_new_regular_path(root / "campaign-manifest.json", _canonical_bytes({**manifest, "manifest_digest": _digest(manifest)}) + b"\n", "campaign manifest")
     except (ManifestVerificationError, OSError) as error:
         raise CampaignError("cannot create campaign root") from error
@@ -468,14 +564,19 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
         ids = ids[:3]
         if smoke_batch_cap is None or smoke_batch_cap != 2:
             raise CampaignError("SMOKE_ONLY_NONPROMOTABLE requires --smoke-batch-cap 2")
-    protocol = {"schema_version": SCHEMA_VERSION, "namespace": NAMESPACE, "role": "fit", "mode": mode,
-                "threshold_design_ids": subsets["threshold_design"], "activity_audit_ids": subsets["activity_audit"],
-                "selected_ids": ids, "split_manifest_sha256": split_sha, "archive_sha256": archive_sha, "code_sha256": _code_hash(),
-                "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
-                             "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
-                "topology_mode": "conservative_local_6_26", "max_batches": 40,
-                "frozen_thresholds": None if mode != "activity_audit" else {"beta_compliance": beta_compliance, "beta_stress": beta_stress, "threshold_protocol_hash": threshold_protocol_hash},
-                "label": "SMOKE_ONLY_NONPROMOTABLE" if mode == "smoke" else "FROZEN_FIT_ONLY_PROTOCOL"}
+    if mode == "threshold_design":
+        protocol = _threshold_design_protocol(subsets=subsets, split_sha256=split_sha, archive_sha256=archive_sha)
+    else:
+        protocol = {"schema_version": SCHEMA_VERSION, "namespace": NAMESPACE, "role": "fit", "mode": mode,
+                    "threshold_design_ids": subsets["threshold_design"], "activity_audit_ids": subsets["activity_audit"],
+                    "selected_ids": ids, "split_manifest_sha256": split_sha, "archive_sha256": archive_sha, "code_sha256": _code_hash(),
+                    "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
+                                 "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
+                    "topology_mode": "conservative_local_6_26", "max_batches": 40,
+                    "frozen_thresholds": None if mode == "smoke" else {"beta_compliance": beta_compliance, "beta_stress": beta_stress},
+                    "label": "SMOKE_ONLY_NONPROMOTABLE" if mode == "smoke" else "FROZEN_FIT_ONLY_PROTOCOL"}
+        if mode == "activity_audit":
+            protocol["threshold_protocol_hash"] = threshold_protocol_hash
     if root.exists():
         existing = _campaign_manifest(root)
         if {key: existing.get(key) for key in protocol} != protocol:
@@ -503,8 +604,10 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
     expected_members = _expected_payload_members(generated_ids)
     if members != expected_members or fit_accesses != len(expected_members) or nonfit_accesses != 0:
         raise CampaignError("activity generation accessed an unexpected payload set")
+    invocation = _write_generation_invocation_receipt(root=root, mode=mode, members=members, fit_accesses=fit_accesses,
+                                                      nonfit_accesses=nonfit_accesses)
     report = _generation_report(root=root, mode=mode, label=protocol["label"], ids=ids)
-    return _verify_generation_report(root=root, mode=mode, report=report)
+    return {"generation": _verify_generation_report(root=root, mode=mode, report=report), "invocation": invocation}
 
 
 def select_thresholds_from_root(root: Path) -> dict[str, object]:
@@ -519,7 +622,8 @@ def select_thresholds_from_root(root: Path) -> dict[str, object]:
         raise CampaignError("threshold design trajectories are incomplete")
     selected = select_thresholds(trajectories)
     hashes = {case["sample_id"]: case["case_digest"] for case in trajectories}
-    frozen = {"schema_version": SCHEMA_VERSION, "protocol": manifest, "threshold_trajectory_hashes": hashes, **selected}
+    protocol = {key: value for key, value in manifest.items() if key != "manifest_digest"}
+    frozen = {"schema_version": SCHEMA_VERSION, "protocol": protocol, "threshold_trajectory_hashes": hashes, **selected}
     frozen["protocol_hash"] = _digest(frozen)
     write_new_regular_path(root / "threshold-selection.json", _canonical_bytes(frozen) + b"\n", "threshold selection")
     return frozen
@@ -576,18 +680,25 @@ def main() -> int:
             if not all((args.split_manifest, args.archive, args.expected_split_manifest_sha256, args.expected_fea_archive_sha256, args.threshold_selection)):
                 raise CampaignError("run-audit requires frozen selection and exact external split and archive anchors")
             frozen = _frozen_threshold_selection(args.threshold_selection)
+            audit_inputs = _audit_compatibility_inputs(split_manifest=args.split_manifest,
+                expected_split_sha256=args.expected_split_manifest_sha256, expected_archive_sha256=args.expected_fea_archive_sha256)
+            # This is deliberately before generate_trajectories opens archive bytes or payloads.
+            validate_threshold_audit_compatibility(frozen, audit_inputs)
             selected = frozen["selected"]
-            generation = generate_trajectories(root=args.root, split_manifest=args.split_manifest, archive=args.archive,
+            generation_run = generate_trajectories(root=args.root, split_manifest=args.split_manifest, archive=args.archive,
                 expected_split_sha256=args.expected_split_manifest_sha256, expected_archive_sha256=args.expected_fea_archive_sha256,
                 mode="activity_audit", beta_compliance=float(selected["beta_compliance"]), beta_stress=float(selected["beta_stress"]),
                 threshold_protocol_hash=str(frozen["protocol_hash"]))
+            generation = generation_run.get("generation")
+            invocation = generation_run.get("invocation")
+            if not isinstance(generation, Mapping) or not isinstance(invocation, Mapping):
+                raise CampaignError("activity generation result is malformed")
             audit_manifest = _campaign_manifest(args.root)
             audit_ids = audit_manifest["activity_audit_ids"]
             cases = [load_verified_case(args.root, sample_id) for sample_id in audit_ids]
-            result = {"generation": generation, "audit": audit_gate(cases), "threshold_protocol_hash": frozen["protocol_hash"]}
-            audit_path = args.root / "audit-summary.json"
-            if not audit_path.exists():
-                write_new_regular_path(audit_path, _canonical_bytes(result) + b"\n", "audit summary")
+            summary = _audit_summary(generation=generation, audit=audit_gate(cases),
+                                     threshold_protocol_hash=str(frozen["protocol_hash"]))
+            result = {**_verify_audit_summary(root=args.root, summary=summary), "invocation": invocation}
         else:
             result = summarize(args.root)
     except (CampaignError, FitOnlyAccessError, OSError, zipfile.BadZipFile) as error:
