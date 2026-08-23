@@ -75,7 +75,7 @@ def _file_open_flags() -> int:
 
 def _path_parts(path: Path) -> tuple[str, ...]:
     parts = path.parts[1:] if path.is_absolute() else path.parts
-    if not parts or any(component in ("", ".", "..") for component in parts):
+    if not parts or any(component in ("", ".", "..") or "\x00" in component for component in parts):
         raise ManifestVerificationError("artifact path must not contain empty or traversal components")
     return tuple(parts)
 
@@ -107,7 +107,7 @@ def _relative_artifact_parts(path: Path, root: Path, role: str) -> tuple[str, ..
     except ValueError as error:
         raise ManifestVerificationError("{} file must remain beneath artifact root".format(role)) from error
     portable = PurePosixPath(relative.as_posix())
-    if not portable.parts or any(component in ("", ".", "..") for component in portable.parts):
+    if not portable.parts or any(component in ("", ".", "..") or "\x00" in component for component in portable.parts):
         raise ManifestVerificationError("{} path must be a relative non-traversal path".format(role))
     return tuple(portable.parts)
 
@@ -116,22 +116,27 @@ def _record_path(path_value: object, root: Path, role: str) -> tuple[Path, tuple
     if not isinstance(path_value, str) or not path_value:
         raise ManifestVerificationError("{} path must be unique and non-empty".format(role))
     portable = PurePosixPath(path_value)
-    if portable.is_absolute() or ".." in portable.parts or portable == PurePosixPath("."):
+    if (
+        portable.is_absolute()
+        or ".." in portable.parts
+        or portable == PurePosixPath(".")
+        or any("\x00" in component for component in portable.parts)
+    ):
         raise ManifestVerificationError("{} path must be a relative non-traversal path".format(role))
     return root.joinpath(*portable.parts), tuple(portable.parts)
 
 
-def _open_error(role: str, path: Path, error: OSError) -> ManifestVerificationError:
-    if error.errno == errno.ELOOP:
+def _open_error(role: str, path: Path, error: OSError | ValueError) -> ManifestVerificationError:
+    if isinstance(error, OSError) and error.errno == errno.ELOOP:
         return ManifestVerificationError("{} file must not be a symlink: {}".format(role, path))
-    if error.errno == errno.ENOENT:
+    if isinstance(error, OSError) and error.errno == errno.ENOENT:
         return ManifestVerificationError("{} file is missing: {}".format(role, path))
     return ManifestVerificationError("cannot safely open {} file {}: {}".format(role, path, error))
 
 
 def _read_regular_snapshot(root_fd: int, relative_parts: tuple[str, ...], role: str, path: Path) -> _FileSnapshot:
     """Read one nonblocking, no-follow regular file through a held root descriptor."""
-    if not relative_parts or any(component in ("", ".", "..") for component in relative_parts):
+    if not relative_parts or any(component in ("", ".", "..") or "\x00" in component for component in relative_parts):
         raise ManifestVerificationError("{} path must be a relative non-traversal path".format(role))
     parent_fd = os.dup(root_fd)
     file_fd: int | None = None
@@ -139,13 +144,13 @@ def _read_regular_snapshot(root_fd: int, relative_parts: tuple[str, ...], role: 
         for component in relative_parts[:-1]:
             try:
                 next_fd = os.open(component, _directory_open_flags(), dir_fd=parent_fd)
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 raise _open_error(role, path, error) from error
             os.close(parent_fd)
             parent_fd = next_fd
         try:
             file_fd = os.open(relative_parts[-1], _file_open_flags(), dir_fd=parent_fd)
-        except OSError as error:
+        except (OSError, ValueError) as error:
             raise _open_error(role, path, error) from error
     finally:
         os.close(parent_fd)
@@ -196,6 +201,115 @@ def sha256_file(path: Path) -> str:
     return snapshot.sha256
 
 
+def _write_new_regular_file(parent_fd: int, name: str, payload: bytes, path: Path, role: str) -> _FileSnapshot:
+    """Create and fully write one new regular leaf without pathname reopening."""
+    if not name or name in (".", "..") or "/" in name or "\x00" in name:
+        raise ManifestVerificationError("{} path must be a relative non-traversal path".format(role))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        file_fd = os.open(name, flags, 0o644, dir_fd=parent_fd)
+    except FileExistsError:
+        raise
+    except (OSError, ValueError) as error:
+        raise _open_error(role, path, error) from error
+    try:
+        before = os.fstat(file_fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ManifestVerificationError("{} file must be a regular file: {}".format(role, path))
+        view = memoryview(payload)
+        while view:
+            written = os.write(file_fd, view)
+            if written <= 0:
+                raise ManifestVerificationError("cannot completely write {} file: {}".format(role, path))
+            view = view[written:]
+        after = os.fstat(file_fd)
+        if _identity(before)[:3] != _identity(after)[:3] or after.st_size != len(payload):
+            raise ManifestVerificationError("{} file changed while being written: {}".format(role, path))
+        return _FileSnapshot(
+            path=path,
+            relative_parts=(name,),
+            role=role,
+            bytes=payload,
+            sha256=hashlib.sha256(payload).hexdigest(),
+            identity=_identity(after),
+        )
+    finally:
+        os.close(file_fd)
+
+
+def _mkdir_open_new_directory(parent_fd: int, name: str, path: Path) -> int:
+    """Create one fresh child directory and immediately pin it by no-follow FD."""
+    if not name or name in (".", "..") or "/" in name or "\x00" in name:
+        raise ManifestVerificationError("artifact path must not contain empty or traversal components")
+    try:
+        os.mkdir(name, 0o755, dir_fd=parent_fd)
+    except FileExistsError:
+        raise
+    except (OSError, ValueError) as error:
+        raise ManifestVerificationError("cannot safely create artifact root: {}".format(error)) from error
+    try:
+        return os.open(name, _directory_open_flags(), dir_fd=parent_fd)
+    except (OSError, ValueError) as error:
+        raise ManifestVerificationError("cannot safely open newly created artifact root: {}".format(error)) from error
+
+
+@contextlib.contextmanager
+def open_new_artifact_root(path: Path) -> Iterator[int]:
+    """Descriptor-anchor all parent creation and hold a newly created final root."""
+    path = Path(path)
+    parts = _path_parts(path)
+    current_fd = os.open(path.anchor if path.is_absolute() else ".", _directory_open_flags())
+    try:
+        for component in parts[:-1]:
+            try:
+                next_fd = os.open(component, _directory_open_flags(), dir_fd=current_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, 0o755, dir_fd=current_fd)
+                    next_fd = os.open(component, _directory_open_flags(), dir_fd=current_fd)
+                except (OSError, ValueError) as error:
+                    raise ManifestVerificationError("cannot safely create artifact parent: {}".format(error)) from error
+            except (OSError, ValueError) as error:
+                if isinstance(error, OSError) and error.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ManifestVerificationError("artifact root must not contain symlink components") from error
+                raise ManifestVerificationError("cannot safely open artifact parent: {}".format(error)) from error
+            os.close(current_fd)
+            current_fd = next_fd
+        root_fd = _mkdir_open_new_directory(current_fd, parts[-1], path)
+        try:
+            yield root_fd
+        finally:
+            os.close(root_fd)
+    finally:
+        os.close(current_fd)
+
+
+def assert_lexical_root_identity(path: Path, held_root_fd: int) -> None:
+    """Ensure the caller's lexical root still identifies the pinned new directory."""
+    held = os.fstat(held_root_fd)
+    try:
+        with _open_directory_path(Path(path)) as current_fd:
+            current = os.fstat(current_fd)
+    except (ManifestVerificationError, OSError, ValueError) as error:
+        raise ManifestVerificationError("artifact root changed before return") from error
+    if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        raise ManifestVerificationError("artifact root changed before return")
+
+
+def read_regular_path_snapshot(path: Path, role: str) -> _FileSnapshot:
+    """Read a lexical path using no-follow descriptors through every component."""
+    path = Path(path)
+    try:
+        with _open_directory_path(path.parent) as parent_fd:
+            return _read_regular_snapshot(parent_fd, (path.name,), role, path)
+    except FileNotFoundError:
+        raise
+    except (ManifestVerificationError, OSError, ValueError) as error:
+        if isinstance(error, ManifestVerificationError):
+            raise
+        raise ManifestVerificationError("cannot safely inspect {} file: {}".format(role, error)) from error
+
+
 def _is_beneath(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -243,6 +357,47 @@ def _file_records(files: Mapping[str, Path], artifact_root: Path, artifact_root_
         snapshot = _read_regular_snapshot(artifact_root_fd, relative_parts, "declared", path)
         records.append({"logical_id": logical_id, "path": "/".join(relative_parts), "sha256": snapshot.sha256})
     return records
+
+
+def _snapshot_records(snapshots: Mapping[str, _FileSnapshot]) -> list[dict[str, str]]:
+    records = []
+    for logical_id, snapshot in sorted(snapshots.items()):
+        if not isinstance(logical_id, str) or not logical_id:
+            raise ManifestVerificationError("declared logical_id must be non-empty")
+        records.append(
+            {"logical_id": logical_id, "path": "/".join(snapshot.relative_parts), "sha256": snapshot.sha256}
+        )
+    return records
+
+
+def build_run_manifest_from_snapshots(
+    *,
+    run_id: str,
+    inputs: Mapping[str, _FileSnapshot],
+    outputs: Mapping[str, _FileSnapshot],
+    targets: TargetRegistry,
+    split_sha256: str,
+    split_artifact: str,
+) -> dict:
+    """Build a manifest from exact already-held descriptor snapshots."""
+    if not run_id:
+        raise ManifestVerificationError("run_id must be non-empty")
+    if not _is_lowercase_sha256(split_sha256):
+        raise ManifestVerificationError("split_sha256 must be a lowercase SHA-256 digest")
+    if not isinstance(split_artifact, str) or not split_artifact:
+        raise ManifestVerificationError("split_artifact must name a declared output")
+    output_records = _snapshot_records(outputs)
+    if split_artifact not in {record["logical_id"] for record in output_records}:
+        raise ManifestVerificationError("split_artifact must name a declared output")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "status": "complete",
+        "targets": targets.as_list(),
+        "split": {"algorithm": "family-id-v1", "artifact": split_artifact, "sha256": split_sha256},
+        "inputs": _snapshot_records(inputs),
+        "outputs": output_records,
+    }
 
 
 def build_run_manifest(

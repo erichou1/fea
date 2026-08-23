@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -53,6 +54,33 @@ def test_smoke_rejects_a_lexically_symlinked_output_ancestor_before_creation(tmp
     with pytest.raises(ManifestVerificationError, match="artifact root must not contain symlink components"):
         run_smoke(fixture, alias / "artifact")
     assert not (real / "artifact").exists()
+
+
+def test_smoke_creates_nested_literal_output_tree_and_rejects_existing_root(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
+    output = tmp_path / "literal space; $metachar*" / "nested" / "artifact"
+
+    manifest = run_smoke(fixture, output)
+
+    assert manifest == output / "run-manifest.json"
+    _verify(manifest)
+    with pytest.raises(FileExistsError):
+        run_smoke(fixture, output)
+
+
+def test_smoke_rejects_leaf_symlink_and_fifo_before_writing(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
+    external = tmp_path / "external"
+    external.mkdir()
+    for leaf in ("symlink", "fifo"):
+        output = tmp_path / leaf
+        if leaf == "symlink":
+            output.symlink_to(external, target_is_directory=True)
+        else:
+            os.mkfifo(output)
+        with pytest.raises((FileExistsError, ManifestVerificationError)):
+            run_smoke(fixture, output)
+        assert not (external / "run-manifest.json").exists()
 
 
 def test_smoke_manifest_encodes_baseline_compliance_ratio(tmp_path: Path) -> None:

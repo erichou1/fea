@@ -24,10 +24,12 @@ verify-artifact:
 	PYTHONPATH=src "$$PYTHON" -m sasto.verify_artifact --expected-manifest-sha256 "$$EXPECTED_MANIFEST_SHA256" "$$ARTIFACT_DIR/run-manifest.json"
 
 reproduce-paper:
-	PYTHONPATH=src "$(PYTHON)" -m sasto.reproduce_paper
+	@set -eu; \
+	PYTHONPATH=src "$$PYTHON" -m sasto.reproduce_paper
 
 test:
-	PYTHONPATH=src "$(PYTHON)" -m pytest -q
+	@set -eu; \
+	PYTHONPATH=src "$$PYTHON" -m pytest -q
 
 test-locked:
 	uv sync --frozen --group test
