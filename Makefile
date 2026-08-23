@@ -5,10 +5,13 @@ ARTIFACT_DIR ?= artifacts/smoke
 
 smoke:
 	PYTHONPATH=src $(PYTHON) -m sasto.smoke --fixture fixtures/smoke/families.json --output $(ARTIFACT_DIR)
-	$(MAKE) verify-artifact ARTIFACT_DIR=$(ARTIFACT_DIR)
+	@digest=$$(shasum -a 256 "$(ARTIFACT_DIR)/run-manifest.json" | awk '{print $$1}'); \
+	printf 'external_manifest_sha256=%s\n' "$$digest"; \
+	$(MAKE) verify-artifact ARTIFACT_DIR=$(ARTIFACT_DIR) EXPECTED_MANIFEST_SHA256=$$digest
 
 verify-artifact:
-	PYTHONPATH=src $(PYTHON) -m sasto.verify_artifact $(ARTIFACT_DIR)/run-manifest.json
+	@test -n "$(EXPECTED_MANIFEST_SHA256)" || (printf '%s\n' 'EXPECTED_MANIFEST_SHA256 is required from an external trust anchor' >&2; exit 2)
+	PYTHONPATH=src $(PYTHON) -m sasto.verify_artifact --expected-manifest-sha256 "$(EXPECTED_MANIFEST_SHA256)" $(ARTIFACT_DIR)/run-manifest.json
 
 reproduce-paper:
 	PYTHONPATH=src $(PYTHON) -m sasto.reproduce_paper

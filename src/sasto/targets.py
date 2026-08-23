@@ -31,6 +31,7 @@ class TargetSpec:
             raise ValueError("direction must be 'upper' or 'lower'")
         if not _is_finite_number(self.threshold):
             raise ValueError("target threshold must be a finite number")
+        object.__setattr__(self, "threshold", float(self.threshold))
         if not isinstance(self.normalization, str):
             raise ValueError("normalization must be 'absolute' or 'baseline_ratio'")
         if self.base_target is not None and not isinstance(self.base_target, str):

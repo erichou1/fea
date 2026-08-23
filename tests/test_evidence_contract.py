@@ -86,6 +86,8 @@ def test_canonical_locked_environment_contract() -> None:
     assert "test-locked:" in makefile
     assert "uv sync --frozen" in makefile
     assert "uv run --frozen --group test python -m pytest -q" in makefile
+    assert "EXPECTED_MANIFEST_SHA256 is required from an external trust anchor" in makefile
+    assert '--expected-manifest-sha256 "$(EXPECTED_MANIFEST_SHA256)"' in makefile
 
 
 @pytest.mark.parametrize(
@@ -213,11 +215,12 @@ def test_hash_mutation_rejects_complete_manifest(tmp_path: Path) -> None:
     )
     manifest_path = tmp_path / "run-manifest.json"
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
-    assert verify_run_manifest(manifest_path) is None
+    expected_manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    assert verify_run_manifest(manifest_path, expected_manifest_sha256)["run_id"] == "unit-run"
 
     output.write_text('{"status": "mutated"}\n', encoding="utf-8")
     with pytest.raises(ManifestVerificationError, match="sha256 mismatch"):
-        verify_run_manifest(manifest_path)
+        verify_run_manifest(manifest_path, expected_manifest_sha256)
 
 
 def test_manifest_builder_rejects_external_and_symlinked_artifact_records(tmp_path: Path) -> None:
@@ -257,7 +260,7 @@ def test_manifest_builder_rejects_symlinked_artifact_root_before_resolving(tmp_p
     linked_root = tmp_path / "linked-root"
     linked_root.symlink_to(real_root, target_is_directory=True)
 
-    with pytest.raises(ManifestVerificationError, match="artifact_root must be a real directory"):
+    with pytest.raises(ManifestVerificationError, match="artifact_root must not contain symlink components"):
         build_run_manifest(
             run_id="linked-root",
             inputs={"fixture": real_root / "input.json"},

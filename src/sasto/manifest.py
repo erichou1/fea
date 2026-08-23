@@ -27,6 +27,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _is_lowercase_sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
 def _is_beneath(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -114,11 +118,13 @@ def build_run_manifest(
     """Build a complete, self-contained record after declared files exist."""
     if not run_id:
         raise ManifestVerificationError("run_id must be non-empty")
-    if len(split_sha256) != 64 or any(char not in "0123456789abcdef" for char in split_sha256):
+    if not _is_lowercase_sha256(split_sha256):
         raise ManifestVerificationError("split_sha256 must be a lowercase SHA-256 digest")
     if not isinstance(split_artifact, str) or not split_artifact:
         raise ManifestVerificationError("split_artifact must name a declared output")
     root = Path(artifact_root)
+    if has_lexical_symlink_component(root):
+        raise ManifestVerificationError("artifact_root must not contain symlink components")
     if root.is_symlink() or not root.is_dir():
         raise ManifestVerificationError("artifact_root must be a real directory")
     root = root.resolve()
@@ -196,19 +202,38 @@ def _verify_targets(targets: object) -> None:
         raise ManifestVerificationError("targets require unique names") from error
 
 
-def verify_run_manifest(manifest_path: Path) -> None:
+def verify_run_manifest(manifest_path: Path, expected_manifest_sha256: str) -> dict:
     """Reject incomplete, nonportable, malformed, or hash-mutated evidence."""
     manifest_path = Path(manifest_path)
+    if not _is_lowercase_sha256(expected_manifest_sha256):
+        raise ManifestVerificationError("expected manifest sha256 must be a lowercase SHA-256 digest")
     if has_lexical_symlink_component(manifest_path):
         raise ManifestVerificationError("manifest must reside in a real artifact root")
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_mode = manifest_path.lstat().st_mode
+    except OSError as error:
+        raise ManifestVerificationError("cannot inspect manifest: {}".format(error)) from error
+    if stat.S_ISLNK(manifest_mode) or not stat.S_ISREG(manifest_mode):
+        raise ManifestVerificationError("manifest file must be a regular file: {}".format(manifest_path))
+    try:
+        manifest_bytes = manifest_path.read_bytes()
     except (OSError, json.JSONDecodeError) as error:
         raise ManifestVerificationError("cannot read manifest: {}".format(error)) from error
+    observed_manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    if observed_manifest_sha256 != expected_manifest_sha256:
+        raise ManifestVerificationError(
+            "expected manifest sha256 mismatch: expected {}, observed {}".format(
+                expected_manifest_sha256, observed_manifest_sha256
+            )
+        )
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ManifestVerificationError("cannot parse manifest: {}".format(error)) from error
     if not isinstance(manifest, dict):
         raise ManifestVerificationError("manifest root must be an object")
     artifact_root = manifest_path.parent.resolve()
-    if manifest_path.is_symlink() or not artifact_root.is_dir():
+    if not artifact_root.is_dir():
         raise ManifestVerificationError("manifest must reside in a real artifact root")
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise ManifestVerificationError("unsupported schema_version")
@@ -221,7 +246,7 @@ def verify_run_manifest(manifest_path: Path) -> None:
     if not isinstance(split, dict) or split.get("algorithm") != "family-id-v1":
         raise ManifestVerificationError("split must use family-id-v1")
     split_hash = split.get("sha256")
-    if not isinstance(split_hash, str) or len(split_hash) != 64:
+    if not _is_lowercase_sha256(split_hash):
         raise ManifestVerificationError("split sha256 is invalid")
     inputs = _verify_records(manifest.get("inputs"), "input", artifact_root)
     outputs = _verify_records(manifest.get("outputs"), "output", artifact_root)
@@ -241,3 +266,4 @@ def verify_run_manifest(manifest_path: Path) -> None:
         validate_family_split_manifest(declared_split)
     except (FamilyLeakageError, TypeError, ValueError) as error:
         raise ManifestVerificationError("declared split artifact is invalid: {}".format(error)) from error
+    return manifest

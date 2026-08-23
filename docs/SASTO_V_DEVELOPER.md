@@ -15,7 +15,12 @@ before any surrogate proxy gate. The canonical digital topology convention is
 call `is_simple_point_6_26`; reversed 26/6 conventions are noncanonical.
 The G0 predicate is intentionally correctness-first: it compares full-volume
 pre/post 6-foreground and exterior-aware 26-background component counts, so it
-is not a constant-time local stencil check.
+is not a constant-time local stencil check. It accepts either nested Boolean
+grids or NumPy `dtype=bool` three-dimensional arrays and rejects every other
+array dtype, non-Boolean cell, or malformed dimension. The controller measured
+only **0.34 candidate tests/s** on a 64-cubed nested grid (versus the G1 target
+of 1,000/s); throughput is explicitly a G1 performance blocker and is **not**
+claimed fixed by this G0 correctness reference.
 
 ## Target contract
 
@@ -30,6 +35,10 @@ are not a compliance API. Absolute targets must not use unit
 `compliance_ratio`), and a non-empty `base_target` provenance label; the base
 reference is external metadata and need not be another constrained registry
 member. The smoke registry uses a compliance ratio plus absolute proxy targets:
+
+Accepted thresholds are normalized to JSON-native `float` values at construction,
+so a manifest can serialize the same contract independently of whether its caller
+provided a Python or NumPy finite real scalar.
 
 | Target | Unit | Normalization | Base target | Direction | Threshold |
 | --- | --- | --- | --- | --- | ---: |
@@ -67,20 +76,37 @@ its semantics. Zero-failure
 binomial helpers are intentionally separate from conformal coverage; do not
 translate one claim into the other.
 
+### External manifest trust anchor
+
+The manifest is a payload, not its own authenticator. Every verification requires
+a caller-supplied lowercase SHA-256 digest of the **exact manifest bytes** via
+`expected_manifest_sha256` (or `--expected-manifest-sha256` in the CLI). The
+verifier `lstat`s and rejects a symlink or any non-regular manifest leaf before
+opening it, hashes the bytes before parsing, and returns the parsed object from
+those exact bytes. Consequently, changing a run ID, target, record path, or a
+self-consistent path/hash pair changes the anchored digest and is rejected.
+An unauthenticated sidecar in the artifact directory is not an external trust
+anchor and is insufficient. The expected digest must be retained or transmitted
+by a separately protected control plane. Identical manifest bytes remain valid
+after artifact relocation when supplied with the same external digest.
+
 ## Commands
 
 ```sh
 make smoke
-make verify-artifact
+make verify-artifact EXPECTED_MANIFEST_SHA256=<externally-recorded-digest>
 make reproduce-paper
 make test
 make test-locked
 ```
 
 `make smoke` writes one deterministic artifact at `artifacts/smoke` and then
-verifies it. Existing artifact roots are deliberately rejected rather than
+prints the manifest digest and verifies it using that emitted value. Persist that
+digest outside the artifact directory before a later independent verification.
+Existing artifact roots are deliberately rejected rather than
 silently overwritten. To generate a new run, choose a fresh `ARTIFACT_DIR`.
-`make verify-artifact ARTIFACT_DIR=...` verifies the selected immutable run.
+`make verify-artifact ARTIFACT_DIR=... EXPECTED_MANIFEST_SHA256=...` verifies
+the selected immutable run against its external anchor.
 
 ### Canonical locked Python environment
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -96,6 +97,7 @@ def main() -> int:
     args = parser.parse_args()
     manifest_path = run_smoke(Path(args.fixture), Path(args.output))
     print("created {}".format(manifest_path))
+    print("manifest_sha256={}".format(hashlib.sha256(manifest_path.read_bytes()).hexdigest()))
     return 0
 
 

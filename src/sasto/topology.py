@@ -6,6 +6,8 @@ from collections import deque
 from itertools import product
 from typing import Iterable, Sequence, Tuple
 
+import numpy as np
+
 
 Coordinate = Tuple[int, int, int]
 
@@ -17,14 +19,30 @@ FULL_NEIGHBORS = tuple(
 )
 
 
-def _shape(volume: Sequence[Sequence[Sequence[bool]]]) -> Coordinate:
-    if not volume or not volume[0] or not volume[0][0]:
-        raise ValueError("volume must be a non-empty rectangular 3D grid")
-    z = len(volume)
-    y = len(volume[0])
-    x = len(volume[0][0])
-    if any(len(plane) != y or any(len(row) != x for row in plane) for plane in volume):
+def _shape(volume: object) -> Coordinate:
+    """Validate a nested Boolean grid or a three-dimensional bool ndarray."""
+    if isinstance(volume, np.ndarray):
+        if volume.ndim != 3 or volume.dtype != np.dtype(bool) or any(size == 0 for size in volume.shape):
+            raise ValueError("volume must be a non-empty three-dimensional bool ndarray")
+        return tuple(int(size) for size in volume.shape)
+    if not isinstance(volume, Sequence) or isinstance(volume, (str, bytes)) or not volume:
+        raise ValueError("volume must be a non-empty rectangular 3D Boolean grid")
+    if not all(isinstance(plane, Sequence) and not isinstance(plane, (str, bytes)) and plane for plane in volume):
+        raise ValueError("volume must be a non-empty rectangular 3D Boolean grid")
+    z, y = len(volume), len(volume[0])
+    if not all(len(plane) == y for plane in volume):
         raise ValueError("volume must be rectangular")
+    if not all(
+        isinstance(row, Sequence) and not isinstance(row, (str, bytes)) and row
+        for plane in volume
+        for row in plane
+    ):
+        raise ValueError("volume must be a non-empty rectangular 3D Boolean grid")
+    x = len(volume[0][0])
+    if not all(len(row) == x for plane in volume for row in plane):
+        raise ValueError("volume must be rectangular")
+    if not all(isinstance(cell, (bool, np.bool_)) for plane in volume for row in plane for cell in row):
+        raise ValueError("volume cells must be Boolean")
     return z, y, x
 
 
@@ -80,7 +98,7 @@ def _background_component_count(background: set[Coordinate], shape: Coordinate) 
     return count
 
 
-def _is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
+def _is_simple_point_6_26(volume: object, point: Coordinate) -> bool:
     """Return whether deleting `point` preserves global 6/26 component counts.
 
     This deliberately scans the complete volume before and after the candidate
@@ -107,7 +125,7 @@ def _is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coo
     ) and _background_component_count(background, shape) == _background_component_count(after_background, shape)
 
 
-def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
+def is_simple_point_6_26(volume: object, point: Coordinate) -> bool:
     """Fail closed unless deletion preserves exact global 6/26 invariants."""
     try:
         return _is_simple_point_6_26(volume, point)

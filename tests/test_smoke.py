@@ -11,11 +11,19 @@ from sasto.manifest import ManifestVerificationError, verify_run_manifest
 from sasto.smoke import run_smoke
 
 
+def _manifest_digest(manifest_path: Path) -> str:
+    return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+
+def _verify(manifest_path: Path) -> dict:
+    return verify_run_manifest(manifest_path, _manifest_digest(manifest_path))
+
+
 def test_smoke_fixture_is_deterministic_and_verifiable(tmp_path: Path) -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
     output = tmp_path / "artifact"
     manifest_path = run_smoke(fixture, output)
-    verify_run_manifest(manifest_path)
+    _verify(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "complete"
     assert manifest["split"]["algorithm"] == "family-id-v1"
@@ -30,7 +38,7 @@ def test_smoke_fixture_is_deterministic_and_verifiable(tmp_path: Path) -> None:
 
     relocated = tmp_path / "relocated"
     output.rename(relocated)
-    verify_run_manifest(relocated / "run-manifest.json")
+    _verify(relocated / "run-manifest.json")
     with pytest.raises(FileExistsError):
         run_smoke(fixture, relocated)
 
@@ -92,7 +100,7 @@ def test_verifier_binds_split_digest_to_declared_split_artifact(tmp_path: Path) 
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     with pytest.raises(ManifestVerificationError, match="split sha256"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_verifier_rejects_digest_bound_semantically_malformed_split_artifact(tmp_path: Path) -> None:
@@ -110,7 +118,7 @@ def test_verifier_rejects_digest_bound_semantically_malformed_split_artifact(tmp
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     with pytest.raises(ManifestVerificationError, match="declared split artifact is invalid"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_verifier_rejects_digest_bound_split_family_leakage(tmp_path: Path) -> None:
@@ -129,7 +137,7 @@ def test_verifier_rejects_digest_bound_split_family_leakage(tmp_path: Path) -> N
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     with pytest.raises(ManifestVerificationError, match="declared split artifact is invalid"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_verifier_rejects_exact_string_threshold_target_reproduction(tmp_path: Path) -> None:
@@ -140,7 +148,7 @@ def test_verifier_rejects_exact_string_threshold_target_reproduction(tmp_path: P
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     with pytest.raises(ManifestVerificationError, match="target contract is invalid"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_verifier_rejects_malformed_target_fields(tmp_path: Path) -> None:
@@ -151,14 +159,14 @@ def test_verifier_rejects_malformed_target_fields(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     with pytest.raises(ManifestVerificationError, match="target contract is invalid"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_verifier_fails_closed_when_manifest_is_not_complete(tmp_path: Path) -> None:
     manifest = tmp_path / "run-manifest.json"
     manifest.write_text('{"schema_version":"1.0.0","status":"running"}', encoding="utf-8")
     with pytest.raises(ManifestVerificationError, match="fail closed"):
-        verify_run_manifest(manifest)
+        _verify(manifest)
 
 
 def test_verifier_rejects_symlinked_manifest_before_reading_contents(tmp_path: Path) -> None:
@@ -166,7 +174,7 @@ def test_verifier_rejects_symlinked_manifest_before_reading_contents(tmp_path: P
     manifest.symlink_to(tmp_path / "missing-manifest.json")
 
     with pytest.raises(ManifestVerificationError, match="manifest must reside in a real artifact root"):
-        verify_run_manifest(manifest)
+        verify_run_manifest(manifest, "0" * 64)
 
 
 def test_verifier_rejects_exact_symlinked_manifest_parent_reproduction(tmp_path: Path) -> None:
@@ -177,7 +185,7 @@ def test_verifier_rejects_exact_symlinked_manifest_parent_reproduction(tmp_path:
     symlinked_parent.symlink_to(real_artifact, target_is_directory=True)
 
     with pytest.raises(ManifestVerificationError, match="manifest must reside in a real artifact root"):
-        verify_run_manifest(symlinked_parent / "run-manifest.json")
+        verify_run_manifest(symlinked_parent / "run-manifest.json", "0" * 64)
 
 
 def test_verifier_rejects_symlinked_declared_output_control(tmp_path: Path) -> None:
@@ -192,7 +200,7 @@ def test_verifier_rejects_symlinked_declared_output_control(tmp_path: Path) -> N
     output_path.symlink_to(replacement)
 
     with pytest.raises(ManifestVerificationError, match="output file must not be a symlink"):
-        verify_run_manifest(manifest_path)
+        _verify(manifest_path)
 
 
 def test_reproduce_paper_fails_closed_until_g1_assets_and_runner_exist() -> None:
