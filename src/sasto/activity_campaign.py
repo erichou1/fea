@@ -154,13 +154,17 @@ def run_trajectory(
     baseline = solver(source.copy(), config)
     if baseline.get("status") != "success":
         return {"schema_version": SCHEMA_VERSION, "sample_id": sample_id, "baseline": _scientific_record(baseline), "batches": [],
-                "stopping_reason": "solver_failure", "solver_failure_reason": _failure_reason(baseline), "accepted_material_reduction": 0.0,
+                "stopping_reason": "solver_failure", "solver_failure_reason": _failure_reason(baseline),
+                "accepted_material_reduction": 0.0, "proposed_material_reduction": 0.0,
+                "last_admitted_batch_index": None,
                 "topology": {"topology_mode": "conservative_local_6_26", "exact_preflight": topology, "sequential_recheck": True}}
     c0, s0, d0 = _metrics(baseline)
     expected_loaded = baseline.get("loaded_node_count")
     if not isinstance(expected_loaded, int) or expected_loaded < 1:
         raise CampaignError("baseline missing stable loaded-node evidence")
     current = source.copy()
+    last_admitted = source.copy()
+    last_admitted_batch_index: int | None = None
     batches: list[dict[str, object]] = []
     per_batch_limit = max(1, math.ceil(0.05 * int(source.sum())))
     stopping = "candidate_exhaustion"
@@ -182,7 +186,9 @@ def run_trajectory(
         candidate = solver(current.copy(), config)
         batch: dict[str, object] = {"batch_index": batch_index, "accepted_coordinates": [list(point) for point in accepted],
             "accepted_count": len(accepted), "rejected_before_limit": rejected, "candidate": _scientific_record(candidate),
-            "volume_ratio": float(current.sum() / source.sum()), "sequential_recheck": True}
+            "volume_ratio": float(current.sum() / source.sum()), "proposed_volume_ratio": float(current.sum() / source.sum()),
+            "proposed_material_reduction": 1.0 - (float(current.sum()) / float(source.sum())),
+            "admitted_under_policy": False, "binding_reason": None, "sequential_recheck": True}
         if candidate.get("status") != "success":
             batches.append(batch)
             stopping = "solver_failure"; solver_failure_reason = _failure_reason(candidate)
@@ -195,16 +201,24 @@ def run_trajectory(
             break
         batch.update({"compliance_ratio": c / c0, "p99_gauss_stress_ratio": s / s0, "max_displacement_ratio": d / d0,
                      "relative_residual": candidate.get("relative_residual"), "load_node_stable": True})
-        batches.append(batch)
         binding = choose_binding_reason(c / c0, s / s0, float(beta_compliance), float(beta_stress)) if beta_compliance is not None else None
+        batch["binding_reason"] = binding
         if binding is not None:
+            batches.append(batch)
             stopping = binding
             break
+        batch["admitted_under_policy"] = True
+        last_admitted = current.copy()
+        last_admitted_batch_index = batch_index
+        batches.append(batch)
     else:
         stopping = "defensive_cap" if batch_cap == 40 else "smoke_batch_cap"
     result: dict[str, object] = {
         "schema_version": SCHEMA_VERSION, "sample_id": sample_id, "baseline": _scientific_record(baseline), "batches": batches,
-        "stopping_reason": stopping, "accepted_material_reduction": 1.0 - (float(current.sum()) / float(source.sum())),
+        "stopping_reason": stopping,
+        "accepted_material_reduction": 1.0 - (float(last_admitted.sum()) / float(source.sum())),
+        "proposed_material_reduction": 1.0 - (float(current.sum()) / float(source.sum())),
+        "last_admitted_batch_index": last_admitted_batch_index,
         "topology": {"topology_mode": "conservative_local_6_26", "exact_preflight": topology, "sequential_recheck": True,
                      "protected_minimum_and_maximum_occupied_element_x_layers": True, "protected_voxel_count": int(protected.sum())},
         "per_batch_acceptance_limit": per_batch_limit, "solver_call_count": 1 + len(batches),
@@ -243,24 +257,92 @@ def load_verified_case(root: Path, sample_id: str) -> dict[str, object]:
     return value
 
 
+def _expected_payload_members(ids: Sequence[str]) -> list[str]:
+    if any(not isinstance(sample_id, str) or not sample_id for sample_id in ids) or len(set(ids)) != len(ids):
+        raise CampaignError("generation report sample IDs are invalid")
+    return ["fea_ml/data/runs_real/{}/{}".format(sample_id, leaf) for sample_id in ids for leaf in ("occ.npz", "meta.json")]
+
+
+def _generation_report(*, root: Path, mode: str, label: object, ids: Sequence[str]) -> dict[str, object]:
+    """Derive a resume-stable report solely from completed verified cases and protocol IDs."""
+    members = _expected_payload_members(ids)
+    report = {"mode": mode, "label": label, "case_count": len(ids),
+              "results": [{"sample_id": sample_id, "case_digest": load_verified_case(root, sample_id)["case_digest"]} for sample_id in ids],
+              "fit_payload_access_count": len(members), "nonfit_payload_access_count": 0,
+              "archive_payload_members": members}
+    return {**report, "report_digest": _digest(report)}
+
+
+def _load_verified_generation_report(root: Path, mode: str) -> dict[str, object]:
+    try:
+        snapshot = read_regular_path_snapshot(Path(root) / "generation-{}.json".format(mode), "generation report")
+        value = json.loads(snapshot.bytes)
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CampaignError("generation report is unavailable") from error
+    if not isinstance(value, dict):
+        raise CampaignError("generation report is malformed")
+    observed = value.get("report_digest")
+    if not isinstance(observed, str) or observed != _digest({key: item for key, item in value.items() if key != "report_digest"}):
+        raise CampaignError("generation report digest mismatch")
+    return value
+
+
+def _verify_generation_report(*, root: Path, mode: str, report: Mapping[str, object]) -> dict[str, object]:
+    """Write once or reject a resume whose report is not an exact recomputation."""
+    report_path = Path(root) / "generation-{}.json".format(mode)
+    expected = dict(report)
+    if report_path.exists():
+        existing = _load_verified_generation_report(root, mode)
+        if existing != expected:
+            raise CampaignError("existing generation report does not match completed cases")
+        return existing
+    try:
+        write_new_regular_path(report_path, _canonical_bytes(expected) + b"\n", "generation report")
+    except ManifestVerificationError as error:
+        raise CampaignError(str(error)) from error
+    return expected
+
+
 def _case_for_threshold(case: Mapping[str, object], beta_compliance: float, beta_stress: float) -> tuple[str, bool]:
-    if case.get("stopping_reason") == "solver_failure":
-        return "solver_failure", False
-    if case.get("stopping_reason") == "defensive_cap":
-        return "defensive_cap", False
+    """Replay every successful ratio-bearing batch before honoring terminal state."""
     batches = case.get("batches")
     if not isinstance(batches, list):
         raise CampaignError("trajectory batches are invalid")
     for batch in batches:
         if not isinstance(batch, dict):
             raise CampaignError("trajectory batch is invalid")
+        candidate = batch.get("candidate")
+        if isinstance(candidate, Mapping) and candidate.get("status") != "success":
+            continue
+        if "compliance_ratio" not in batch or "p99_gauss_stress_ratio" not in batch:
+            # A solver-failed terminal candidate has no ratios and cannot cross a threshold.
+            continue
         try:
-            reason = choose_binding_reason(float(batch["compliance_ratio"]), float(batch["p99_gauss_stress_ratio"]), beta_compliance, beta_stress)
-        except (KeyError, TypeError, ValueError) as error:
-            raise CampaignError("threshold trajectory has no replayable ratios") from error
+            compliance_ratio = float(batch["compliance_ratio"])
+            stress_ratio = float(batch["p99_gauss_stress_ratio"])
+        except (TypeError, ValueError) as error:
+            raise CampaignError("threshold trajectory has invalid replay ratios") from error
+        if not all(np.isfinite(value) and value > 0.0 for value in (compliance_ratio, stress_ratio)):
+            raise CampaignError("threshold trajectory has invalid replay ratios")
+        reason = choose_binding_reason(compliance_ratio, stress_ratio, beta_compliance, beta_stress)
         if reason:
-            return reason, reason == "compliance" and float(batch["p99_gauss_stress_ratio"]) > beta_stress or reason == "stress" and float(batch["compliance_ratio"]) > beta_compliance
-    return str(case.get("stopping_reason", "candidate_exhaustion")), False
+            return reason, ((reason == "compliance" and stress_ratio > beta_stress) or
+                            (reason == "stress" and compliance_ratio > beta_compliance))
+    stopping_reason = case.get("stopping_reason", "candidate_exhaustion")
+    if not isinstance(stopping_reason, str):
+        raise CampaignError("trajectory stopping reason is invalid")
+    return stopping_reason, False
+
+
+_SCORE_FIELDS = [
+    "has_defensive_cap",
+    "individual_range_penalty",
+    "individual_distance_from_half",
+    "solver_failure_fraction",
+    "co_crossing_count",
+    "beta_compliance",
+    "beta_stress",
+]
 
 
 def select_thresholds(trajectories: Sequence[Mapping[str, object]], *, beta_grid: Sequence[float] = BETA_GRID) -> dict[str, object]:
@@ -277,14 +359,24 @@ def select_thresholds(trajectories: Sequence[Mapping[str, object]], *, beta_grid
                     raise CampaignError("threshold trajectory sample IDs must be unique")
                 reason, co_crossed = _case_for_threshold(case, float(beta_c), float(beta_s))
                 reasons[sample_id] = reason; co_crossings += int(co_crossed)
-            n = len(reasons); comp = sum(reason == "compliance" for reason in reasons.values()) / n; stress = sum(reason == "stress" for reason in reasons.values()) / n
-            failures = sum(reason == "solver_failure" for reason in reasons.values()) / n; caps = sum(reason == "defensive_cap" for reason in reasons.values())
-            named = comp + stress
-            score = (caps != 0, abs(max(comp, stress) - 0.50), not (0.40 <= named <= 0.60), failures, co_crossings, float(beta_c), float(beta_s))
+            n = len(reasons)
+            comp = sum(reason == "compliance" for reason in reasons.values()) / n
+            stress = sum(reason == "stress" for reason in reasons.values()) / n
+            failures = sum(reason == "solver_failure" for reason in reasons.values()) / n
+            caps = sum(reason == "defensive_cap" for reason in reasons.values())
+            combined_named = comp + stress
+            individual_named = max(comp, stress)
+            score = (caps != 0, not (0.40 <= individual_named <= 0.60), abs(individual_named - 0.50),
+                     failures, co_crossings, float(beta_c), float(beta_s))
             candidates.append((score, {"beta_compliance": float(beta_c), "beta_stress": float(beta_s), "case_reasons": reasons,
-                                       "constraint_activity": {"compliance": comp, "stress": stress}, "solver_failure_fraction": failures,
-                                       "defensive_cap_count": caps, "co_crossing_count": co_crossings}))
-    _, selected = min(candidates, key=lambda item: item[0])
+                                       "constraint_activity": {"compliance": comp, "stress": stress},
+                                       "combined_named_constraint_fraction": combined_named,
+                                       "individual_named_constraint_fraction": individual_named,
+                                       "solver_failure_fraction": failures, "defensive_cap_count": caps,
+                                       "co_crossing_count": co_crossings, "score_fields": _SCORE_FIELDS, "score": score}))
+    winning_score, selected = min(candidates, key=lambda item: item[0])
+    if selected["score"] != winning_score:
+        raise CampaignError("threshold selection score is inconsistent")
     return {"selected": {"beta_compliance": selected["beta_compliance"], "beta_stress": selected["beta_stress"]}, "selection": selected}
 
 
@@ -391,12 +483,11 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
     else:
         _new_campaign(root, protocol)
     archive_ledger = _PayloadAccessLedger(ids)
-    results = []
+    generated_ids: list[str] = []
     with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as opened:
         for sample_id in ids:
             try:
-                case = load_verified_case(root, sample_id)
-                results.append({"sample_id": sample_id, "status": "resumed", "case_digest": case["case_digest"]})
+                load_verified_case(root, sample_id)
                 continue
             except CampaignError as error:
                 if (root / "cases" / "{}.json".format(sample_id)).exists():
@@ -407,15 +498,13 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
             case = run_trajectory(sample_id=sample_id, volume=volume, config=config, batch_cap=smoke_batch_cap or 40,
                                   beta_compliance=beta_compliance, beta_stress=beta_stress)
             write_case_record(root, case)
-            results.append({"sample_id": sample_id, "status": "generated", "case_digest": case["case_digest"]})
+            generated_ids.append(sample_id)
     members, fit_accesses, nonfit_accesses = archive_ledger.evidence()
-    report = {"mode": mode, "label": protocol["label"], "case_count": len(ids), "results": results,
-              "fit_payload_access_count": fit_accesses, "nonfit_payload_access_count": nonfit_accesses,
-              "archive_payload_members": members}
-    report_path = root / "generation-{}.json".format(mode)
-    if not report_path.exists():
-        write_new_regular_path(report_path, _canonical_bytes(report) + b"\n", "generation report")
-    return report
+    expected_members = _expected_payload_members(generated_ids)
+    if members != expected_members or fit_accesses != len(expected_members) or nonfit_accesses != 0:
+        raise CampaignError("activity generation accessed an unexpected payload set")
+    report = _generation_report(root=root, mode=mode, label=protocol["label"], ids=ids)
+    return _verify_generation_report(root=root, mode=mode, report=report)
 
 
 def select_thresholds_from_root(root: Path) -> dict[str, object]:
