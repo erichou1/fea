@@ -6,7 +6,7 @@ export ARTIFACT_DIR
 export EXPECTED_MANIFEST_SHA256
 export PYTHON
 
-.PHONY: smoke verify-artifact reproduce-paper test test-locked
+.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked topology-campaign
 
 smoke:
 	@set -eu; \
@@ -34,3 +34,15 @@ test:
 test-locked:
 	uv sync --frozen --group test
 	uv run --frozen --group test python -m pytest -q
+
+test-g1-locked:
+	uv sync --frozen --group test
+	uv run --frozen --group test python -m pytest -q tests/test_topology_g1.py
+
+topology-campaign:
+	@set -eu; \
+	if [ -n "$${TOPOLOGY_DATA_ROOT:-}" ]; then \
+		uv run --frozen --group test python -m sasto.topology_campaign --neighborhoods "$${TOPOLOGY_NEIGHBORHOODS:-1000000}" --data-root "$$TOPOLOGY_DATA_ROOT"; \
+	else \
+		uv run --frozen --group test python -m sasto.topology_campaign --neighborhoods "$${TOPOLOGY_NEIGHBORHOODS:-1000000}"; \
+	fi

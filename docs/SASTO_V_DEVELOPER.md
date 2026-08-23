@@ -8,19 +8,50 @@ family-disjoint roles, manifest admission, global digital topology utilities,
 and a public smoke artifact. It does **not** establish FEA validity, engineering
 safety, construction readiness, surrogate accuracy, or paper results.
 
-The sole canonical G0 SASTO-PA admission runner is
-`evaluate_erosion_candidate` in `sasto.sasto_pa`. It applies the topology gate
-before any surrogate proxy gate. The canonical digital topology convention is
-**6-connected foreground and 26-connected background**. Any erosion runner must
-call `is_simple_point_6_26`; reversed 26/6 conventions are noncanonical.
-The G0 predicate is intentionally correctness-first: it compares full-volume
-pre/post 6-foreground and exterior-aware 26-background component counts, so it
-is not a constant-time local stencil check. It accepts either nested Boolean
-grids or NumPy `dtype=bool` three-dimensional arrays and rejects every other
-array dtype, non-Boolean cell, or malformed dimension. The controller measured
-only **0.34 candidate tests/s** on a 64-cubed nested grid (versus the G1 target
-of 1,000/s); throughput is explicitly a G1 performance blocker and is **not**
-claimed fixed by this G0 correctness reference.
+The canonical digital topology convention is **6-connected foreground and
+26-connected background with one explicit exterior node**.  Two contracts are
+intentionally separate:
+
+* `exact_global_6_26` is the authoritative offline oracle.  It compares complete
+  pre/post foreground-6 and exterior-aware-background-26 component counts.
+  `is_simple_point_6_26` remains a backward-compatible alias for that **exact,
+  intentionally slow** oracle.
+* `conservative_local_6_26` is the production admissibility filter.  Its 26-bit
+  local proof makes accepted deletions sound for those two counts, including
+  boundary/exterior semantics; it can and does false-reject exact-admissible
+  deletions.  It is never exact-equivalent to the oracle.
+
+Both APIs accept nested Boolean grids or 3-D NumPy `dtype=bool` arrays and fail
+closed for malformed/non-Boolean inputs without mutating the caller's volume.
+The local production path must use
+`apply_conservative_deletions_sequentially`, not a set-wide one-time decision;
+it independently enforces `protected_mask` and `edit_mask` policy inputs before
+each recheck.  Neither predicate implies physical safety, mesh-component
+guarantees, printability, or full digital homotopy.
+
+`exact_topology_preflight_6_26` deliberately **reports**, rather than silently
+rejecting, `foreground_6_components`,
+`background_26_components_with_exterior`, `has_cavities`, `shape`,
+`occupied_count`, exterior-boundary semantics, and a canonical input SHA-256.
+The caller must impose connectedness/cavity policy explicitly.  A conservative
+trajectory artifact is built with `topology_artifact_record`, whose schema has
+`topology_mode: "conservative_local_6_26"`, the exact preflight facts,
+`campaign_hash`, and `sequential_recheck: true`.
+
+A deterministic differential campaign is available through
+`make topology-campaign`.  Its default is one million seeded 3³ neighborhoods
+against an independent exact 3³ component-count reference, plus exhaustive
+2³ volumes and historical/adversarial witnesses; it reports false accepts and
+exact-only false rejects separately, including recall loss.  Supply archived
+occupancies explicitly to add the required ten-sample real-64³ rate distribution:
+
+```sh
+make topology-campaign TOPOLOGY_DATA_ROOT=/path/to/fea_ml/data/runs_real
+```
+
+The soundness gate requires zero false accepts.  The 1,000 tests/s requirement
+applies to the optional real-data benchmark, while false-reject recall loss is a
+primary reported production cost rather than a hidden equivalence claim.
 
 ## Target contract
 
@@ -107,6 +138,8 @@ make verify-artifact EXPECTED_MANIFEST_SHA256=<externally-recorded-digest>
 make reproduce-paper
 make test
 make test-locked
+make test-g1-locked
+make topology-campaign
 ```
 
 `make smoke` writes one deterministic artifact at `artifacts/smoke` and then
