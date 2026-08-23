@@ -180,15 +180,24 @@ used to imply that paper results were reproduced.
 `src/sasto/voxel_fea.py` owns the canonical regular full-integration Hex8
 linear-elastic voxel proxy; it imports no executable legacy solver. Occupancy
 `[a0,a1,a2]` maps to physical `(x,y,z)`, displacement DOFs are physical
-`(x,y,z)` triples, the minimum occupied physical-x face is fully fixed, and the
-protected load face is the maximum occupied physical-x face. Self-weight is a
-separately reported body force in physical negative-z. The fixed benchmark
-force is distributed across the declared load nodes while preserving its exact
-requested vector, and a caller may lock the expected load-node count and exact
-node-coordinate set for baseline/candidate comparisons.
+`(x,y,z)` triples, and the minimum occupied physical-x face (`min occupied
+element a0`) is fully fixed. The protected load face is the maximum physical-x
+boundary at node coordinate `max occupied element a0 + 1`, never the interior
+face of the final element layer. Self-weight is a separately reported body
+force in physical negative-z. The fixed benchmark force is distributed across
+the declared load nodes while preserving its exact requested vector, and a
+caller may lock the expected load-node count and exact node-coordinate set for
+baseline/candidate comparisons.
 
 Every solve is an append-only serializable `success` or `failure` record.
-Success records include stress (maximum and p99 in Pa), maximum displacement
+Stress maxima and percentiles are evaluated at all eight 2x2x2 full-integration
+Gauss points per occupied Hex8 element, declared by
+`stress_sampling: "eight_full_integration_gauss_points_per_element"` and
+`stress_sample_count`. `max_gauss_von_mises_pa` and
+`p99_gauss_von_mises_pa` are the qualified sampled statistics; they are not
+continuum maxima. Backward-compatible `max_von_mises_pa` and
+`p99_von_mises_pa` are explicit aliases to those Gauss-point values through
+`stress_metric_aliases`. Success records also include maximum displacement
 (m), compliance (J), counts, force sums, solver/preconditioner identity,
 iterations, residual, input/config digests, bounded timing, and a scientific
 digest. The scientific digest intentionally excludes wall time and iterative

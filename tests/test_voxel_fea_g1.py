@@ -81,6 +81,106 @@ def test_fixed_force_is_design_independent_and_exactly_preserved() -> None:
     assert first["loaded_node_count"] != second["loaded_node_count"]
 
 
+def test_fixed_force_is_assembled_only_on_physical_maximum_x_face() -> None:
+    from sasto.voxel_fea import assemble_voxel_system
+
+    assembled = assemble_voxel_system(_beam(4, 2, 2), _config())
+    nodal_force = assembled.force.reshape(-1, 3)
+    nonzero_nodes = np.flatnonzero(np.any(nodal_force != 0.0, axis=1))
+    nonzero_coordinates = assembled.node_coordinates[nonzero_nodes]
+    loaded_x_values = sorted(set(nonzero_coordinates[:, 0].tolist()))
+    assert loaded_x_values == [4]
+    assert loaded_x_values != [3]
+    assert not np.any(nonzero_coordinates[:, 0] < 4)
+    assert {tuple(point) for point in nonzero_coordinates} == {
+        (4, y, z) for y in range(3) for z in range(3)
+    }
+
+
+def test_sparse_asymmetric_geometry_locks_exact_maximum_face_coordinates_even_when_count_matches_old_face() -> None:
+    from sasto.voxel_fea import VoxelFEAConfig, assemble_voxel_system, solve_voxels
+
+    occupancy = np.zeros((5, 3, 1), dtype=bool)
+    occupancy[(0, 0, 0)] = True
+    occupancy[(1, 0, 0)] = True
+    occupancy[(1, 1, 0)] = True
+    occupancy[(2, 1, 0)] = True
+    occupancy[(3, 1, 0)] = True
+    occupancy[(4, 1, 0)] = True
+    expected = tuple((5, y, z) for y in (1, 2) for z in (0, 1))
+    config = _config(expected_loaded_node_count=4, expected_loaded_node_coordinates=expected)
+    assembled = assemble_voxel_system(occupancy, config)
+    nodal_force = assembled.force.reshape(-1, 3)
+    force_coordinates = {
+        tuple(point) for point in assembled.node_coordinates[np.flatnonzero(np.any(nodal_force != 0.0, axis=1))]
+    }
+    assert force_coordinates == set(expected)
+    assert len(force_coordinates) == 4
+    stale_face_coordinates = tuple((4, y, z) for y in (1, 2) for z in (0, 1))
+    stale_guard = VoxelFEAConfig(**{**config.__dict__, "expected_loaded_node_coordinates": stale_face_coordinates})
+    rejected = solve_voxels(occupancy, stale_guard)
+    assert rejected["status"] == "failure"
+    assert rejected["reason"] == "unstable_load_node_set"
+
+
+def _reference_gauss_von_mises(element_displacements: np.ndarray, voxel_size: tuple[float, float, float], elasticity: np.ndarray) -> np.ndarray:
+    """Independent Hex8 stress evaluator used only to verify postprocessing."""
+    dx, dy, dz = voxel_size
+    gauss = 1.0 / np.sqrt(3.0)
+    values = []
+    for xi in (-gauss, gauss):
+        for eta in (-gauss, gauss):
+            for zeta in (-gauss, gauss):
+                derivatives_reference = np.array([
+                    [-(1 - eta) * (1 - zeta), -(1 - eta) * (1 + zeta), -(1 + eta) * (1 - zeta), -(1 + eta) * (1 + zeta),
+                     (1 - eta) * (1 - zeta), (1 - eta) * (1 + zeta), (1 + eta) * (1 - zeta), (1 + eta) * (1 + zeta)],
+                    [-(1 - xi) * (1 - zeta), -(1 - xi) * (1 + zeta), (1 - xi) * (1 - zeta), (1 - xi) * (1 + zeta),
+                     -(1 + xi) * (1 - zeta), -(1 + xi) * (1 + zeta), (1 + xi) * (1 - zeta), (1 + xi) * (1 + zeta)],
+                    [-(1 - xi) * (1 - eta), (1 - xi) * (1 - eta), -(1 - xi) * (1 + eta), (1 - xi) * (1 + eta),
+                     -(1 + xi) * (1 - eta), (1 + xi) * (1 - eta), -(1 + xi) * (1 + eta), (1 + xi) * (1 + eta)],
+                ], dtype=float) / 8.0
+                derivatives = np.array((2.0 / dx, 2.0 / dy, 2.0 / dz))[:, None] * derivatives_reference
+                b_matrix = np.zeros((6, 24), dtype=float)
+                for node, (x, y, z) in enumerate(derivatives.T):
+                    base = 3 * node
+                    b_matrix[0, base] = x
+                    b_matrix[1, base + 1] = y
+                    b_matrix[2, base + 2] = z
+                    b_matrix[3, base + 1] = z
+                    b_matrix[3, base + 2] = y
+                    b_matrix[4, base] = z
+                    b_matrix[4, base + 2] = x
+                    b_matrix[5, base] = y
+                    b_matrix[5, base + 1] = x
+                stresses = elasticity @ (b_matrix @ element_displacements)
+                sxx, syy, szz, syz, sxz, sxy = stresses
+                values.append(np.sqrt(max(0.0, 0.5 * ((sxx - syy) ** 2 + (syy - szz) ** 2 + (szz - sxx) ** 2)
+                                          + 3.0 * (sxy ** 2 + syz ** 2 + sxz ** 2))))
+    return np.asarray(values)
+
+
+def test_declared_full_gauss_stress_outputs_match_independent_nonuniform_fixture_evaluation() -> None:
+    from sasto.voxel_fea import assemble_voxel_system, solve_voxels
+
+    occupancy = np.ones((3, 2, 2), dtype=bool)
+    occupancy[0, 1, 1] = False
+    config = _config(solver_mode="direct", include_displacement_field=True)
+    record = solve_voxels(occupancy, config)
+    assert record["status"] == "success"
+    assembled = assemble_voxel_system(occupancy, config)
+    displacement = np.asarray(record["displacement_field_m"], dtype=float).reshape(-1, 3).ravel()
+    all_gauss_values = np.concatenate([
+        _reference_gauss_von_mises(displacement[element_dofs], config.voxel_size, assembled.elasticity)
+        for element_dofs in assembled.element_dofs
+    ])
+    assert record["stress_sampling"] == "eight_full_integration_gauss_points_per_element"
+    assert record["stress_sample_count"] == 8 * record["element_count"] == len(all_gauss_values)
+    assert record["max_gauss_von_mises_pa"] == pytest.approx(float(np.max(all_gauss_values)), rel=1e-11)
+    assert record["p99_gauss_von_mises_pa"] == pytest.approx(float(np.percentile(all_gauss_values, 99.0)), rel=1e-11)
+    assert record["max_von_mises_pa"] == record["max_gauss_von_mises_pa"]
+    assert record["p99_von_mises_pa"] == record["p99_gauss_von_mises_pa"]
+
+
 def test_iterative_and_independent_direct_small_solves_agree() -> None:
     from sasto.voxel_fea import solve_voxels
 
@@ -185,4 +285,6 @@ def test_fixed_load_cantilever_refinement_moves_toward_beam_theory() -> None:
     coarse_relative_error = abs(coarse["max_displacement_m"] / analytical_tip_displacement - 1.0)
     fine_relative_error = abs(fine["max_displacement_m"] / analytical_tip_displacement - 1.0)
     assert fine_relative_error <= coarse_relative_error
-    assert fine_relative_error <= 0.55
+    # Corrected maximum-face traction gives a 6.60% refined-beam error; freeze
+    # a 7% allowance rather than retaining the stale 55% interior-face bound.
+    assert fine_relative_error <= 0.07

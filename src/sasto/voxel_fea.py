@@ -49,7 +49,7 @@ class AssembledVoxelSystem:
     fixed_dofs: np.ndarray
     free_dofs: np.ndarray
     node_coordinates: np.ndarray
-    b_centroid: np.ndarray
+    b_gauss: np.ndarray
     elasticity: np.ndarray
     n_elements: int
     n_nodes: int
@@ -172,7 +172,7 @@ def assemble_voxel_system(occupancy: object, config: VoxelFEAConfig) -> Assemble
     element_dofs = np.empty((n_elements, 24), dtype=np.int64)
     for local in range(8):
         element_dofs[:, 3 * local:3 * local + 3] = 3 * nodes[:, local, None] + np.arange(3, dtype=np.int64)
-    stiffness_element, body_force_element, b_centroid, elasticity = element_stiffness(
+    stiffness_element, body_force_element, b_gauss, elasticity = element_stiffness(
         config.youngs_modulus_pa, config.poisson_ratio, config.voxel_size
     )
     rows = np.broadcast_to(element_dofs[:, :, None], (n_elements, 24, 24)).ravel()
@@ -188,9 +188,10 @@ def assemble_voxel_system(occupancy: object, config: VoxelFEAConfig) -> Assemble
         (unique_nodes // (volume.shape[2] + 1)) % (volume.shape[1] + 1),
         unique_nodes % (volume.shape[2] + 1),
     )).astype(np.int64)
-    min_x, max_x = int(occupied[:, 0].min()), int(occupied[:, 0].max())
+    min_x = int(occupied[:, 0].min())
+    max_face_x = int(occupied[:, 0].max()) + 1
     fixed_nodes = np.flatnonzero(node_coordinates[:, 0] == min_x)
-    loaded_nodes = np.flatnonzero(node_coordinates[:, 0] == max_x)
+    loaded_nodes = np.flatnonzero(node_coordinates[:, 0] == max_face_x)
     if not len(fixed_nodes):
         raise ValueError("support_free_geometry")
     if not len(loaded_nodes) or np.intersect1d(fixed_nodes, loaded_nodes).size:
@@ -212,7 +213,7 @@ def assemble_voxel_system(occupancy: object, config: VoxelFEAConfig) -> Assemble
         body_force_sum_n=np.array((body_force[0::3].sum(), body_force[1::3].sum(), body_force[2::3].sum())),
         fixed_force_sum_n=np.array((fixed_force[0::3].sum(), fixed_force[1::3].sum(), fixed_force[2::3].sum())),
         element_dofs=element_dofs, fixed_dofs=fixed_dofs, free_dofs=free_dofs, node_coordinates=node_coordinates,
-        b_centroid=b_centroid, elasticity=elasticity, n_elements=n_elements, n_nodes=n_nodes,
+        b_gauss=b_gauss, elasticity=elasticity, n_elements=n_elements, n_nodes=n_nodes,
         loaded_node_count=len(loaded_nodes), fixed_node_count=len(fixed_nodes),
     )
 
@@ -275,9 +276,9 @@ def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]
         if not np.all(np.isfinite(displacement)):
             return _failure("nonfinite_displacement", config, occupancy)
         element_displacements = displacement[assembled.element_dofs]
-        strains = assembled.b_centroid @ element_displacements.T
-        stresses = assembled.elasticity @ strains
-        sxx, syy, szz, syz, sxz, sxy = stresses
+        strains = np.einsum("gij,ej->gei", assembled.b_gauss, element_displacements)
+        stresses = np.einsum("ij,gej->gei", assembled.elasticity, strains)
+        sxx, syy, szz, syz, sxz, sxy = (stresses[..., index] for index in range(6))
         vm_squared = 0.5 * ((sxx - syy) ** 2 + (syy - szz) ** 2 + (szz - sxx) ** 2) + 3.0 * (sxy ** 2 + syz ** 2 + sxz ** 2)
         von_mises = np.sqrt(np.maximum(vm_squared, 0.0))
         compliance = float(displacement @ assembled.force)
@@ -286,7 +287,16 @@ def solve_voxels(occupancy: object, config: VoxelFEAConfig) -> dict[str, object]
                 or compliance <= 0.0 or max_displacement <= 0.0):
             return _failure("invalid_postprocessing", config, occupancy)
         record: dict[str, object] = {
-            "status": "success", "reason": None, "max_von_mises_pa": float(np.max(von_mises)),
+            "status": "success", "reason": None,
+            "stress_sampling": "eight_full_integration_gauss_points_per_element",
+            "stress_sample_count": int(von_mises.size),
+            "max_gauss_von_mises_pa": float(np.max(von_mises)),
+            "p99_gauss_von_mises_pa": float(np.percentile(von_mises, 99.0)),
+            "stress_metric_aliases": {
+                "max_von_mises_pa": "max_gauss_von_mises_pa",
+                "p99_von_mises_pa": "p99_gauss_von_mises_pa",
+            },
+            "max_von_mises_pa": float(np.max(von_mises)),
             "p99_von_mises_pa": float(np.percentile(von_mises, 99.0)), "max_displacement_m": max_displacement,
             "compliance_j": compliance, "element_count": assembled.n_elements, "node_count": assembled.n_nodes,
             "dof_count": int(3 * assembled.n_nodes), "free_dof_count": int(len(assembled.free_dofs)),
@@ -335,14 +345,37 @@ def _strain_displacement(derivatives: np.ndarray) -> np.ndarray:
     return result
 
 
+def _gauss_strain_displacement_matrices(voxel_size: Sequence[float]) -> np.ndarray:
+    """Return the eight regular Hex8 B matrices at 2x2x2 Gauss points."""
+    dx, dy, dz = (float(value) for value in voxel_size)
+    gauss = 1.0 / np.sqrt(3.0)
+    inverse_jacobian = np.array((2.0 / dx, 2.0 / dy, 2.0 / dz), dtype=np.float64)[:, None]
+    matrices = []
+    for xi in (-gauss, gauss):
+        for eta in (-gauss, gauss):
+            for zeta in (-gauss, gauss):
+                derivatives_reference = np.array(
+                    [
+                        [-(1 - eta) * (1 - zeta), -(1 - eta) * (1 + zeta), -(1 + eta) * (1 - zeta), -(1 + eta) * (1 + zeta),
+                         (1 - eta) * (1 - zeta), (1 - eta) * (1 + zeta), (1 + eta) * (1 - zeta), (1 + eta) * (1 + zeta)],
+                        [-(1 - xi) * (1 - zeta), -(1 - xi) * (1 + zeta), (1 - xi) * (1 - zeta), (1 - xi) * (1 + zeta),
+                         -(1 + xi) * (1 - zeta), -(1 + xi) * (1 + zeta), (1 + xi) * (1 - zeta), (1 + xi) * (1 + zeta)],
+                        [-(1 - xi) * (1 - eta), (1 - xi) * (1 - eta), -(1 - xi) * (1 + eta), (1 - xi) * (1 + eta),
+                         -(1 + xi) * (1 - eta), (1 + xi) * (1 - eta), -(1 + xi) * (1 + eta), (1 + xi) * (1 + eta)],
+                    ], dtype=np.float64,
+                ) / 8.0
+                matrices.append(_strain_displacement(inverse_jacobian * derivatives_reference))
+    return np.asarray(matrices)
+
+
 def element_stiffness(
     youngs_modulus: float, poisson_ratio: float, voxel_size: Sequence[float]
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Integrate a full-integration regular Hex8 stiffness and unit body-force map.
 
     The returned body-force map turns a physical force density ``(N/m^3)`` into
-    the element's 24-DOF equivalent nodal load.  ``B_centroid`` is deliberately
-    returned for deterministic, declared centroid stress postprocessing.
+    the element's 24-DOF equivalent nodal load. The eight returned B matrices
+    are the declared locations for all canonical stress statistics.
     """
     dx, dy, dz = (float(value) for value in voxel_size)
     if not all(np.isfinite((youngs_modulus, poisson_ratio, dx, dy, dz))):
@@ -351,24 +384,12 @@ def element_stiffness(
         raise ValueError("invalid element parameters")
     matrix = _elasticity_matrix(float(youngs_modulus), float(poisson_ratio))
     gauss = 1.0 / np.sqrt(3.0)
-    points = ((x, y, z) for x in (-gauss, gauss) for y in (-gauss, gauss) for z in (-gauss, gauss))
+    points = tuple((x, y, z) for x in (-gauss, gauss) for y in (-gauss, gauss) for z in (-gauss, gauss))
     determinant = dx * dy * dz / 8.0
-    inverse_jacobian = np.array((2.0 / dx, 2.0 / dy, 2.0 / dz), dtype=np.float64)[:, None]
+    b_gauss = _gauss_strain_displacement_matrices((dx, dy, dz))
     stiffness = np.zeros((24, 24), dtype=np.float64)
     body_force = np.zeros((24, 3), dtype=np.float64)
-    for xi, eta, zeta in points:
-        derivatives_reference = np.array(
-            [
-                [-(1 - eta) * (1 - zeta), -(1 - eta) * (1 + zeta), -(1 + eta) * (1 - zeta), -(1 + eta) * (1 + zeta),
-                 (1 - eta) * (1 - zeta), (1 - eta) * (1 + zeta), (1 + eta) * (1 - zeta), (1 + eta) * (1 + zeta)],
-                [-(1 - xi) * (1 - zeta), -(1 - xi) * (1 + zeta), (1 - xi) * (1 - zeta), (1 - xi) * (1 + zeta),
-                 -(1 + xi) * (1 - zeta), -(1 + xi) * (1 + zeta), (1 + xi) * (1 - zeta), (1 + xi) * (1 + zeta)],
-                [-(1 - xi) * (1 - eta), (1 - xi) * (1 - eta), -(1 - xi) * (1 + eta), (1 - xi) * (1 + eta),
-                 -(1 + xi) * (1 - eta), (1 + xi) * (1 - eta), -(1 + xi) * (1 + eta), (1 + xi) * (1 + eta)],
-            ], dtype=np.float64,
-        ) / 8.0
-        derivatives = inverse_jacobian * derivatives_reference
-        b_matrix = _strain_displacement(derivatives)
+    for (xi, eta, zeta), b_matrix in zip(points, b_gauss, strict=True):
         stiffness += b_matrix.T @ matrix @ b_matrix * determinant
         shapes = np.array(
             ((1-xi)*(1-eta)*(1-zeta), (1-xi)*(1-eta)*(1+zeta),
@@ -378,8 +399,4 @@ def element_stiffness(
         ) / 8.0
         for node, shape in enumerate(shapes):
             body_force[3 * node : 3 * node + 3, :] += np.eye(3) * shape * determinant
-    centroid_derivatives = inverse_jacobian * np.array(
-        ((-1, -1, -1, -1, 1, 1, 1, 1), (-1, -1, 1, 1, -1, -1, 1, 1), (-1, 1, -1, 1, -1, 1, -1, 1)),
-        dtype=np.float64,
-    ) / 8.0
-    return stiffness, body_force, _strain_displacement(centroid_derivatives), matrix
+    return stiffness, body_force, b_gauss, matrix
