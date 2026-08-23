@@ -22,12 +22,24 @@ import numpy as np
 
 from .fit_probe import FitOnlyAccessError, _PayloadAccessLedger, _configuration, _load_occupancy, select_fit_sample_ids
 from .manifest import ManifestVerificationError, open_new_artifact_root, read_regular_path_snapshot, write_new_regular_path
+from .splits import FamilyLeakageError, validate_family_split_manifest
 from .topology import conservative_local_6_26, exact_topology_preflight_6_26
 from .voxel_fea import VoxelFEAConfig, assemble_voxel_system, solve_voxels
 
 NAMESPACE = "sasto-v-benchmark-activity-v1"
 BETA_GRID = (1.02, 1.05, 1.10, 1.15, 1.20, 1.30, 1.50, 2.00)
 SCHEMA_VERSION = "1.0.0"
+SOURCE_BUNDLE_PATHS = (
+    ".python-version",
+    "pyproject.toml",
+    "uv.lock",
+    "src/sasto/activity_campaign.py",
+    "src/sasto/fit_probe.py",
+    "src/sasto/manifest.py",
+    "src/sasto/splits.py",
+    "src/sasto/topology.py",
+    "src/sasto/voxel_fea.py",
+)
 
 
 class CampaignError(ValueError):
@@ -57,8 +69,11 @@ def ranked_fit_subsets(manifest: Mapping[str, object], *, threshold_count: int =
     if any(not isinstance(count, int) or isinstance(count, bool) or count < 1 for count in (threshold_count, audit_count)):
         raise CampaignError("subset counts must be positive integers")
     try:
-        # This shared guard validates every role and proves all are disjoint before selection.
+        # Validate the complete self-describing family split before role extraction.
+        validate_family_split_manifest(manifest)
         fit = select_fit_sample_ids(manifest, None, limit=len(manifest["partitions"]["fit"]["sample_ids"]))  # type: ignore[index]
+    except FamilyLeakageError as error:
+        raise CampaignError("invalid family split manifest: {}".format(error)) from error
     except (FitOnlyAccessError, KeyError, TypeError) as error:
         raise FitOnlyAccessError(str(error)) from error
     ordered = sorted(fit, key=lambda sample_id: _sha_text(NAMESPACE, sample_id))
@@ -481,9 +496,23 @@ def _source_snapshot(split_manifest: Path, archive: Path, split_sha: str, archiv
     return manifest, archive_snapshot.bytes, split.sha256, archive_snapshot.sha256
 
 
-def _code_hash() -> str:
-    path = Path(__file__)
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def source_bundle(root: Path | None = None) -> tuple[dict[str, str], str]:
+    """Hash every load-bearing source/config byte through no-follow descriptors."""
+    source_root = Path(root) if root is not None else Path(__file__).parents[2]
+    files: dict[str, str] = {}
+    try:
+        for relative in SOURCE_BUNDLE_PATHS:
+            snapshot = read_regular_path_snapshot(source_root / relative, "source bundle")
+            files[relative] = snapshot.sha256
+    except ManifestVerificationError as error:
+        raise CampaignError("cannot safely read source bundle") from error
+    pairs = [{"path": relative, "sha256": files[relative]} for relative in sorted(files)]
+    return files, hashlib.sha256(_canonical_bytes(pairs)).hexdigest()
+
+
+def _current_source_bundle() -> dict[str, object]:
+    files, digest = source_bundle()
+    return {"source_bundle_files": files, "source_bundle_sha256": digest}
 
 
 def _threshold_design_protocol(*, subsets: Mapping[str, Sequence[str]], split_sha256: str, archive_sha256: str) -> dict[str, object]:
@@ -492,7 +521,7 @@ def _threshold_design_protocol(*, subsets: Mapping[str, Sequence[str]], split_sh
     audit_ids = list(subsets["activity_audit"])
     return {"schema_version": SCHEMA_VERSION, "namespace": NAMESPACE, "role": "fit", "mode": "threshold_design",
             "threshold_design_ids": threshold_ids, "activity_audit_ids": audit_ids, "selected_ids": threshold_ids,
-            "split_manifest_sha256": split_sha256, "archive_sha256": archive_sha256, "code_sha256": _code_hash(),
+            "split_manifest_sha256": split_sha256, "archive_sha256": archive_sha256, **_current_source_bundle(),
             "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
                          "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
             "topology_mode": "conservative_local_6_26", "max_batches": 40, "frozen_thresholds": None,
@@ -569,7 +598,7 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
     else:
         protocol = {"schema_version": SCHEMA_VERSION, "namespace": NAMESPACE, "role": "fit", "mode": mode,
                     "threshold_design_ids": subsets["threshold_design"], "activity_audit_ids": subsets["activity_audit"],
-                    "selected_ids": ids, "split_manifest_sha256": split_sha, "archive_sha256": archive_sha, "code_sha256": _code_hash(),
+                    "selected_ids": ids, "split_manifest_sha256": split_sha, "archive_sha256": archive_sha, **_current_source_bundle(),
                     "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
                                  "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
                     "topology_mode": "conservative_local_6_26", "max_batches": 40,
@@ -629,6 +658,26 @@ def select_thresholds_from_root(root: Path) -> dict[str, object]:
     return frozen
 
 
+def validate_threshold_case_ledger(selection: Mapping[str, object], load_case: Callable[[str], Mapping[str, object]]) -> None:
+    """Pure structural/case-ledger gate with an injected verified-case reader."""
+    protocol = selection.get("protocol")
+    if not isinstance(protocol, Mapping) or protocol.get("mode") != "threshold_design":
+        raise CampaignError("frozen threshold selection must embed a threshold_design protocol")
+    ids = protocol.get("threshold_design_ids")
+    selected_ids = protocol.get("selected_ids")
+    if (not isinstance(ids, list) or len(ids) != 50 or any(not isinstance(sample_id, str) or not sample_id for sample_id in ids)
+            or len(set(ids)) != len(ids) or selected_ids != ids):
+        raise CampaignError("frozen threshold selection requires exactly the 50 unique selected threshold IDs")
+    hashes = selection.get("threshold_trajectory_hashes")
+    if not isinstance(hashes, dict) or set(hashes) != set(ids):
+        raise CampaignError("threshold trajectory hash ledger does not exactly cover the selected threshold IDs")
+    for sample_id in ids:
+        expected = _lower_digest(hashes[sample_id], "threshold trajectory hash")
+        case = load_case(sample_id)
+        if case.get("sample_id") != sample_id or case.get("case_digest") != expected:
+            raise CampaignError("threshold trajectory case ledger mismatch")
+
+
 def _frozen_threshold_selection(path: Path) -> dict[str, object]:
     try:
         snapshot = read_regular_path_snapshot(path, "threshold selection")
@@ -646,6 +695,7 @@ def _frozen_threshold_selection(path: Path) -> dict[str, object]:
         raise CampaignError("frozen threshold selection lacks betas") from error
     if (beta_c, beta_s) not in {(left, right) for left in BETA_GRID for right in BETA_GRID}:
         raise CampaignError("frozen threshold selection uses an unregistered beta")
+    validate_threshold_case_ledger(value, lambda sample_id: load_verified_case(path.parent, sample_id))
     return value
 
 

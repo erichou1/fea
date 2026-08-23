@@ -12,12 +12,24 @@ import pytest
 
 
 def _manifest(fit: list[str]) -> dict[str, object]:
-    return {"partitions": {
-        "fit": {"sample_ids": fit},
-        "development": {"sample_ids": ["dev-only"]},
-        "calibration": {"sample_ids": ["cal-only"]},
-        "confirmation": {"sample_ids": ["confirm-only"]},
-    }}
+    """Small self-describing manifest valid when four fit IDs are supplied."""
+    assert len(fit) == 4 and len(set(fit)) == 4
+    family_by_sample = {sample_id: "family-{}".format(index) for index, sample_id in enumerate(fit)}
+    family_by_sample.update({"dev-only": "family-dev", "cal-only": "family-cal", "confirm-only": "family-confirm"})
+    return {
+        "schema_version": "1.0.0", "algorithm": "family-id-v1", "seed": 42,
+        "fractions": {"fit": 0.60, "development": 0.20, "calibration": 0.10, "confirmation": 0.10},
+        "sample_to_family": [
+            {"sample_id": sample_id, "family_id": family_by_sample[sample_id]}
+            for sample_id in sorted(family_by_sample)
+        ],
+        "partitions": {
+            "fit": {"sample_ids": fit, "family_ids": sorted(family_by_sample[sample_id] for sample_id in fit)},
+            "development": {"sample_ids": ["dev-only"], "family_ids": ["family-dev"]},
+            "calibration": {"sample_ids": ["cal-only"], "family_ids": ["family-cal"]},
+            "confirmation": {"sample_ids": ["confirm-only"], "family_ids": ["family-confirm"]},
+        },
+    }
 
 
 def _success(*, compliance: float, stress: float, displacement: float, loaded: int = 4) -> dict[str, object]:
@@ -28,7 +40,7 @@ def _success(*, compliance: float, stress: float, displacement: float, loaded: i
 
 
 def test_fit_subsets_are_hash_ranked_disjoint_and_role_guarded() -> None:
-    from sasto.activity_campaign import FitOnlyAccessError, ranked_fit_subsets
+    from sasto.activity_campaign import CampaignError, ranked_fit_subsets
 
     fit = ["fit-c", "fit-a", "fit-b", "fit-d"]
     subsets = ranked_fit_subsets(_manifest(fit), threshold_count=2, audit_count=2)
@@ -38,8 +50,144 @@ def test_fit_subsets_are_hash_ranked_disjoint_and_role_guarded() -> None:
     assert not (set(subsets["threshold_design"]) & set(subsets["activity_audit"]))
     leaking = _manifest(fit)
     leaking["partitions"]["fit"]["sample_ids"].append("dev-only")  # type: ignore[index]
-    with pytest.raises(FitOnlyAccessError, match="overlap"):
+    with pytest.raises(CampaignError, match="family"):
         ranked_fit_subsets(leaking, threshold_count=2, audit_count=2)
+
+
+def test_complete_split_manifest_gate_rejects_invalid_provenance_before_archive_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every split provenance defect fails closed before the archive descriptor opens."""
+    import copy
+    import sasto.activity_campaign as campaign
+    from sasto.manifest import read_regular_path_snapshot as real_snapshot
+
+    valid = _manifest(["fit-c", "fit-a", "fit-b", "fit-d"])
+    variants: dict[str, dict[str, object]] = {}
+    variants["partition_only"] = {"partitions": copy.deepcopy(valid["partitions"])}
+    wrong_schema = copy.deepcopy(valid); wrong_schema["schema_version"] = "9.9.9"; variants["wrong_schema"] = wrong_schema
+    wrong_algorithm = copy.deepcopy(valid); wrong_algorithm["algorithm"] = "wrong"; variants["wrong_algorithm"] = wrong_algorithm
+    incomplete = copy.deepcopy(valid); incomplete["sample_to_family"] = incomplete["sample_to_family"][1:]; variants["incomplete_coverage"] = incomplete
+    mismatch = copy.deepcopy(valid); mismatch["partitions"]["fit"]["family_ids"] = ["wrong"] * 4; variants["family_ids_mismatch"] = mismatch
+    unsorted = copy.deepcopy(valid); unsorted["sample_to_family"] = list(reversed(unsorted["sample_to_family"])); variants["unsorted_mapping"] = unsorted
+    duplicate = copy.deepcopy(valid); duplicate["sample_to_family"][1] = copy.deepcopy(duplicate["sample_to_family"][0]); variants["duplicate_mapping"] = duplicate
+    leakage = copy.deepcopy(valid); leakage["partitions"]["development"]["sample_ids"] = ["fit-a"]; leakage["partitions"]["development"]["family_ids"] = ["family-0"]; variants["family_leakage"] = leakage
+    unknown = copy.deepcopy(valid); unknown["partitions"]["fit"]["sample_ids"][0] = "foreign"; variants["unknown_id"] = unknown
+
+    archive = tmp_path / "archive.zip"; archive.write_bytes(b"not reached")
+    archive_sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+    observed_labels: list[str] = []
+
+    def tracked_snapshot(path: Path, label: str):
+        observed_labels.append(label)
+        return real_snapshot(path, label)
+
+    monkeypatch.setattr(campaign, "read_regular_path_snapshot", tracked_snapshot)
+    for name, invalid in variants.items():
+        with pytest.raises((campaign.CampaignError, campaign.FitOnlyAccessError)):
+            campaign.ranked_fit_subsets(invalid, threshold_count=2, audit_count=2)
+        split = tmp_path / "{}.json".format(name)
+        split.write_text(json.dumps(invalid), encoding="utf-8")
+        with pytest.raises((campaign.CampaignError, campaign.FitOnlyAccessError)):
+            campaign._source_snapshot(split, archive, hashlib.sha256(split.read_bytes()).hexdigest(), archive_sha)
+        assert "archive" not in observed_labels, name
+        observed_labels.clear()
+
+    assert campaign.ranked_fit_subsets(valid, threshold_count=2, audit_count=2)
+
+
+def test_source_bundle_binds_exact_relative_paths_and_bytes(tmp_path: Path) -> None:
+    from sasto.activity_campaign import SOURCE_BUNDLE_PATHS, source_bundle
+
+    expected_paths = {
+        ".python-version", "pyproject.toml", "uv.lock", "src/sasto/activity_campaign.py", "src/sasto/fit_probe.py",
+        "src/sasto/manifest.py", "src/sasto/splits.py", "src/sasto/topology.py", "src/sasto/voxel_fea.py",
+    }
+    assert set(SOURCE_BUNDLE_PATHS) == expected_paths
+    for index, relative in enumerate(SOURCE_BUNDLE_PATHS):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes("fixture-{}".format(index).encode())
+    files, digest = source_bundle(tmp_path)
+    assert set(files) == expected_paths
+    assert digest == hashlib.sha256(json.dumps(
+        [{"path": path, "sha256": files[path]} for path in sorted(files)], sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+    changed = tmp_path / "src/sasto/topology.py"; changed.write_bytes(b"changed")
+    changed_files, changed_digest = source_bundle(tmp_path)
+    assert changed_files["src/sasto/topology.py"] != files["src/sasto/topology.py"]
+    assert changed_digest != digest
+
+
+def test_frozen_threshold_ledger_rejects_every_bad_case_before_audit_source_access(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import copy
+    import sys
+    import sasto.activity_campaign as campaign
+
+    root = tmp_path / "threshold"; root.mkdir(); (root / "cases").mkdir()
+    ids = ["threshold-{:02d}".format(index) for index in range(50)]
+    hashes = {}
+    for sample_id in ids:
+        campaign.write_case_record(root, {"sample_id": sample_id, "batches": [], "stopping_reason": "candidate_exhaustion"})
+        hashes[sample_id] = campaign.load_verified_case(root, sample_id)["case_digest"]
+    protocol = {"mode": "threshold_design", "threshold_design_ids": ids, "selected_ids": list(ids)}
+    frozen = {"schema_version": "1.0.0", "protocol": protocol, "threshold_trajectory_hashes": hashes,
+              "selected": {"beta_compliance": 1.05, "beta_stress": 1.05}}
+
+    def write_selection(value: dict[str, object]) -> Path:
+        value["protocol_hash"] = campaign._digest({key: item for key, item in value.items() if key != "protocol_hash"})
+        path = root / "threshold-selection.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
+    path = write_selection(copy.deepcopy(frozen))
+    assert campaign._frozen_threshold_selection(path)["threshold_trajectory_hashes"] == hashes
+
+    variants: dict[str, dict[str, object]] = {}
+    bad_mode = copy.deepcopy(frozen); bad_mode["protocol"]["mode"] = "activity_audit"; variants["wrong_mode"] = bad_mode
+    duplicate = copy.deepcopy(frozen); duplicate["protocol"]["threshold_design_ids"][1] = ids[0]; duplicate["protocol"]["selected_ids"] = duplicate["protocol"]["threshold_design_ids"]; variants["duplicate_ids"] = duplicate
+    missing = copy.deepcopy(frozen); missing["threshold_trajectory_hashes"].pop(ids[-1]); variants["missing_hash"] = missing
+    extra = copy.deepcopy(frozen); extra["threshold_trajectory_hashes"]["foreign"] = "a" * 64; variants["foreign_hash"] = extra
+    malformed = copy.deepcopy(frozen); malformed["threshold_trajectory_hashes"][ids[0]] = "A" * 64; variants["malformed_hash"] = malformed
+
+    source_calls: list[object] = []
+    monkeypatch.setattr(campaign, "_audit_compatibility_inputs", lambda **_: source_calls.append("split"))
+    monkeypatch.setattr(campaign, "_source_snapshot", lambda *args: source_calls.append("archive"))
+    monkeypatch.setattr(campaign.zipfile, "ZipFile", lambda *args, **kwargs: source_calls.append("zip"))
+    for name, invalid in variants.items():
+        write_selection(invalid)
+        monkeypatch.setattr(sys, "argv", ["activity_campaign", "--root", str(tmp_path / "audit"), "--mode", "run-audit",
+                                            "--split-manifest", str(tmp_path / "split.json"), "--archive", str(tmp_path / "archive.zip"),
+                                            "--expected-split-manifest-sha256", "a" * 64, "--expected-fea-archive-sha256", "b" * 64,
+                                            "--threshold-selection", str(root / "threshold-selection.json")])
+        assert campaign.main() == 2, name
+        assert not source_calls, name
+
+    case_path = root / "cases" / "threshold-00.json"
+    case_path.unlink(); os.symlink(root / "cases" / "threshold-01.json", case_path)
+    write_selection(copy.deepcopy(frozen))
+    monkeypatch.setattr(sys, "argv", ["activity_campaign", "--root", str(tmp_path / "audit"), "--mode", "run-audit",
+                                        "--split-manifest", str(tmp_path / "split.json"), "--archive", str(tmp_path / "archive.zip"),
+                                        "--expected-split-manifest-sha256", "a" * 64, "--expected-fea-archive-sha256", "b" * 64,
+                                        "--threshold-selection", str(root / "threshold-selection.json")])
+    assert campaign.main() == 2
+    assert not source_calls
+    case_path.unlink(); campaign.write_case_record(root, {"sample_id": ids[0], "batches": [], "stopping_reason": "candidate_exhaustion"})
+
+    campaign.write_case_record(root, {"sample_id": "foreign", "batches": [], "stopping_reason": "candidate_exhaustion"})
+    case_path.write_bytes((root / "cases" / "foreign.json").read_bytes())
+    write_selection(copy.deepcopy(frozen))
+    assert campaign.main() == 2
+    assert not source_calls
+    case_path.unlink(); campaign.write_case_record(root, {"sample_id": ids[0], "batches": [], "stopping_reason": "candidate_exhaustion"})
+
+    tampered = case_path
+    record = json.loads(tampered.read_text()); record["stopping_reason"] = "tampered"; tampered.write_text(json.dumps(record), encoding="utf-8")
+    write_selection(copy.deepcopy(frozen))
+    monkeypatch.setattr(sys, "argv", ["activity_campaign", "--root", str(tmp_path / "audit"), "--mode", "run-audit",
+                                        "--split-manifest", str(tmp_path / "split.json"), "--archive", str(tmp_path / "archive.zip"),
+                                        "--expected-split-manifest-sha256", "a" * 64, "--expected-fea-archive-sha256", "b" * 64,
+                                        "--threshold-selection", str(root / "threshold-selection.json")])
+    assert campaign.main() == 2
+    assert not source_calls
 
 
 def test_candidate_ranking_is_deterministic_and_protected_x_layers_are_never_editable() -> None:
@@ -310,7 +458,8 @@ def test_frozen_selection_embeds_only_threshold_protocol_not_manifest_digest(tmp
     ids = [f"fit-{index}" for index in range(50)]
     protocol = {"schema_version": "1.0.0", "namespace": "sasto-v-benchmark-activity-v1", "role": "fit", "mode": "threshold_design",
                 "threshold_design_ids": ids, "activity_audit_ids": [f"audit-{index}" for index in range(200)], "selected_ids": ids,
-                "split_manifest_sha256": "a" * 64, "archive_sha256": "b" * 64, "code_sha256": "c" * 64,
+                "split_manifest_sha256": "a" * 64, "archive_sha256": "b" * 64,
+                "source_bundle_files": {"src/sasto/activity_campaign.py": "c" * 64}, "source_bundle_sha256": "d" * 64,
                 "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
                              "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
                 "topology_mode": "conservative_local_6_26", "max_batches": 40, "frozen_thresholds": None, "label": "FROZEN_FIT_ONLY_PROTOCOL"}
@@ -332,7 +481,9 @@ def test_audit_compatibility_rejects_each_load_bearing_threshold_protocol_field(
         "threshold_design_ids": [f"threshold-{index}" for index in range(50)],
         "activity_audit_ids": [f"audit-{index}" for index in range(200)],
         "selected_ids": [f"threshold-{index}" for index in range(50)],
-        "split_manifest_sha256": digest, "archive_sha256": digest, "code_sha256": digest,
+        "split_manifest_sha256": digest, "archive_sha256": digest,
+        "source_bundle_files": {"src/sasto/activity_campaign.py": digest, "src/sasto/topology.py": digest},
+        "source_bundle_sha256": digest,
         "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
                      "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
         "topology_mode": "conservative_local_6_26", "max_batches": 40, "frozen_thresholds": None,
@@ -344,7 +495,8 @@ def test_audit_compatibility_rejects_each_load_bearing_threshold_protocol_field(
         ("schema_version", "2.0.0"), ("namespace", "wrong"), ("role", "audit"), ("mode", "activity_audit"),
         ("threshold_design_ids", ["wrong"] * 50), ("activity_audit_ids", ["wrong"] * 200),
         ("selected_ids", ["wrong"] * 50), ("split_manifest_sha256", "b" * 64), ("archive_sha256", "b" * 64),
-        ("code_sha256", "b" * 64), ("topology_mode", "wrong"), ("max_batches", 2),
+        ("source_bundle_sha256", "b" * 64), ("source_bundle_files", {"src/sasto/activity_campaign.py": "b" * 64}),
+        ("topology_mode", "wrong"), ("max_batches", 2),
         ("frozen_thresholds", {"beta_compliance": 1.05}), ("label", "wrong"),
     ]
     for field, replacement in mutations:
