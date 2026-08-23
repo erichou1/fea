@@ -38,6 +38,25 @@ def test_target_registry_is_semantic_under_order_permutation() -> None:
     assert original.evaluate(responses)["compliance"].passed
 
 
+def test_target_contract_rejects_unitless_compliance_without_ratio_semantics() -> None:
+    with pytest.raises(ValueError, match="absolute targets cannot use unit '1'"):
+        TargetSpec("compliance", "1", "upper", 1.15, normalization="absolute")
+    with pytest.raises(ValueError, match="_ratio"):
+        TargetSpec("compliance", "1", "upper", 1.15, normalization="baseline_ratio", base_target="baseline_compliance")
+    with pytest.raises(ValueError, match="base_target"):
+        TargetSpec("compliance_ratio", "1", "upper", 1.15, normalization="baseline_ratio")
+
+    ratio = TargetSpec(
+        "compliance_ratio",
+        "1",
+        "upper",
+        1.15,
+        normalization="baseline_ratio",
+        base_target="baseline_compliance",
+    )
+    assert ratio.as_dict()["normalization"] == "baseline_ratio"
+
+
 def test_family_split_rejects_leakage_and_is_deterministic() -> None:
     samples = [
         {"sample_id": f"{family}-v{variant}", "family_id": family}
@@ -58,17 +77,38 @@ def test_family_split_rejects_leakage_and_is_deterministic() -> None:
         validate_family_split(samples, leaked)
 
 
+def test_family_split_requires_a_family_in_each_functional_role() -> None:
+    too_small = [{"sample_id": "only/base", "family_id": "only"}]
+    with pytest.raises(FamilyLeakageError, match="at least 4 families"):
+        build_family_split(too_small, seed=42)
+
+    samples = [{"sample_id": f"f{index}/base", "family_id": f"f{index}"} for index in range(1, 5)]
+    empty_confirmation = {
+        "fit": ["f1/base", "f2/base"],
+        "development": ["f3/base"],
+        "calibration": ["f4/base"],
+        "confirmation": [],
+    }
+    with pytest.raises(FamilyLeakageError, match="confirmation.*at least one family"):
+        validate_family_split(samples, empty_confirmation)
+
+
 def test_hash_mutation_rejects_complete_manifest(tmp_path: Path) -> None:
     source = tmp_path / "input.json"
     output = tmp_path / "result.json"
+    split = tmp_path / "split.json"
     source.write_text('{"fixture": true}\n', encoding="utf-8")
     output.write_text('{"status": "ok"}\n', encoding="utf-8")
+    split.write_text('{"algorithm":"family-id-v1","partitions":{}}\n', encoding="utf-8")
+    split_payload = json.loads(split.read_text(encoding="utf-8"))
     manifest = build_run_manifest(
         run_id="unit-run",
         inputs={"fixture/input": source},
-        outputs={"result": output},
+        outputs={"result": output, "split": split},
         targets=TargetRegistry((TargetSpec("compliance", "J", "upper", 1.15),)),
-        split_sha256="0" * 64,
+        split_sha256=hashlib.sha256(json.dumps(split_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
+        split_artifact="split",
+        artifact_root=tmp_path,
     )
     manifest_path = tmp_path / "run-manifest.json"
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
@@ -79,6 +119,37 @@ def test_hash_mutation_rejects_complete_manifest(tmp_path: Path) -> None:
         verify_run_manifest(manifest_path)
 
 
+def test_manifest_builder_rejects_external_and_symlinked_artifact_records(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    external = tmp_path / "external.json"
+    external.write_text('{"external": true}\n', encoding="utf-8")
+    linked = bundle / "linked.json"
+    linked.symlink_to(external)
+    registry = TargetRegistry((TargetSpec("compliance", "J", "upper", 1.15),))
+
+    with pytest.raises(ManifestVerificationError, match="beneath artifact root"):
+        build_run_manifest(
+            run_id="external-file",
+            inputs={"fixture": external},
+            outputs={"result": external},
+            targets=registry,
+            split_sha256="0" * 64,
+            split_artifact="result",
+            artifact_root=bundle,
+        )
+    with pytest.raises(ManifestVerificationError, match="symlink"):
+        build_run_manifest(
+            run_id="linked-file",
+            inputs={"fixture": linked},
+            outputs={"result": linked},
+            targets=registry,
+            split_sha256="0" * 64,
+            split_artifact="result",
+            artifact_root=bundle,
+        )
+
+
 def test_simple_point_6_26_rejects_bridge_and_accepts_endpoint() -> None:
     bridge = [[[False for _ in range(3)] for _ in range(3)] for _ in range(3)]
     bridge[1][1][0] = True
@@ -86,6 +157,15 @@ def test_simple_point_6_26_rejects_bridge_and_accepts_endpoint() -> None:
     bridge[1][1][2] = True
     assert not is_simple_point_6_26(bridge, (1, 1, 1))
     assert is_simple_point_6_26(bridge, (1, 1, 0))
+
+
+def test_simple_point_6_26_rejects_boundary_cavity_opening_and_keeps_safe_boundary_erosion() -> None:
+    solid_with_cavity = [[[True for _ in range(3)] for _ in range(3)] for _ in range(3)]
+    solid_with_cavity[1][1][1] = False
+    assert not is_simple_point_6_26(solid_with_cavity, (0, 0, 0))
+
+    solid_without_cavity = [[[True for _ in range(3)] for _ in range(3)] for _ in range(3)]
+    assert is_simple_point_6_26(solid_without_cavity, (0, 0, 0))
 
 
 def test_canonical_sasto_pa_rejects_a_topology_break_before_proxy_admission() -> None:

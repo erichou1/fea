@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 from .manifest import build_run_manifest
@@ -33,6 +34,9 @@ def run_smoke(fixture_path: Path, output_dir: Path) -> Path:
     if not isinstance(samples, list):
         raise ValueError("smoke fixture must be a JSON list")
     output_dir.mkdir(parents=True)
+    bundled_fixture = output_dir / "inputs" / "families.json"
+    bundled_fixture.parent.mkdir()
+    shutil.copyfile(fixture_path, bundled_fixture)
     split = build_family_split_manifest(samples, seed=42)
     split_path = output_dir / "split-manifest.json"
     split_path.write_text(json.dumps(split, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -63,10 +67,12 @@ def run_smoke(fixture_path: Path, output_dir: Path) -> Path:
 
     manifest = build_run_manifest(
         run_id="sasto-v-smoke-v1",
-        inputs={"smoke/families": fixture_path},
+        inputs={"smoke/families": bundled_fixture},
         outputs={"smoke/split-manifest": split_path, "smoke/summary": summary_path},
         targets=SMOKE_TARGETS,
         split_sha256=split_sha256(split),
+        split_artifact="smoke/split-manifest",
+        artifact_root=output_dir,
     )
     manifest_path = output_dir / "run-manifest.json"
     manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")

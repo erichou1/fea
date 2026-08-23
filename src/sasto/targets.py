@@ -14,12 +14,28 @@ class TargetSpec:
     unit: str
     direction: str
     threshold: float
+    normalization: str = "absolute"
+    base_target: str | None = None
 
     def __post_init__(self) -> None:
         if not self.name or not self.unit:
             raise ValueError("target name and unit must be non-empty")
         if self.direction not in {"upper", "lower"}:
             raise ValueError("direction must be 'upper' or 'lower'")
+        if self.normalization == "absolute":
+            if self.unit == "1":
+                raise ValueError("absolute targets cannot use unit '1'")
+            if self.base_target is not None:
+                raise ValueError("absolute targets cannot declare base_target")
+        elif self.normalization == "baseline_ratio":
+            if self.unit != "1":
+                raise ValueError("baseline ratios must use unit '1'")
+            if not self.name.endswith("_ratio"):
+                raise ValueError("baseline ratio target names must end in '_ratio'")
+            if not isinstance(self.base_target, str) or not self.base_target:
+                raise ValueError("baseline ratios require a non-empty base_target")
+        else:
+            raise ValueError("normalization must be 'absolute' or 'baseline_ratio'")
 
     def passes(self, value: float) -> bool:
         return value <= self.threshold if self.direction == "upper" else value >= self.threshold
@@ -30,6 +46,8 @@ class TargetSpec:
             "unit": self.unit,
             "direction": self.direction,
             "threshold": self.threshold,
+            "normalization": self.normalization,
+            "base_target": self.base_target,
         }
 
 
@@ -52,6 +70,10 @@ class TargetRegistry:
         names = [target.name for target in values]
         if len(names) != len(set(names)):
             raise ValueError("target names must be unique")
+        known_names = set(names)
+        for target in values:
+            if target.normalization == "baseline_ratio" and target.base_target not in known_names:
+                raise ValueError("baseline ratio base_target must name a registry target")
         self._targets = values
         self._by_name = {target.name: target for target in values}
 

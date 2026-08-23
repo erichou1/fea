@@ -44,6 +44,11 @@ def _family_samples(samples: Iterable[Mapping[str, object]]) -> Dict[str, list]:
 def _family_partition_counts(total: int, fractions: Mapping[str, float]) -> Dict[str, int]:
     if set(fractions) != set(PARTITIONS) or abs(sum(fractions.values()) - 1.0) > 1e-12:
         raise ValueError("fractions must name every partition and sum to 1")
+    positive_roles = [name for name in PARTITIONS if fractions[name] > 0]
+    if total < len(positive_roles):
+        raise FamilyLeakageError(
+            "split requires at least {} families for positive functional roles".format(len(positive_roles))
+        )
     raw = {name: total * fractions[name] for name in PARTITIONS}
     counts = {name: int(raw[name]) for name in PARTITIONS}
     remainder = total - sum(counts.values())
@@ -128,6 +133,11 @@ def validate_family_split(
             if sample_id in assigned:
                 raise FamilyLeakageError("sample_id appears in multiple partitions: {}".format(sample_id))
             assigned[sample_id] = partition
+    empty_roles = [partition for partition in PARTITIONS if not split[partition]]
+    if empty_roles:
+        raise FamilyLeakageError(
+            "{} must contain at least one family".format(", ".join(empty_roles))
+        )
     missing = sorted(set(family_by_sample) - set(assigned))
     if missing:
         raise FamilyLeakageError("split leaves source samples unassigned: {}".format(", ".join(missing)))

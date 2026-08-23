@@ -45,12 +45,52 @@ def _component_count(cells: set, neighbors: Iterable[Coordinate]) -> int:
     return count
 
 
+def _is_volume_boundary(cell: Coordinate, shape: Coordinate) -> bool:
+    return any(index in (0, size - 1) for index, size in zip(cell, shape))
+
+
+def _background_component_count(
+    background: set[Coordinate], shape: Coordinate, exterior_touched: bool
+) -> int:
+    """Count local pre-deletion 26-background components with an exterior node."""
+    exterior = object()
+    unseen: set[object] = set(background)
+    if exterior_touched:
+        unseen.add(exterior)
+    count = 0
+    while unseen:
+        count += 1
+        queue = deque([unseen.pop()])
+        while queue:
+            cell = queue.popleft()
+            neighbors: list[object]
+            if cell is exterior:
+                neighbors = [candidate for candidate in background if _is_volume_boundary(candidate, shape)]
+            else:
+                assert isinstance(cell, tuple)
+                z, y, x = cell
+                neighbors = [
+                    (z + dz, y + dy, x + dx)
+                    for dz, dy, dx in FULL_NEIGHBORS
+                    if (z + dz, y + dy, x + dx) in background
+                ]
+                if exterior_touched and _is_volume_boundary(cell, shape):
+                    neighbors.append(exterior)
+            for neighbor in neighbors:
+                if neighbor in unseen:
+                    unseen.remove(neighbor)
+                    queue.append(neighbor)
+    return count
+
+
 def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
     """Return whether deleting foreground `point` preserves local 6/26 topology.
 
-    The foreground after deletion must be one 6-connected component and local
-    background (including the deleted point) must be one 26-connected component.
-    Isolated final-voxel deletion is rejected to retain one foreground component.
+    Foreground neighbors after deletion must form one 6-component.  Background
+    is evaluated *before* deletion: its 26-components must already be one,
+    with an explicit exterior component when the 3x3x3 stencil reaches outside
+    the volume.  This prevents a boundary deletion from joining an enclosed
+    cavity to exterior background through the deleted point.
     """
     z_size, y_size, x_size = _shape(volume)
     z, y, x = point
@@ -60,15 +100,19 @@ def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coor
         return False
     foreground = set()
     background = set()
+    exterior_touched = False
     for dz, dy, dx in product((-1, 0, 1), repeat=3):
         nz, ny, nx = z + dz, y + dy, x + dx
         if not (0 <= nz < z_size and 0 <= ny < y_size and 0 <= nx < x_size):
+            exterior_touched = True
             continue
         local = (nz, ny, nx)
-        if local == point or not volume[nz][ny][nx]:
-            background.add(local)
-        else:
+        if local == point:
+            continue
+        if volume[nz][ny][nx]:
             foreground.add(local)
-    return _component_count(foreground, FACE_NEIGHBORS) == 1 and _component_count(
-        background, FULL_NEIGHBORS
+        else:
+            background.add(local)
+    return _component_count(foreground, FACE_NEIGHBORS) == 1 and _background_component_count(
+        background, (z_size, y_size, x_size), exterior_touched
     ) == 1

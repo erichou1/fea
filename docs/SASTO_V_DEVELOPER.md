@@ -17,8 +17,11 @@ call `is_simple_point_6_26`; reversed 26/6 conventions are noncanonical.
 ## Target contract
 
 Every constrained response is addressed by its immutable name, with a physical
-unit, inequality direction, and threshold. Lists or tensor positions are not a
-compliance API. The current smoke registry is:
+unit, inequality direction, threshold, and explicit `normalization`. Lists or
+tensor positions are not a compliance API. Absolute targets must not use unit
+`1`. A baseline ratio must use unit `1`, an explicit `_ratio` name (for example
+`compliance_ratio`), and a `base_target` that names another registry target.
+The current smoke registry uses only absolute proxy targets:
 
 | Target | Unit | Direction | Threshold |
 | --- | --- | --- | ---: |
@@ -39,18 +42,22 @@ assignments, unknown IDs, duplicate IDs, and family leakage.
 
 ## Evidence records
 
-`run-manifest.json` uses schema version `1.0.0` and records named targets,
-family split digest, and SHA-256 digests for every declared input and output.
-`verify_run_manifest` is fail-closed: unsupported schema, any status other than
-`complete`, missing paths, malformed records, or changed hashes reject the
-artifact. Zero-failure binomial helpers are intentionally separate from
-conformal coverage; do not translate one claim into the other.
+`run-manifest.json` uses schema version `1.0.0` and records named targets, a
+declared split-artifact logical ID and canonical family-split digest, plus
+SHA-256 digests for every declared input and output. Record paths are portable
+POSIX-relative paths beneath the manifest's artifact root. Build and verification
+reject absolute/traversal paths, symlinks, non-regular files, files outside that
+root, malformed records, and changed hashes. `verify_run_manifest` recomputes
+the canonical digest after parsing the declared split artifact. Zero-failure
+binomial helpers are intentionally separate from conformal coverage; do not
+translate one claim into the other.
 
 ## Commands
 
 ```sh
 make smoke
 make verify-artifact
+make reproduce-paper
 make test
 ```
 
@@ -58,6 +65,12 @@ make test
 verifies it. Existing artifact roots are deliberately rejected rather than
 silently overwritten. To generate a new run, choose a fresh `ARTIFACT_DIR`.
 `make verify-artifact ARTIFACT_DIR=...` verifies the selected immutable run.
+
+`make reproduce-paper` is deliberately a **fail-closed G1 preflight**, not a
+paper-results runner. It checks the declared configuration/data/runner and
+notice/license gates, prints `G1 UNAVAILABLE`, and exits nonzero until the real
+runner and assets exist and have been independently validated. It must never be
+used to imply that paper results were reproduced.
 
 ## Legacy pipelines are noncanonical
 
@@ -69,7 +82,9 @@ separately promoted in a later gate.
 
 ## Release gates still unresolved
 
-No open-source license has been selected. A project license plus third-party and
-data notices are a required release gate; this bootstrap intentionally makes no
-license choice on Eric's behalf. Full reproduction is also data-, solver-, and
+No open-source license has been selected. `LICENSE_STATUS.md`,
+`THIRD_PARTY_NOTICES.md`, and `DATA_NOTICE.md` record unresolved external
+choices without selecting a license. A project license plus reviewed notices
+remain a required release gate; this bootstrap intentionally makes no license
+choice on Eric's behalf. Full reproduction is also data-, solver-, and
 locked-environment-gated and is outside G0.
