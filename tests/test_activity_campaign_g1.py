@@ -134,12 +134,29 @@ def test_threshold_selection_targets_larger_individual_named_fraction_not_combin
     assert selection["score"][1:3] == (0.2, True)
 
 
+def test_threshold_range_penalty_uses_larger_individual_fraction() -> None:
+    from sasto.activity_campaign import select_thresholds
+
+    trajectories = [
+        {
+            "sample_id": "fit-{}".format(index),
+            "stopping_reason": "candidate_exhaustion",
+            "batches": ([{"compliance_ratio": 1.11, "p99_gauss_stress_ratio": 1.01}] if index < 5 else []),
+        }
+        for index in range(10)
+    ]
+    selection = select_thresholds(trajectories, beta_grid=(1.05,))["selection"]
+    assert isinstance(selection, dict)
+    assert selection["constraint_activity"] == {"compliance": 0.5, "stress": 0.0}
+    assert selection["individual_named_constraint_fraction"] == 0.5
+    assert selection["score"][1:3] == (0.0, False)
+
+
 def test_threshold_selection_prioritizes_distance_before_individual_range_penalty() -> None:
     from sasto.activity_campaign import _case_for_threshold, select_thresholds
 
-    # This trajectory set makes range-first choose 1.05/1.05 (44%/43%, both
-    # individual fractions in range), whereas distance-first chooses 1.05/1.10
-    # (54%/16%, closer to 50% but individually out of range).
+    # Distance-first chooses 1.05/1.10 because its larger individual fraction
+    # is 54%, closer to 50% and inside the 40-60% target band.
     counts = {
         (1.00, 1.00): 13, (1.00, 1.06): 17, (1.00, 1.11): 16,
         (1.06, 1.00): 8, (1.06, 1.06): 10, (1.06, 1.11): 10,
@@ -151,10 +168,12 @@ def test_threshold_selection_prioritizes_distance_before_individual_range_penalt
         for (compliance, stress), count in counts.items() for index in range(count)
     ]
     chosen = select_thresholds(trajectories, beta_grid=(1.05, 1.10))
+    selection = chosen["selection"]
+    assert isinstance(selection, dict)
     assert chosen["selected"] == {"beta_compliance": 1.05, "beta_stress": 1.10}
-    assert chosen["selection"]["score"][0] is False
-    assert chosen["selection"]["score"][1] == pytest.approx(0.04)
-    assert chosen["selection"]["score"][2] is True
+    assert selection["score"][0] is False
+    assert selection["score"][1] == pytest.approx(0.04)
+    assert selection["score"][2] is False
 
     # Deliberately reconstruct the preregistered counterfactual range-first
     # comparator: its answer must differ from the implementation's distance-first.

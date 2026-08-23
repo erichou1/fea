@@ -424,7 +424,7 @@ def select_thresholds(trajectories: Sequence[Mapping[str, object]], *, beta_grid
             caps = sum(reason == "defensive_cap" for reason in reasons.values())
             combined_named = comp + stress
             individual_named = max(comp, stress)
-            individual_range_penalty = not (0.40 <= comp <= 0.60 and 0.40 <= stress <= 0.60)
+            individual_range_penalty = not (0.40 <= individual_named <= 0.60)
             score = (caps != 0, abs(individual_named - 0.50), individual_range_penalty,
                      failures, co_crossings, float(beta_c), float(beta_s))
             candidates.append((score, {"beta_compliance": float(beta_c), "beta_stress": float(beta_s), "case_reasons": reasons,
