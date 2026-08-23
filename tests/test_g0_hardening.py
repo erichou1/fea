@@ -430,3 +430,96 @@ def test_numpy_and_nested_boolean_topology_match_controller_64_cube_regression()
 )
 def test_topology_fails_closed_for_non_boolean_or_malformed_grids(volume: object) -> None:
     assert is_simple_point_6_26(volume, (0, 0, 0)) is False
+
+
+def test_public_append_only_writer_creates_new_regular_leaf_and_rejects_existing(tmp_path: Path) -> None:
+    from sasto.manifest import ManifestVerificationError, write_new_regular_path
+
+    output = tmp_path / "artifacts" / "fit-probe.json"
+    output.parent.mkdir()
+    assert write_new_regular_path(output, b"first\n", "fit probe output") == hashlib.sha256(b"first\n").hexdigest()
+    with pytest.raises(ManifestVerificationError, match="new append-only path"):
+        write_new_regular_path(output, b"second\n", "fit probe output")
+    assert output.read_bytes() == b"first\n"
+
+
+@pytest.mark.parametrize("kind", ("symlink", "fifo", "directory"))
+def test_public_append_only_writer_rejects_nonregular_existing_leaf_without_touching_target(
+    tmp_path: Path, kind: str,
+) -> None:
+    from sasto.manifest import ManifestVerificationError, write_new_regular_path
+
+    output = tmp_path / "output.json"
+    external = tmp_path / "external.json"
+    external.write_bytes(b"external")
+    if kind == "symlink":
+        output.symlink_to(external)
+    elif kind == "fifo":
+        os.mkfifo(output)
+    else:
+        output.mkdir()
+    with pytest.raises(ManifestVerificationError, match="new append-only path"):
+        write_new_regular_path(output, b"probe\n", "fit probe output")
+    assert external.read_bytes() == b"external"
+
+
+def test_public_append_only_writer_rejects_symlink_parent_and_traversal(tmp_path: Path) -> None:
+    from sasto.manifest import ManifestVerificationError, write_new_regular_path
+
+    external = tmp_path / "external"
+    external.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(external, target_is_directory=True)
+    with pytest.raises(ManifestVerificationError, match="symlink"):
+        write_new_regular_path(alias / "output.json", b"probe\n", "fit probe output")
+    with pytest.raises(ManifestVerificationError, match="traversal"):
+        write_new_regular_path(tmp_path / "safe" / ".." / "output.json", b"probe\n", "fit probe output")
+    assert not (external / "output.json").exists()
+
+
+def test_public_append_only_writer_rejects_parent_replacement_without_touching_external(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sasto.manifest as manifest_module
+    from sasto.manifest import ManifestVerificationError, write_new_regular_path
+
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    original = tmp_path / "parent-original"
+    external = tmp_path / "external"
+    external.mkdir()
+    real_open = manifest_module.os.open
+    parent_opened = threading.Event()
+    swapped = threading.Event()
+    failures: list[BaseException] = []
+
+    def swap_parent() -> None:
+        try:
+            assert parent_opened.wait(timeout=2)
+            parent.rename(original)
+            parent.symlink_to(external, target_is_directory=True)
+            swapped.set()
+        except BaseException as error:
+            failures.append(error)
+            swapped.set()
+
+    worker = threading.Thread(target=swap_parent)
+    worker.start()
+
+    def pause_after_parent_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        descriptor = real_open(path, flags, *args, **kwargs)
+        if path == "parent":
+            parent_opened.set()
+            assert swapped.wait(timeout=2)
+        return descriptor
+
+    monkeypatch.setattr(manifest_module.os, "open", pause_after_parent_open)
+    try:
+        with pytest.raises(ManifestVerificationError, match="root changed"):
+            write_new_regular_path(parent / "output.json", b"probe\n", "fit probe output")
+    finally:
+        worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert not failures
+    assert (original / "output.json").read_bytes() == b"probe\n"
+    assert not (external / "output.json").exists()

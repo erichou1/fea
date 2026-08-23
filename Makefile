@@ -4,6 +4,8 @@ ARTIFACT_DIR ?= artifacts/smoke
 # Pass caller-controlled values through the environment, never recipe source.
 export ARTIFACT_DIR
 export EXPECTED_MANIFEST_SHA256
+export EXPECTED_SPLIT_MANIFEST_SHA256
+export EXPECTED_FEA_ARCHIVE_SHA256
 export PYTHON
 
 .PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe
@@ -49,7 +51,11 @@ fit-only-probe:
 		printf '%s\n' 'SPLIT_MANIFEST, FEA_ARCHIVE, and FIT_PROBE_OUTPUT are required' >&2; \
 		exit 2; \
 	fi; \
-	uv run --frozen --group fea python -m sasto.fit_probe --split-manifest "$$SPLIT_MANIFEST" --archive "$$FEA_ARCHIVE" --output "$$FIT_PROBE_OUTPUT" --limit "$${FIT_PROBE_LIMIT:-4}" --fixed-force-z "$${FIT_PROBE_FORCE_Z:--100.0}"
+	if [ -z "$${EXPECTED_SPLIT_MANIFEST_SHA256:-}" ] || [ -z "$${EXPECTED_FEA_ARCHIVE_SHA256:-}" ]; then \
+		printf '%s\n' 'EXPECTED_SPLIT_MANIFEST_SHA256 and EXPECTED_FEA_ARCHIVE_SHA256 are required from external trust anchors' >&2; \
+		exit 2; \
+	fi; \
+	uv run --frozen --group fea python -m sasto.fit_probe --split-manifest "$$SPLIT_MANIFEST" --expected-split-manifest-sha256 "$$EXPECTED_SPLIT_MANIFEST_SHA256" --archive "$$FEA_ARCHIVE" --expected-fea-archive-sha256 "$$EXPECTED_FEA_ARCHIVE_SHA256" --output "$$FIT_PROBE_OUTPUT" --limit "$${FIT_PROBE_LIMIT:-4}" --fixed-force-z "$${FIT_PROBE_FORCE_Z:--100.0}"
 
 topology-campaign:
 	@set -eu; \

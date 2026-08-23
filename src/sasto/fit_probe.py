@@ -14,6 +14,7 @@ from typing import Iterable, Mapping
 
 import numpy as np
 
+from .manifest import ManifestVerificationError, read_regular_path_snapshot, write_new_regular_path
 from .voxel_fea import VoxelFEAConfig, solve_voxels
 
 
@@ -107,29 +108,63 @@ def _configuration(archive: zipfile.ZipFile, sample_id: str, fixed_force: tuple[
     )
 
 
+def _expected_sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise FitOnlyAccessError("expected {} sha256 must be a lowercase SHA-256 digest".format(label))
+    return value
+
+
+def _regular_snapshot(path: Path, role: str):
+    try:
+        return read_regular_path_snapshot(Path(path), role)
+    except ManifestVerificationError as error:
+        raise FitOnlyAccessError(str(error)) from error
+
+
 def run_fit_probe(
-    *, split_manifest: Path, archive_path: Path, sample_ids: Iterable[str] | None, limit: int,
-    fixed_force: tuple[float, float, float],
+    *, split_manifest: Path, archive_path: Path, expected_split_manifest_sha256: str, expected_archive_sha256: str,
+    sample_ids: Iterable[str] | None, limit: int, fixed_force: tuple[float, float, float],
 ) -> dict[str, object]:
-    """Run the declared batch; role validation occurs before opening the archive."""
-    manifest = json.loads(Path(split_manifest).read_text(encoding="utf-8"))
+    """Run an anchored fit-only batch after completing all role checks."""
+    expected_split_manifest_sha256 = _expected_sha256(expected_split_manifest_sha256, "split manifest")
+    expected_archive_sha256 = _expected_sha256(expected_archive_sha256, "archive")
+    split_snapshot = _regular_snapshot(split_manifest, "split manifest")
+    if split_snapshot.sha256 != expected_split_manifest_sha256:
+        raise FitOnlyAccessError(
+            "split manifest sha256 mismatch: expected {}, observed {}".format(
+                expected_split_manifest_sha256, split_snapshot.sha256
+            )
+        )
+    try:
+        manifest = json.loads(split_snapshot.bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise FitOnlyAccessError("split manifest is malformed") from error
     selected = select_fit_sample_ids(manifest, sample_ids, limit=limit)
+    archive_snapshot = _regular_snapshot(archive_path, "archive")
+    if archive_snapshot.sha256 != expected_archive_sha256:
+        raise FitOnlyAccessError(
+            "archive sha256 mismatch: expected {}, observed {}".format(expected_archive_sha256, archive_snapshot.sha256)
+        )
     records = []
-    with zipfile.ZipFile(archive_path, "r") as archive:
+    with zipfile.ZipFile(io.BytesIO(archive_snapshot.bytes), "r") as archive:
         for sample_id in selected:
             occupancy = _load_occupancy(archive, sample_id)
             result = solve_voxels(occupancy, _configuration(archive, sample_id, fixed_force))
             records.append({"sample_id": sample_id, "record": result})
     return {
-        "schema_version": "1.0.0", "role": "fit", "confirmation_accessed": False,
-        "development_accessed": False, "calibration_accessed": False, "sample_count": len(records), "records": records,
+        "schema_version": "1.1.0", "role": "fit", "selected_role": "fit", "selected_sample_ids": selected,
+        "split_manifest_sha256": split_snapshot.sha256, "archive_sha256": archive_snapshot.sha256,
+        "confirmation_accessed": False, "development_accessed": False, "calibration_accessed": False,
+        "nonfit_payload_access_count": 0, "sample_count": len(records), "records": records,
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the canonical Hex8 verifier only on frozen fit-role samples.")
     parser.add_argument("--split-manifest", type=Path, required=True)
+    parser.add_argument("--expected-split-manifest-sha256")
     parser.add_argument("--archive", type=Path, required=True)
+    parser.add_argument("--expected-fea-archive-sha256")
     parser.add_argument("--sample-id", action="append", dest="sample_ids")
     parser.add_argument("--limit", type=int, default=4)
     parser.add_argument("--fixed-force-z", type=float, default=-100.0)
@@ -137,13 +172,19 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = run_fit_probe(
-            split_manifest=args.split_manifest, archive_path=args.archive, sample_ids=args.sample_ids, limit=args.limit,
+            split_manifest=args.split_manifest,
+            archive_path=args.archive,
+            expected_split_manifest_sha256=args.expected_split_manifest_sha256,
+            expected_archive_sha256=args.expected_fea_archive_sha256,
+            sample_ids=args.sample_ids,
+            limit=args.limit,
             fixed_force=(0.0, 0.0, args.fixed_force_z),
         )
-        if args.output.exists():
-            raise FitOnlyAccessError("output must be a new append-only path")
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        write_new_regular_path(
+            args.output,
+            (json.dumps(result, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+            "fit probe output",
+        )
     except (OSError, ValueError, zipfile.BadZipFile) as error:
         print("REJECTED: {}".format(error))
         return 2

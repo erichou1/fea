@@ -237,6 +237,35 @@ def _write_new_regular_file(parent_fd: int, name: str, payload: bytes, path: Pat
         os.close(file_fd)
 
 
+def write_new_regular_path(path: Path, payload: bytes, role: str = "output") -> str:
+    """Atomically create a new regular file through a held no-follow parent FD.
+
+    The parent must already exist and every lexical component is opened with
+    no-follow semantics.  The path is rechecked against that held descriptor
+    after creation so a concurrent lexical-root replacement is rejected rather
+    than silently reporting a redirected output.
+    """
+    if not isinstance(payload, bytes):
+        raise ManifestVerificationError("{} payload must be bytes".format(role))
+    path = Path(path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.name or path.name in (".", "..") or "\x00" in path.name:
+        raise ManifestVerificationError("{} path must be a relative non-traversal path".format(role))
+    try:
+        with _open_directory_path(path.parent) as parent_fd:
+            try:
+                snapshot = _write_new_regular_file(parent_fd, path.name, payload, path, role)
+            except FileExistsError as error:
+                raise ManifestVerificationError("{} must be a new append-only path: {}".format(role, path)) from error
+            assert_lexical_root_identity(path.parent, parent_fd)
+    except ManifestVerificationError:
+        raise
+    except (OSError, ValueError) as error:
+        raise ManifestVerificationError("cannot safely create {}: {}".format(role, error)) from error
+    return snapshot.sha256
+
+
 def _mkdir_open_new_directory(parent_fd: int, name: str, path: Path) -> int:
     """Create one fresh child directory and immediately pin it by no-follow FD."""
     if not name or name in (".", "..") or "/" in name or "\x00" in name:

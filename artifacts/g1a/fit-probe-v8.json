@@ -1,0 +1,228 @@
+{
+  "archive_payload_members": [
+    "fea_ml/data/runs_real/05134/occ.npz",
+    "fea_ml/data/runs_real/05134/meta.json",
+    "fea_ml/data/runs_real/04900/occ.npz",
+    "fea_ml/data/runs_real/04900/meta.json",
+    "fea_ml/data/runs_real/02606/occ.npz",
+    "fea_ml/data/runs_real/02606/meta.json",
+    "fea_ml/data/runs_real/08966/occ.npz",
+    "fea_ml/data/runs_real/08966/meta.json",
+    "fea_ml/data/runs_real/05134/occ.npz",
+    "fea_ml/data/runs_real/05134/meta.json",
+    "fea_ml/data/runs_real/05134/occ.npz",
+    "fea_ml/data/runs_real/05134/meta.json",
+    "fea_ml/data/runs_real/05134/occ.npz",
+    "fea_ml/data/runs_real/05134/meta.json"
+  ],
+  "archive_sha256": "79640406e1e0921c0ccfdc1df7ce51e05a8ecfece2ceccb7dec42c981736beda",
+  "calibration_accessed": false,
+  "confirmation_accessed": false,
+  "development_accessed": false,
+  "fit_payload_access_count": 14,
+  "nonfit_payload_access_count": 0,
+  "records": [
+    {
+      "record": {
+        "applied_force_sum_n": [
+          0.0,
+          0.0,
+          -12353.115701148221
+        ],
+        "body_force_sum_n": [
+          0.0,
+          0.0,
+          -12253.115701148221
+        ],
+        "compliance_j": 9.99269908328572,
+        "config_digest": "ef8e45a9269387938bbdbf5a17e936bba83586e9b4eae54cfb8717c7e1ee5513",
+        "dof_count": 106494,
+        "element_count": 24528,
+        "fixed_force_sum_n": [
+          0.0,
+          0.0,
+          -99.99999999999999
+        ],
+        "fixed_node_count": 108,
+        "free_dof_count": 106170,
+        "input_digest": "4abd76b5ce73f99962b13deadc3572bf29d01274ea02191570845d59a9adc373",
+        "iterations": 506,
+        "iterative_requested_rtol": 2e-09,
+        "loaded_node_count": 107,
+        "max_displacement_m": 0.001669778976805134,
+        "max_gauss_von_mises_pa": 12650885.81717043,
+        "max_von_mises_pa": 12650885.81717043,
+        "node_count": 35498,
+        "p99_gauss_von_mises_pa": 2311035.808616016,
+        "p99_von_mises_pa": 2311035.808616016,
+        "preconditioner_identity": "pyamg.smoothed_aggregation_solver@5.3.0",
+        "reason": null,
+        "relative_residual": 2.8871425135024397e-09,
+        "scientific_digest": "00eca0d2d99d2d1809c1f12506c55fca7df9a28b3de22fd46e1b88dc7aae6db4",
+        "solver_identity": "scipy.sparse.linalg.cg",
+        "status": "success",
+        "stress_metric_aliases": {
+          "max_von_mises_pa": "max_gauss_von_mises_pa",
+          "p99_von_mises_pa": "p99_gauss_von_mises_pa"
+        },
+        "stress_sample_count": 196224,
+        "stress_sampling": "eight_full_integration_gauss_points_per_element",
+        "timing": {
+          "wall_seconds": 15.571371333004208
+        }
+      },
+      "sample_id": "05134"
+    },
+    {
+      "record": {
+        "config_digest": "d24feb04662c3afd5594f87d48c84e681a6729485d6c1374743b0cf57d8fda1a",
+        "input_digest": "a5d02f5b67abcfdc77643a4d648819d281f2ca19b739a4413e4f701b23751d18",
+        "outputs": null,
+        "reason": "disconnected_occupancy",
+        "relative_residual": null,
+        "status": "failure"
+      },
+      "sample_id": "04900"
+    },
+    {
+      "record": {
+        "applied_force_sum_n": [
+          0.0,
+          0.0,
+          -8301.835274264711
+        ],
+        "body_force_sum_n": [
+          0.0,
+          0.0,
+          -8201.835274264711
+        ],
+        "compliance_j": 2.4186566233584736,
+        "config_digest": "1fa157548173d78c5b5fd62c82658f3862f8d47c11ba18c9c0e8663b17462366",
+        "dof_count": 43470,
+        "element_count": 9474,
+        "fixed_force_sum_n": [
+          0.0,
+          0.0,
+          -100.00000000000003
+        ],
+        "fixed_node_count": 57,
+        "free_dof_count": 43299,
+        "input_digest": "298acf367908698277297125b23d4b8ed8aa488d0b48b9cb51f6f90833059c43",
+        "iterations": 284,
+        "iterative_requested_rtol": 2e-09,
+        "loaded_node_count": 88,
+        "max_displacement_m": 0.0005962185729180557,
+        "max_gauss_von_mises_pa": 6724625.002765053,
+        "max_von_mises_pa": 6724625.002765053,
+        "node_count": 14490,
+        "p99_gauss_von_mises_pa": 1612380.6562401908,
+        "p99_von_mises_pa": 1612380.6562401908,
+        "preconditioner_identity": "pyamg.smoothed_aggregation_solver@5.3.0",
+        "reason": null,
+        "relative_residual": 1.9407520675155116e-09,
+        "scientific_digest": "bbb2948050757bb44fec540cc4dee94d1690f23344103dec151142852508fa9e",
+        "solver_identity": "scipy.sparse.linalg.cg",
+        "status": "success",
+        "stress_metric_aliases": {
+          "max_von_mises_pa": "max_gauss_von_mises_pa",
+          "p99_von_mises_pa": "p99_gauss_von_mises_pa"
+        },
+        "stress_sample_count": 75792,
+        "stress_sampling": "eight_full_integration_gauss_points_per_element",
+        "timing": {
+          "wall_seconds": 3.525598791995435
+        }
+      },
+      "sample_id": "02606"
+    },
+    {
+      "record": {
+        "applied_force_sum_n": [
+          0.0,
+          0.0,
+          -8494.180110134155
+        ],
+        "body_force_sum_n": [
+          0.0,
+          0.0,
+          -8394.180110134155
+        ],
+        "compliance_j": 12.390614102603188,
+        "config_digest": "d6fb301dacaeebeaeb6be9bafe6cbd1a8343b0a5d70f80d4544c98302ee65933",
+        "dof_count": 73782,
+        "element_count": 16285,
+        "fixed_force_sum_n": [
+          0.0,
+          0.0,
+          -99.99999999999999
+        ],
+        "fixed_node_count": 74,
+        "free_dof_count": 73560,
+        "input_digest": "41c5f4ba0241836296b9f104c3c55650bc0033402ec05b6547c121f1c02fbb89",
+        "iterations": 408,
+        "iterative_requested_rtol": 2e-09,
+        "loaded_node_count": 54,
+        "max_displacement_m": 0.0029953104313467744,
+        "max_gauss_von_mises_pa": 17099548.609602194,
+        "max_von_mises_pa": 17099548.609602194,
+        "node_count": 24594,
+        "p99_gauss_von_mises_pa": 2082389.9200590665,
+        "p99_von_mises_pa": 2082389.9200590665,
+        "preconditioner_identity": "pyamg.smoothed_aggregation_solver@5.3.0",
+        "reason": null,
+        "relative_residual": 4.1644227983301226e-09,
+        "scientific_digest": "c35edf52bda41300b2de5a4947b9f6bbce8921ff84a8066c8339d2e464d3675c",
+        "solver_identity": "scipy.sparse.linalg.cg",
+        "status": "success",
+        "stress_metric_aliases": {
+          "max_von_mises_pa": "max_gauss_von_mises_pa",
+          "p99_von_mises_pa": "p99_gauss_von_mises_pa"
+        },
+        "stress_sample_count": 130280,
+        "stress_sampling": "eight_full_integration_gauss_points_per_element",
+        "timing": {
+          "wall_seconds": 9.08755999999994
+        }
+      },
+      "sample_id": "08966"
+    }
+  ],
+  "repeat_05134": {
+    "admission_relative_tolerance": 2e-08,
+    "attempt_count": 3,
+    "records": [
+      {
+        "iterative_requested_rtol": 2e-09,
+        "reason": null,
+        "relative_residual": 2.891043270326487e-09,
+        "scientific_digest": "00eca0d2d99d2d1809c1f12506c55fca7df9a28b3de22fd46e1b88dc7aae6db4",
+        "status": "success"
+      },
+      {
+        "iterative_requested_rtol": 2e-09,
+        "reason": null,
+        "relative_residual": 2.872498220499865e-09,
+        "scientific_digest": "00eca0d2d99d2d1809c1f12506c55fca7df9a28b3de22fd46e1b88dc7aae6db4",
+        "status": "success"
+      },
+      {
+        "iterative_requested_rtol": 2e-09,
+        "reason": null,
+        "relative_residual": 2.873602706140042e-09,
+        "scientific_digest": "00eca0d2d99d2d1809c1f12506c55fca7df9a28b3de22fd46e1b88dc7aae6db4",
+        "status": "success"
+      }
+    ]
+  },
+  "role": "fit",
+  "sample_count": 4,
+  "schema_version": "1.1.0",
+  "selected_role": "fit",
+  "selected_sample_ids": [
+    "05134",
+    "04900",
+    "02606",
+    "08966"
+  ],
+  "split_manifest_sha256": "ca526a068137308ca4bb05325d62bab5a7ad45c81d54566d5fa8e3ef62a91650"
+}

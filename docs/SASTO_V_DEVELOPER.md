@@ -227,7 +227,16 @@ make test-fea-locked
 ```
 
 `make fit-only-probe` invokes `sasto.fit_probe`. It requires explicit
-`SPLIT_MANIFEST`, `FEA_ARCHIVE`, and a new `FIT_PROBE_OUTPUT`; it validates
+`SPLIT_MANIFEST`, `FEA_ARCHIVE`, a new `FIT_PROBE_OUTPUT`, and the external,
+lowercase SHA-256 anchors `EXPECTED_SPLIT_MANIFEST_SHA256` and
+`EXPECTED_FEA_ARCHIVE_SHA256`. The probe reads each source through no-follow,
+regular-file descriptor snapshots; it compares exact split bytes before parsing
+and archive bytes before constructing a Zip reader. Output is created exactly
+once through a held, no-follow parent descriptor—existing leaves, symlinked
+parents or leaves, nonregular leaves, traversal, and lexical-root replacement
+fail closed. Successful output records both source digests, selected fit role
+and IDs, and a zero non-fit payload count; it never records non-fit IDs.
+It validates
 the complete caller-supplied request (including elements after `limit`) for
 well-formed unique IDs and fit membership, and validates that
 fit/development/calibration/confirmation memberships are disjoint **before
