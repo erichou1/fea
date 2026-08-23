@@ -45,7 +45,7 @@ def _has_symlink_component(path: Path, root: Path) -> bool:
     return False
 
 
-def _has_lexical_symlink_component(path: Path) -> bool:
+def has_lexical_symlink_component(path: Path) -> bool:
     """Inspect each caller-supplied path component before any resolution."""
     if path.is_absolute():
         current = Path(path.anchor)
@@ -199,7 +199,7 @@ def _verify_targets(targets: object) -> None:
 def verify_run_manifest(manifest_path: Path) -> None:
     """Reject incomplete, nonportable, malformed, or hash-mutated evidence."""
     manifest_path = Path(manifest_path)
-    if _has_lexical_symlink_component(manifest_path):
+    if has_lexical_symlink_component(manifest_path):
         raise ManifestVerificationError("manifest must reside in a real artifact root")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

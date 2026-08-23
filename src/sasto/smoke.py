@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .manifest import build_run_manifest
+from .manifest import ManifestVerificationError, build_run_manifest, has_lexical_symlink_component
 from .splits import build_family_split_manifest, split_sha256
 from .targets import TargetRegistry, TargetSpec
 from .topology import is_simple_point_6_26
@@ -32,7 +32,10 @@ SMOKE_TARGETS = TargetRegistry(
 def run_smoke(fixture_path: Path, output_dir: Path) -> Path:
     """Write one immutable smoke artifact; an existing run root is rejected."""
     fixture_path = Path(fixture_path).resolve()
-    output_dir = Path(output_dir).resolve()
+    output_dir = Path(output_dir)
+    if has_lexical_symlink_component(output_dir):
+        raise ManifestVerificationError("artifact root must not contain symlink components")
+    output_dir = output_dir.resolve()
     if not fixture_path.is_file():
         raise FileNotFoundError("smoke fixture is missing: {}".format(fixture_path))
     if output_dir.exists():

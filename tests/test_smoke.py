@@ -35,6 +35,18 @@ def test_smoke_fixture_is_deterministic_and_verifiable(tmp_path: Path) -> None:
         run_smoke(fixture, relocated)
 
 
+def test_smoke_rejects_a_lexically_symlinked_output_ancestor_before_creation(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
+    real = tmp_path / "real"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(ManifestVerificationError, match="artifact root must not contain symlink components"):
+        run_smoke(fixture, alias / "artifact")
+    assert not (real / "artifact").exists()
+
+
 def test_smoke_manifest_encodes_baseline_compliance_ratio(tmp_path: Path) -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
     manifest = json.loads(run_smoke(fixture, tmp_path / "artifact").read_text(encoding="utf-8"))

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import numbers
 from typing import Dict, Iterable, Mapping, Tuple
 
 
 def _is_finite_number(value: object) -> bool:
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+    """Accept finite real numeric-protocol values but never boolean-like values."""
+    return not isinstance(value, bool) and isinstance(value, numbers.Real) and math.isfinite(value)
 
 
 @dataclass(frozen=True)

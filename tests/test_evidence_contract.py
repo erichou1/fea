@@ -70,6 +70,24 @@ def test_ratio_base_target_is_external_provenance_not_a_registry_member() -> Non
     assert TargetRegistry((ratio,)).names == ("compliance_ratio",)
 
 
+def test_canonical_locked_environment_contract() -> None:
+    repository = Path(__file__).parents[1]
+    pyproject = (repository / "pyproject.toml").read_text(encoding="utf-8")
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    gitignore = (repository / ".gitignore").read_text(encoding="utf-8")
+
+    assert 'requires-python = ">=3.11,<3.12"' in pyproject
+    assert '"numpy>=2.0,<3"' in pyproject
+    assert '[dependency-groups]' in pyproject
+    assert '"pytest>=8,<9"' in pyproject
+    assert (repository / ".python-version").read_text(encoding="utf-8") == "3.11.15\n"
+    assert (repository / "uv.lock").is_file()
+    assert "*.egg-info/" in gitignore
+    assert "test-locked:" in makefile
+    assert "uv sync --frozen" in makefile
+    assert "uv run --frozen --group test python -m pytest -q" in makefile
+
+
 @pytest.mark.parametrize(
     "kwargs",
     (
@@ -95,6 +113,21 @@ def test_target_registry_rejects_nonfinite_or_nonnumeric_responses(response: obj
     registry = TargetRegistry((TargetSpec("compliance", "J", "upper", 1.15),))
     with pytest.raises(ValueError):
         registry.evaluate({"compliance": response})
+
+
+def test_target_contract_accepts_finite_numpy_real_scalars_and_rejects_invalid_numpy_scalars() -> None:
+    import numpy as np
+
+    registry = TargetRegistry((TargetSpec("compliance", "J", "upper", np.float32(1.15)),))
+    assert registry.evaluate({"compliance": np.int64(1)})["compliance"].passed
+    assert not registry.evaluate({"compliance": np.float32(1.2)})["compliance"].passed
+
+    for invalid in (np.bool_(True), np.complex64(1 + 0j), np.float32("nan"), np.float64("inf")):
+        with pytest.raises(ValueError, match="finite number"):
+            registry.evaluate({"compliance": invalid})
+    for invalid_threshold in (np.bool_(True), np.complex128(1 + 0j), np.float32("nan"), np.float64("inf")):
+        with pytest.raises(ValueError, match="finite number"):
+            TargetSpec("compliance", "J", "upper", invalid_threshold)
 
 
 def test_family_split_rejects_leakage_and_is_deterministic() -> None:

@@ -22,7 +22,9 @@ is not a constant-time local stencil check.
 Every constrained response is addressed by its immutable name, with a physical
 unit, inequality direction, finite numeric threshold, and explicit
 `normalization`. Names and units must be non-empty strings; thresholds and
-runtime responses must be finite non-boolean numbers. Lists or tensor positions
+runtime responses must be finite non-boolean real numbers, including common
+finite NumPy real scalars such as `numpy.int64` and `numpy.float32`. Python and
+NumPy booleans, strings, complex values, NaN, and infinities are rejected. Lists or tensor positions
 are not a compliance API. Absolute targets must not use unit
 `1`. A baseline ratio must use unit `1`, an explicit `_ratio` name (for example
 `compliance_ratio`), and a non-empty `base_target` provenance label; the base
@@ -58,7 +60,7 @@ declared split-artifact logical ID and canonical family-split digest, plus
 SHA-256 digests for every declared input and output. Record paths are portable
 POSIX-relative paths beneath the manifest's artifact root. Build and verification
 reject absolute/traversal paths, symlinks (including any lexical component of
-the caller-supplied manifest path), non-regular files, files outside that root,
+the caller-supplied manifest path or smoke output root), non-regular files, files outside that root,
 malformed records, and changed hashes. `verify_run_manifest` recomputes the
 canonical digest after parsing the declared split artifact and then validates
 its semantics. Zero-failure
@@ -72,12 +74,32 @@ make smoke
 make verify-artifact
 make reproduce-paper
 make test
+make test-locked
 ```
 
 `make smoke` writes one deterministic artifact at `artifacts/smoke` and then
 verifies it. Existing artifact roots are deliberately rejected rather than
 silently overwritten. To generate a new run, choose a fresh `ARTIFACT_DIR`.
 `make verify-artifact ARTIFACT_DIR=...` verifies the selected immutable run.
+
+### Canonical locked Python environment
+
+G0 uses CPython 3.11.15: `.python-version` pins that interpreter and
+`pyproject.toml` bounds the package to `>=3.11,<3.12`. Runtime dependencies
+(including NumPy) and the test dependency (pytest) are declared in
+`pyproject.toml`; the build requirement is exact-pinned; and committed
+`uv.lock` is the canonical resolved environment. From a clean local virtual
+environment, run:
+
+```sh
+rm -rf .venv
+uv sync --frozen --group test
+make test-locked
+```
+
+`make test-locked` repeats the frozen sync and runs pytest through `uv`; it does
+not regenerate the lock. This G0 Python lock does **not** lock CUDA, an FEA
+solver, recovered benchmark data, or any G1 execution environment.
 
 `make reproduce-paper` is deliberately a **fail-closed G1 preflight**, not a
 paper-results runner. It checks the declared configuration/data/runner and
@@ -99,5 +121,6 @@ No open-source license has been selected. `LICENSE_STATUS.md`,
 `THIRD_PARTY_NOTICES.md`, and `DATA_NOTICE.md` record unresolved external
 choices without selecting a license. A project license plus reviewed notices
 remain a required release gate; this bootstrap intentionally makes no license
-choice on Eric's behalf. Full reproduction is also data-, solver-, and
-locked-environment-gated and is outside G0.
+choice on Eric's behalf. Full reproduction remains data- and solver-gated and
+is outside G0; the G0 Python build/test environment is locked as documented
+above.
