@@ -22,6 +22,46 @@ class FitOnlyAccessError(ValueError):
     """Requested input would breach the frozen fit-only role boundary."""
 
 
+class _PayloadAccessLedger:
+    """Record and admit every outer-archive payload open before it is read."""
+
+    _ALLOWED_LEAVES = frozenset(("occ.npz", "meta.json"))
+
+    def __init__(self, selected_sample_ids: Iterable[str]) -> None:
+        self._selected_sample_ids = frozenset(selected_sample_ids)
+        self._members: list[str] = []
+
+    @property
+    def members(self) -> tuple[str, ...]:
+        """Expose the ordered pre-read access record for focused verification."""
+        return tuple(self._members)
+
+    def _is_selected_fit_payload(self, member_name: object) -> bool:
+        if not isinstance(member_name, str):
+            return False
+        for sample_id in self._selected_sample_ids:
+            for leaf in self._ALLOWED_LEAVES:
+                if member_name == _member_name(sample_id, leaf):
+                    return True
+        return False
+
+    def open(self, archive: zipfile.ZipFile, member_name: str):
+        """Enter the immutable access record before delegating to ZipFile.open."""
+        self._members.append(member_name)
+        if not self._is_selected_fit_payload(member_name):
+            raise FitOnlyAccessError("archive payload access is outside selected fit members")
+        return archive.open(member_name, "r")
+
+    def evidence(self) -> tuple[list[str], int, int]:
+        """Derive measured access evidence and reject any out-of-bound member."""
+        members = list(self._members)
+        fit_count = sum(self._is_selected_fit_payload(member_name) for member_name in members)
+        nonfit_count = len(members) - fit_count
+        if nonfit_count:
+            raise FitOnlyAccessError("archive payload access is outside selected fit members")
+        return members, fit_count, nonfit_count
+
+
 def _role_ids(manifest: Mapping[str, object], role: str) -> set[str]:
     try:
         values = manifest["partitions"][role]["sample_ids"]  # type: ignore[index]
@@ -71,16 +111,16 @@ def _member_name(sample_id: str, leaf: str) -> str:
     return "fea_ml/data/runs_real/{}/{}".format(sample_id, leaf)
 
 
-def _read_member(archive: zipfile.ZipFile, sample_id: str, leaf: str) -> bytes:
+def _read_member(archive: zipfile.ZipFile, ledger: _PayloadAccessLedger, sample_id: str, leaf: str) -> bytes:
     try:
-        with archive.open(_member_name(sample_id, leaf), "r") as member:
+        with ledger.open(archive, _member_name(sample_id, leaf)) as member:
             return member.read()
     except KeyError as error:
         raise FitOnlyAccessError("fit sample payload is missing required {}".format(leaf)) from error
 
 
-def _load_occupancy(archive: zipfile.ZipFile, sample_id: str) -> np.ndarray:
-    payload = _read_member(archive, sample_id, "occ.npz")
+def _load_occupancy(archive: zipfile.ZipFile, ledger: _PayloadAccessLedger, sample_id: str) -> np.ndarray:
+    payload = _read_member(archive, ledger, sample_id, "occ.npz")
     with np.load(io.BytesIO(payload), allow_pickle=False) as loaded:
         if loaded.files != ["data"]:
             raise FitOnlyAccessError("fit occupancy archive must contain exactly data")
@@ -92,8 +132,10 @@ def _load_occupancy(archive: zipfile.ZipFile, sample_id: str) -> np.ndarray:
     return data.astype(bool, copy=True)
 
 
-def _configuration(archive: zipfile.ZipFile, sample_id: str, fixed_force: tuple[float, float, float]) -> VoxelFEAConfig:
-    raw = _read_member(archive, sample_id, "meta.json")
+def _configuration(
+    archive: zipfile.ZipFile, ledger: _PayloadAccessLedger, sample_id: str, fixed_force: tuple[float, float, float],
+) -> VoxelFEAConfig:
+    raw = _read_member(archive, ledger, sample_id, "meta.json")
     try:
         metadata = json.loads(raw)
         voxel_size = float(metadata["voxel_size"])
@@ -146,16 +188,21 @@ def run_fit_probe(
             "archive sha256 mismatch: expected {}, observed {}".format(expected_archive_sha256, archive_snapshot.sha256)
         )
     records = []
+    ledger = _PayloadAccessLedger(selected)
     with zipfile.ZipFile(io.BytesIO(archive_snapshot.bytes), "r") as archive:
         for sample_id in selected:
-            occupancy = _load_occupancy(archive, sample_id)
-            result = solve_voxels(occupancy, _configuration(archive, sample_id, fixed_force))
+            occupancy = _load_occupancy(archive, ledger, sample_id)
+            result = solve_voxels(occupancy, _configuration(archive, ledger, sample_id, fixed_force))
             records.append({"sample_id": sample_id, "record": result})
+    archive_payload_members, fit_payload_access_count, nonfit_payload_access_count = ledger.evidence()
     return {
-        "schema_version": "1.1.0", "role": "fit", "selected_role": "fit", "selected_sample_ids": selected,
+        "schema_version": "1.2.0", "execution_mode": "live_anchored_solver_run",
+        "fixed_total_force_n": list(fixed_force), "admission_relative_tolerance": VoxelFEAConfig().relative_tolerance,
+        "role": "fit", "selected_role": "fit", "selected_sample_ids": selected,
         "split_manifest_sha256": split_snapshot.sha256, "archive_sha256": archive_snapshot.sha256,
         "confirmation_accessed": False, "development_accessed": False, "calibration_accessed": False,
-        "nonfit_payload_access_count": 0, "sample_count": len(records), "records": records,
+        "archive_payload_members": archive_payload_members, "fit_payload_access_count": fit_payload_access_count,
+        "nonfit_payload_access_count": nonfit_payload_access_count, "sample_count": len(records), "records": records,
     }
 
 

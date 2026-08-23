@@ -235,7 +235,13 @@ and archive bytes before constructing a Zip reader. Output is created exactly
 once through a held, no-follow parent descriptor—existing leaves, symlinked
 parents or leaves, nonregular leaves, traversal, and lexical-root replacement
 fail closed. Successful output records both source digests, selected fit role
-and IDs, and a zero non-fit payload count; it never records non-fit IDs.
+and IDs, `execution_mode: "live_anchored_solver_run"`, the requested fixed
+force and residual-admission bound, plus a measured ordered payload-access
+ledger. Each Zip member open enters that ledger before its payload is read; the
+probe derives `archive_payload_members`, `fit_payload_access_count`, and
+`nonfit_payload_access_count` from it and rejects every member that is not an
+`occ.npz` or `meta.json` leaf of a selected fit ID. It never records non-fit
+IDs in a successful artifact.
 It validates
 the complete caller-supplied request (including elements after `limit`) for
 well-formed unique IDs and fit membership, and validates that

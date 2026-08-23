@@ -269,9 +269,38 @@ def test_frozen_hashes_admit_exactly_the_four_fit_ids_and_record_provenance(
     assert result["selected_sample_ids"] == fit_ids
     assert result["split_manifest_sha256"] == hashlib.sha256(split_bytes).hexdigest()
     assert result["archive_sha256"] == hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    expected_members = [
+        member for sample_id in fit_ids
+        for member in (
+            "fea_ml/data/runs_real/{}/occ.npz".format(sample_id),
+            "fea_ml/data/runs_real/{}/meta.json".format(sample_id),
+        )
+    ]
+    assert result["execution_mode"] == "live_anchored_solver_run"
+    assert result["fixed_total_force_n"] == [0.0, 0.0, -100.0]
+    assert result["admission_relative_tolerance"] == 2e-8
+    assert result["archive_payload_members"] == expected_members
+    assert result["fit_payload_access_count"] == len(expected_members)
     assert result["nonfit_payload_access_count"] == 0
     assert [record["sample_id"] for record in result["records"]] == fit_ids
     assert "00000" not in json.dumps(result)
+
+
+def test_payload_access_ledger_rejects_unselected_member_before_its_payload_is_read(tmp_path: Path) -> None:
+    from sasto.fit_probe import FitOnlyAccessError, _PayloadAccessLedger, _read_member
+
+    unexpected = "fea_ml/data/runs_real/00000/occ.npz"
+    archive_path = tmp_path / "archive.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(unexpected, b"malicious payload")
+    ledger = _PayloadAccessLedger(["05134"])
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        with pytest.raises(FitOnlyAccessError, match="outside selected fit members"):
+            _read_member(archive, ledger, "00000", "occ.npz")
+
+    assert ledger.members == (unexpected,)
+    with pytest.raises(FitOnlyAccessError, match="outside selected fit members"):
+        ledger.evidence()
 
 
 @pytest.mark.parametrize("source", ("split", "archive"))
