@@ -8,7 +8,7 @@ export EXPECTED_SPLIT_MANIFEST_SHA256
 export EXPECTED_FEA_ARCHIVE_SHA256
 export PYTHON
 
-.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe
+.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe activity-campaign
 
 smoke:
 	@set -eu; \
@@ -63,4 +63,18 @@ topology-campaign:
 		uv run --frozen --group test python -m sasto.topology_campaign --neighborhoods "$${TOPOLOGY_NEIGHBORHOODS:-1000000}" --data-root "$$TOPOLOGY_DATA_ROOT"; \
 	else \
 		uv run --frozen --group test python -m sasto.topology_campaign --neighborhoods "$${TOPOLOGY_NEIGHBORHOODS:-1000000}"; \
+	fi
+
+activity-campaign:
+	@set -eu; \
+	if [ -z "$${ACTIVITY_ROOT:-}" ] || [ -z "$${ACTIVITY_MODE:-}" ]; then \
+		printf '%s\n' 'ACTIVITY_ROOT and ACTIVITY_MODE are required' >&2; exit 2; \
+	fi; \
+	if [ "$$ACTIVITY_MODE" = generate-trajectories ] || [ "$$ACTIVITY_MODE" = run-audit ]; then \
+		if [ -z "$${SPLIT_MANIFEST:-}" ] || [ -z "$${FEA_ARCHIVE:-}" ] || [ -z "$${EXPECTED_SPLIT_MANIFEST_SHA256:-}" ] || [ -z "$${EXPECTED_FEA_ARCHIVE_SHA256:-}" ]; then \
+			printf '%s\n' 'anchored modes require SPLIT_MANIFEST, FEA_ARCHIVE, EXPECTED_SPLIT_MANIFEST_SHA256, and EXPECTED_FEA_ARCHIVE_SHA256' >&2; exit 2; \
+		fi; \
+		uv run --frozen --group fea python -m sasto.activity_campaign --root "$$ACTIVITY_ROOT" --mode "$$ACTIVITY_MODE" --split-manifest "$$SPLIT_MANIFEST" --archive "$$FEA_ARCHIVE" --expected-split-manifest-sha256 "$$EXPECTED_SPLIT_MANIFEST_SHA256" --expected-fea-archive-sha256 "$$EXPECTED_FEA_ARCHIVE_SHA256" $${ACTIVITY_EXTRA:-}; \
+	else \
+		uv run --frozen --group fea python -m sasto.activity_campaign --root "$$ACTIVITY_ROOT" --mode "$$ACTIVITY_MODE"; \
 	fi
