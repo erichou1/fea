@@ -15,6 +15,10 @@ dependencies = [
 test = [
     "pytest>=8,<9",
 ]
+fea = [
+    "scipy==1.17.1",
+    "pyamg==5.3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

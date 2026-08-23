@@ -175,6 +175,44 @@ notice/license gates, prints `G1 UNAVAILABLE`, and exits nonzero until the real
 runner and assets exist and have been independently validated. It must never be
 used to imply that paper results were reproduced.
 
+## Canonical T0 Hex8 verifier (G1a Slice B)
+
+`src/sasto/voxel_fea.py` owns the canonical regular full-integration Hex8
+linear-elastic voxel proxy; it imports no executable legacy solver. Occupancy
+`[a0,a1,a2]` maps to physical `(x,y,z)`, displacement DOFs are physical
+`(x,y,z)` triples, the minimum occupied physical-x face is fully fixed, and the
+protected load face is the maximum occupied physical-x face. Self-weight is a
+separately reported body force in physical negative-z. The fixed benchmark
+force is distributed across the declared load nodes while preserving its exact
+requested vector, and a caller may lock the expected load-node count and exact
+node-coordinate set for baseline/candidate comparisons.
+
+Every solve is an append-only serializable `success` or `failure` record.
+Success records include stress (maximum and p99 in Pa), maximum displacement
+(m), compliance (J), counts, force sums, solver/preconditioner identity,
+iterations, residual, input/config digests, bounded timing, and a scientific
+digest. The scientific digest intentionally excludes wall time and iterative
+residual roundoff. Invalid, disconnected, undersized, unsupported, load-free,
+non-Boolean, nonfinite, nonconvergent, or non-postprocessable inputs fail
+closed without modifying occupancy. The direct sparse path is restricted to
+small independent V&V fixtures; the canonical path requires SciPy CG with a
+PyAMG preconditioner.
+
+Use the frozen V&V group and test command:
+
+```sh
+uv sync --frozen --group test --group fea
+make test-fea-locked
+```
+
+`make fit-only-probe` invokes `sasto.fit_probe`. It requires explicit
+`SPLIT_MANIFEST`, `FEA_ARCHIVE`, and a new `FIT_PROBE_OUTPUT`; it validates
+that every requested sample is fit-role and that fit/development/calibration/
+confirmation memberships are disjoint **before opening any archive payload**.
+It has no confirmation override. The archived historical probe sample `00000`
+is calibration-role in the frozen manifest, so this command must reject it
+before payload access.
+
 ## Legacy pipelines are noncanonical
 
 The archived `fea_ml/` module CMA-ES optimizer, `run_batch_all.py`,

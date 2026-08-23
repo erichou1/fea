@@ -86,7 +86,7 @@ def test_canonical_locked_environment_contract() -> None:
     assert "*.egg-info/" in gitignore
     assert "test-locked:" in makefile
     assert "uv sync --frozen" in makefile
-    assert "uv run --frozen --group test python -m pytest -q" in makefile
+    assert "uv run --frozen --group test --group fea python -m pytest -q" in makefile
     assert "EXPECTED_MANIFEST_SHA256 is required from an external trust anchor" in makefile
     assert '--expected-manifest-sha256 "$$EXPECTED_MANIFEST_SHA256"' in makefile
     assert "export ARTIFACT_DIR" in makefile

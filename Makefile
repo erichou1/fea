@@ -6,7 +6,7 @@ export ARTIFACT_DIR
 export EXPECTED_MANIFEST_SHA256
 export PYTHON
 
-.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked topology-campaign
+.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe
 
 smoke:
 	@set -eu; \
@@ -32,12 +32,24 @@ test:
 	PYTHONPATH=src "$$PYTHON" -m pytest -q
 
 test-locked:
-	uv sync --frozen --group test
-	uv run --frozen --group test python -m pytest -q
+	uv sync --frozen --group test --group fea
+	uv run --frozen --group test --group fea python -m pytest -q
 
 test-g1-locked:
-	uv sync --frozen --group test
-	uv run --frozen --group test python -m pytest -q tests/test_topology_g1.py
+	uv sync --frozen --group test --group fea
+	uv run --frozen --group test --group fea python -m pytest -q tests/test_topology_g1.py tests/test_voxel_fea_g1.py tests/test_fit_probe_g1.py
+
+test-fea-locked:
+	uv sync --frozen --group test --group fea
+	uv run --frozen --group test --group fea python -m pytest -q tests/test_voxel_fea_g1.py tests/test_fit_probe_g1.py
+
+fit-only-probe:
+	@set -eu; \
+	if [ -z "$${SPLIT_MANIFEST:-}" ] || [ -z "$${FEA_ARCHIVE:-}" ] || [ -z "$${FIT_PROBE_OUTPUT:-}" ]; then \
+		printf '%s\n' 'SPLIT_MANIFEST, FEA_ARCHIVE, and FIT_PROBE_OUTPUT are required' >&2; \
+		exit 2; \
+	fi; \
+	uv run --frozen --group fea python -m sasto.fit_probe --split-manifest "$$SPLIT_MANIFEST" --archive "$$FEA_ARCHIVE" --output "$$FIT_PROBE_OUTPUT" --limit "$${FIT_PROBE_LIMIT:-4}" --fixed-force-z "$${FIT_PROBE_FORCE_Z:--100.0}"
 
 topology-campaign:
 	@set -eu; \
