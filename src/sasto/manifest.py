@@ -8,7 +8,7 @@ import stat
 from pathlib import Path, PurePosixPath
 from typing import Mapping
 
-from .splits import split_sha256
+from .splits import FamilyLeakageError, split_sha256, validate_family_split_manifest
 from .targets import TargetRegistry, TargetSpec
 
 
@@ -39,6 +39,23 @@ def _has_symlink_component(path: Path, root: Path) -> bool:
     relative = path.relative_to(root)
     current = root
     for component in relative.parts:
+        current = current / component
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _has_lexical_symlink_component(path: Path) -> bool:
+    """Inspect each caller-supplied path component before any resolution."""
+    if path.is_absolute():
+        current = Path(path.anchor)
+        parts = path.parts[1:]
+    else:
+        current = Path(".")
+        parts = path.parts
+    for component in parts:
+        if component in ("", "."):
+            continue
         current = current / component
         if current.is_symlink():
             return True
@@ -154,9 +171,12 @@ def _verify_targets(targets: object) -> None:
     if not isinstance(targets, list) or not targets:
         raise ManifestVerificationError("targets must be a non-empty named registry")
     parsed = []
+    required_fields = {"name", "unit", "direction", "threshold", "normalization", "base_target"}
     for target in targets:
         if not isinstance(target, dict):
             raise ManifestVerificationError("target must be an object")
+        if set(target) != required_fields:
+            raise ManifestVerificationError("target contract is invalid: malformed target fields")
         try:
             parsed.append(
                 TargetSpec(
@@ -179,7 +199,7 @@ def _verify_targets(targets: object) -> None:
 def verify_run_manifest(manifest_path: Path) -> None:
     """Reject incomplete, nonportable, malformed, or hash-mutated evidence."""
     manifest_path = Path(manifest_path)
-    if manifest_path.is_symlink():
+    if _has_lexical_symlink_component(manifest_path):
         raise ManifestVerificationError("manifest must reside in a real artifact root")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -217,3 +237,7 @@ def verify_run_manifest(manifest_path: Path) -> None:
         raise ManifestVerificationError("cannot parse declared split artifact: {}".format(error)) from error
     if split_sha256(declared_split) != split_hash:
         raise ManifestVerificationError("split sha256 does not match declared split artifact")
+    try:
+        validate_family_split_manifest(declared_split)
+    except (FamilyLeakageError, TypeError, ValueError) as error:
+        raise ManifestVerificationError("declared split artifact is invalid: {}".format(error)) from error

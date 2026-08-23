@@ -70,6 +70,33 @@ def test_ratio_base_target_is_external_provenance_not_a_registry_member() -> Non
     assert TargetRegistry((ratio,)).names == ("compliance_ratio",)
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    (
+        {"name": 7},
+        {"unit": 7},
+        {"threshold": True},
+        {"threshold": "not-a-number"},
+        {"threshold": float("nan")},
+        {"threshold": float("inf")},
+        {"normalization": 7},
+        {"base_target": 7},
+    ),
+)
+def test_target_spec_rejects_non_string_and_nonfinite_runtime_contract_values(kwargs: dict) -> None:
+    values = {"name": "compliance", "unit": "J", "direction": "upper", "threshold": 1.15}
+    values.update(kwargs)
+    with pytest.raises(ValueError):
+        TargetSpec(**values)
+
+
+@pytest.mark.parametrize("response", (True, "1.0", float("nan"), float("inf"), -float("inf")))
+def test_target_registry_rejects_nonfinite_or_nonnumeric_responses(response: object) -> None:
+    registry = TargetRegistry((TargetSpec("compliance", "J", "upper", 1.15),))
+    with pytest.raises(ValueError):
+        registry.evaluate({"compliance": response})
+
+
 def test_family_split_rejects_leakage_and_is_deterministic() -> None:
     samples = [
         {"sample_id": f"{family}-v{variant}", "family_id": family}
@@ -82,6 +109,10 @@ def test_family_split_rejects_leakage_and_is_deterministic() -> None:
     assert validate_family_split(samples, first) is None
     detailed = build_family_split_manifest(samples, seed=42)
     assert detailed["algorithm"] == "family-id-v1"
+    assert detailed["sample_to_family"] == sorted(
+        ({"sample_id": sample["sample_id"], "family_id": sample["family_id"]} for sample in samples),
+        key=lambda row: row["sample_id"],
+    )
     assert set(detailed["partitions"]["fit"]["family_ids"]) <= {sample["family_id"] for sample in samples}
 
     leaked = {name: list(ids) for name, ids in first.items()}
@@ -133,8 +164,11 @@ def test_hash_mutation_rejects_complete_manifest(tmp_path: Path) -> None:
     split = tmp_path / "split.json"
     source.write_text('{"fixture": true}\n', encoding="utf-8")
     output.write_text('{"status": "ok"}\n', encoding="utf-8")
-    split.write_text('{"algorithm":"family-id-v1","partitions":{}}\n', encoding="utf-8")
-    split_payload = json.loads(split.read_text(encoding="utf-8"))
+    split_payload = build_family_split_manifest(
+        [{"sample_id": "f{}/base".format(index), "family_id": "f{}".format(index)} for index in range(1, 5)],
+        seed=42,
+    )
+    split.write_text(json.dumps(split_payload, sort_keys=True) + "\n", encoding="utf-8")
     manifest = build_run_manifest(
         run_id="unit-run",
         inputs={"fixture/input": source},
@@ -218,6 +252,88 @@ def test_simple_point_6_26_rejects_boundary_cavity_opening_and_keeps_safe_bounda
 
     solid_without_cavity = [[[True for _ in range(3)] for _ in range(3)] for _ in range(3)]
     assert is_simple_point_6_26(solid_without_cavity, (0, 0, 0))
+
+
+def test_simple_point_6_26_rejects_review_false_accept_that_merges_foreground_components() -> None:
+    volume = [
+        [[False, False], [False, True]],
+        [[True, True], [False, False]],
+    ]
+
+    assert not is_simple_point_6_26(volume, (0, 1, 1))
+
+
+def test_simple_point_6_26_fails_closed_for_malformed_or_out_of_range_input() -> None:
+    assert not is_simple_point_6_26([[[True], []]], (0, 0, 0))
+    assert not is_simple_point_6_26([[[True]]], (2, 0, 0))
+
+
+def test_simple_point_6_26_true_preserves_global_component_counts_for_all_2x2x2_volumes() -> None:
+    from collections import deque
+
+    face_neighbors = ((-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1))
+    full_neighbors = tuple(
+        (dz, dy, dx)
+        for dz in (-1, 0, 1)
+        for dy in (-1, 0, 1)
+        for dx in (-1, 0, 1)
+        if (dz, dy, dx) != (0, 0, 0)
+    )
+
+    def count(cells, neighbors):
+        unseen = set(cells)
+        components = 0
+        while unseen:
+            components += 1
+            queue = deque([unseen.pop()])
+            while queue:
+                z, y, x = queue.popleft()
+                for dz, dy, dx in neighbors:
+                    candidate = (z + dz, y + dy, x + dx)
+                    if candidate in unseen:
+                        unseen.remove(candidate)
+                        queue.append(candidate)
+        return components
+
+    def counts(grid):
+        foreground = {(z, y, x) for z in range(2) for y in range(2) for x in range(2) if grid[z][y][x]}
+        background = set((z, y, x) for z in range(2) for y in range(2) for x in range(2)) - foreground
+        # The exterior node is a distinct 26-background component until a boundary
+        # background voxel connects it to the grid.
+        exterior = object()
+        augmented = set(background) | {exterior}
+        unseen = set(augmented)
+        bg_components = 0
+        while unseen:
+            bg_components += 1
+            queue = deque([unseen.pop()])
+            while queue:
+                cell = queue.popleft()
+                if cell is exterior:
+                    neighbors = [candidate for candidate in background if 0 in candidate or 1 in candidate]
+                else:
+                    z, y, x = cell
+                    neighbors = [
+                        (z + dz, y + dy, x + dx)
+                        for dz, dy, dx in full_neighbors
+                        if (z + dz, y + dy, x + dx) in background
+                    ]
+                    if 0 in cell or 1 in cell:
+                        neighbors.append(exterior)
+                for neighbor in neighbors:
+                    if neighbor in unseen:
+                        unseen.remove(neighbor)
+                        queue.append(neighbor)
+        return count(foreground, face_neighbors), bg_components
+
+    for mask in range(1 << 8):
+        volume = [[[bool(mask & (1 << (4 * z + 2 * y + x))) for x in range(2)] for y in range(2)] for z in range(2)]
+        before = counts(volume)
+        for point in ((z, y, x) for z in range(2) for y in range(2) for x in range(2)):
+            if is_simple_point_6_26(volume, point):
+                candidate = [[list(row) for row in plane] for plane in volume]
+                candidate[point[0]][point[1]][point[2]] = False
+                assert counts(candidate) == before, (mask, point, before, counts(candidate))
 
 
 def test_canonical_sasto_pa_rejects_a_topology_break_before_proxy_admission() -> None:

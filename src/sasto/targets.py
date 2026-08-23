@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Dict, Iterable, Mapping, Tuple
+
+
+def _is_finite_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 @dataclass(frozen=True)
@@ -18,10 +23,16 @@ class TargetSpec:
     base_target: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.name or not self.unit:
+        if not isinstance(self.name, str) or not self.name or not isinstance(self.unit, str) or not self.unit:
             raise ValueError("target name and unit must be non-empty")
-        if self.direction not in {"upper", "lower"}:
+        if not isinstance(self.direction, str) or self.direction not in {"upper", "lower"}:
             raise ValueError("direction must be 'upper' or 'lower'")
+        if not _is_finite_number(self.threshold):
+            raise ValueError("target threshold must be a finite number")
+        if not isinstance(self.normalization, str):
+            raise ValueError("normalization must be 'absolute' or 'baseline_ratio'")
+        if self.base_target is not None and not isinstance(self.base_target, str):
+            raise ValueError("base_target must be a string or null")
         if self.normalization == "absolute":
             if self.unit == "1":
                 raise ValueError("absolute targets cannot use unit '1'")
@@ -38,6 +49,8 @@ class TargetSpec:
             raise ValueError("normalization must be 'absolute' or 'baseline_ratio'")
 
     def passes(self, value: float) -> bool:
+        if not _is_finite_number(value):
+            raise ValueError("target response must be a finite number")
         return value <= self.threshold if self.direction == "upper" else value >= self.threshold
 
     def as_dict(self) -> Dict[str, object]:
@@ -87,6 +100,8 @@ class TargetRegistry:
             raise KeyError("unknown named target: {!r}".format(name)) from error
 
     def evaluate(self, responses: Mapping[str, float]) -> Mapping[str, ConstraintResult]:
+        if not isinstance(responses, Mapping):
+            raise ValueError("responses must be a named mapping")
         response_names = set(responses)
         target_names = set(self._by_name)
         if response_names != target_names:
@@ -95,16 +110,20 @@ class TargetRegistry:
                     sorted(target_names - response_names), sorted(response_names - target_names)
                 )
             )
-        return {
-            target.name: ConstraintResult(
+        evaluated = {}
+        for target in self._targets:
+            value = responses[target.name]
+            if not _is_finite_number(value):
+                raise ValueError("response for {} must be a finite number".format(target.name))
+            numeric_value = float(value)
+            evaluated[target.name] = ConstraintResult(
                 name=target.name,
-                value=float(responses[target.name]),
+                value=numeric_value,
                 threshold=target.threshold,
                 direction=target.direction,
-                passed=target.passes(float(responses[target.name])),
+                passed=target.passes(numeric_value),
             )
-            for target in self._targets
-        }
+        return evaluated
 
     def as_list(self) -> list:
         return [target.as_dict() for target in self._targets]

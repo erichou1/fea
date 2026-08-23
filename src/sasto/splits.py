@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 from collections import defaultdict
 from typing import Dict, Iterable, Mapping, Sequence
 
 
 PARTITIONS = ("fit", "development", "calibration", "confirmation")
+SPLIT_SCHEMA_VERSION = "1.0.0"
 DEFAULT_FRACTIONS = {
     "fit": 0.60,
     "development": 0.20,
@@ -42,7 +44,15 @@ def _family_samples(samples: Iterable[Mapping[str, object]]) -> Dict[str, list]:
 
 
 def _family_partition_counts(total: int, fractions: Mapping[str, float]) -> Dict[str, int]:
-    if set(fractions) != set(PARTITIONS) or abs(sum(fractions.values()) - 1.0) > 1e-12:
+    if (
+        not isinstance(fractions, Mapping)
+        or set(fractions) != set(PARTITIONS)
+        or any(
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+            for value in fractions.values()
+        )
+        or abs(sum(fractions.values()) - 1.0) > 1e-12
+    ):
         raise ValueError("fractions must name every partition and sum to 1")
     positive_roles = [name for name in PARTITIONS if fractions[name] > 0]
     if total < len(positive_roles):
@@ -110,10 +120,14 @@ def build_family_split_manifest(
         for partition in PARTITIONS
     }
     return {
-        "schema_version": "1.0.0",
+        "schema_version": SPLIT_SCHEMA_VERSION,
         "algorithm": "family-id-v1",
         "seed": seed,
         "fractions": {name: fractions[name] for name in PARTITIONS},
+        "sample_to_family": [
+            {"sample_id": sample_id, "family_id": family_by_sample[sample_id]}
+            for sample_id in sorted(family_by_sample)
+        ],
         "partitions": partitions,
     }
 
@@ -150,6 +164,84 @@ def validate_family_split(
     leaked = sorted(family_id for family_id, roles in family_partitions.items() if len(roles) != 1)
     if leaked:
         raise FamilyLeakageError("family appears in multiple partitions: {}".format(", ".join(leaked)))
+
+
+def validate_family_split_manifest(manifest: object) -> None:
+    """Fail closed unless a self-describing split fully proves family isolation.
+
+    The manifest carries the sorted source sample-to-family mapping so a verifier
+    need not trust an external fixture when checking coverage and leakage.
+    """
+    if not isinstance(manifest, Mapping):
+        raise FamilyLeakageError("split manifest must be an object")
+    required = {"schema_version", "algorithm", "seed", "fractions", "sample_to_family", "partitions"}
+    if set(manifest) != required:
+        raise FamilyLeakageError("split manifest has an unsupported schema")
+    if manifest.get("schema_version") != SPLIT_SCHEMA_VERSION:
+        raise FamilyLeakageError("split manifest has an unsupported schema_version")
+    if manifest.get("algorithm") != "family-id-v1":
+        raise FamilyLeakageError("split manifest must use family-id-v1")
+    if isinstance(manifest.get("seed"), bool) or not isinstance(manifest.get("seed"), int):
+        raise FamilyLeakageError("split manifest seed must be an integer")
+    fractions = manifest.get("fractions")
+    try:
+        # Also validates keys, numeric finite values, and total.
+        if any(fractions[name] <= 0 for name in PARTITIONS):
+            raise ValueError("all split roles must have positive fractions")
+        expected_counts = _family_partition_counts(4, fractions)
+    except (KeyError, TypeError, ValueError) as error:
+        raise FamilyLeakageError("split manifest fractions are invalid: {}".format(error)) from error
+    del expected_counts
+
+    source_rows = manifest.get("sample_to_family")
+    if not isinstance(source_rows, list) or not source_rows:
+        raise FamilyLeakageError("split manifest requires a non-empty sample_to_family mapping")
+    source_samples = []
+    previous_sample_id = None
+    for row in source_rows:
+        if not isinstance(row, Mapping) or set(row) != {"sample_id", "family_id"}:
+            raise FamilyLeakageError("sample_to_family entries must contain sample_id and family_id")
+        sample_id = row.get("sample_id")
+        family_id = row.get("family_id")
+        if not isinstance(sample_id, str) or not sample_id or not isinstance(family_id, str) or not family_id:
+            raise FamilyLeakageError("sample_to_family IDs must be non-empty strings")
+        if previous_sample_id is not None and sample_id <= previous_sample_id:
+            raise FamilyLeakageError("sample_to_family must be sorted with unique sample_id values")
+        previous_sample_id = sample_id
+        source_samples.append({"sample_id": sample_id, "family_id": family_id})
+    by_family = _family_samples(source_samples)
+    family_by_sample = {
+        sample_id: family_id for family_id, sample_ids in by_family.items() for sample_id in sample_ids
+    }
+
+    partitions = manifest.get("partitions")
+    if not isinstance(partitions, Mapping) or set(partitions) != set(PARTITIONS):
+        raise FamilyLeakageError("split manifest must contain exactly: {}".format(", ".join(PARTITIONS)))
+    split = {}
+    expected_counts = _family_partition_counts(len(by_family), fractions)
+    for role in PARTITIONS:
+        partition = partitions[role]
+        if not isinstance(partition, Mapping) or set(partition) != {"family_ids", "sample_ids"}:
+            raise FamilyLeakageError("split partition {} has an unsupported schema".format(role))
+        family_ids = partition.get("family_ids")
+        sample_ids = partition.get("sample_ids")
+        if not isinstance(family_ids, list) or not isinstance(sample_ids, list) or not family_ids or not sample_ids:
+            raise FamilyLeakageError("split partition {} must have non-empty membership".format(role))
+        if any(not isinstance(value, str) or not value for value in family_ids + sample_ids):
+            raise FamilyLeakageError("split partition {} IDs must be non-empty strings".format(role))
+        if family_ids != sorted(set(family_ids)):
+            raise FamilyLeakageError("split partition {} family_ids must be unique and sorted".format(role))
+        if len(sample_ids) != len(set(sample_ids)):
+            raise FamilyLeakageError("split partition {} sample_ids must be unique".format(role))
+        if len(family_ids) != expected_counts[role]:
+            raise FamilyLeakageError("split partition {} violates family allocation".format(role))
+        derived_families = sorted({family_by_sample[sample_id] for sample_id in sample_ids if sample_id in family_by_sample})
+        if set(sample_ids) - set(family_by_sample):
+            raise FamilyLeakageError("split references unknown sample_id")
+        if family_ids != derived_families:
+            raise FamilyLeakageError("split partition {} family_ids do not match sample membership".format(role))
+        split[role] = sample_ids
+    validate_family_split(source_samples, split)
 
 
 def split_sha256(split: Mapping[str, object]) -> str:

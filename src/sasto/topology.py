@@ -49,14 +49,11 @@ def _is_volume_boundary(cell: Coordinate, shape: Coordinate) -> bool:
     return any(index in (0, size - 1) for index, size in zip(cell, shape))
 
 
-def _background_component_count(
-    background: set[Coordinate], shape: Coordinate, exterior_touched: bool
-) -> int:
-    """Count local pre-deletion 26-background components with an exterior node."""
+def _background_component_count(background: set[Coordinate], shape: Coordinate) -> int:
+    """Count global 26-background components, including a connected exterior node."""
     exterior = object()
     unseen: set[object] = set(background)
-    if exterior_touched:
-        unseen.add(exterior)
+    unseen.add(exterior)
     count = 0
     while unseen:
         count += 1
@@ -74,7 +71,7 @@ def _background_component_count(
                     for dz, dy, dx in FULL_NEIGHBORS
                     if (z + dz, y + dy, x + dx) in background
                 ]
-                if exterior_touched and _is_volume_boundary(cell, shape):
+                if _is_volume_boundary(cell, shape):
                     neighbors.append(exterior)
             for neighbor in neighbors:
                 if neighbor in unseen:
@@ -83,14 +80,15 @@ def _background_component_count(
     return count
 
 
-def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
-    """Return whether deleting foreground `point` preserves local 6/26 topology.
+def _is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
+    """Return whether deleting `point` preserves global 6/26 component counts.
 
-    Foreground neighbors after deletion must form one 6-component.  Background
-    is evaluated *before* deletion: its 26-components must already be one,
-    with an explicit exterior component when the 3x3x3 stencil reaches outside
-    the volume.  This prevents a boundary deletion from joining an enclosed
-    cavity to exterior background through the deleted point.
+    This deliberately scans the complete volume before and after the candidate
+    deletion.  The global comparison rejects disconnected foreground cases that
+    a 3x3x3 neighborhood cannot see, and includes an explicit exterior node in
+    the 26-background count.  It is therefore correctness-first rather than a
+    constant-time local predicate; performance optimization requires a future
+    proof that preserves these exact global invariants.
     """
     z_size, y_size, x_size = _shape(volume)
     z, y, x = point
@@ -98,21 +96,20 @@ def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coor
         raise ValueError("point is outside volume")
     if not volume[z][y][x]:
         return False
-    foreground = set()
-    background = set()
-    exterior_touched = False
-    for dz, dy, dx in product((-1, 0, 1), repeat=3):
-        nz, ny, nx = z + dz, y + dy, x + dx
-        if not (0 <= nz < z_size and 0 <= ny < y_size and 0 <= nx < x_size):
-            exterior_touched = True
-            continue
-        local = (nz, ny, nx)
-        if local == point:
-            continue
-        if volume[nz][ny][nx]:
-            foreground.add(local)
-        else:
-            background.add(local)
-    return _component_count(foreground, FACE_NEIGHBORS) == 1 and _background_component_count(
-        background, (z_size, y_size, x_size), exterior_touched
-    ) == 1
+    all_cells = {(nz, ny, nx) for nz in range(z_size) for ny in range(y_size) for nx in range(x_size)}
+    foreground = {(nz, ny, nx) for nz, ny, nx in all_cells if volume[nz][ny][nx]}
+    background = all_cells - foreground
+    after_foreground = foreground - {point}
+    after_background = background | {point}
+    shape = (z_size, y_size, x_size)
+    return _component_count(foreground, FACE_NEIGHBORS) == _component_count(
+        after_foreground, FACE_NEIGHBORS
+    ) and _background_component_count(background, shape) == _background_component_count(after_background, shape)
+
+
+def is_simple_point_6_26(volume: Sequence[Sequence[Sequence[bool]]], point: Coordinate) -> bool:
+    """Fail closed unless deletion preserves exact global 6/26 invariants."""
+    try:
+        return _is_simple_point_6_26(volume, point)
+    except (IndexError, TypeError, ValueError):
+        return False

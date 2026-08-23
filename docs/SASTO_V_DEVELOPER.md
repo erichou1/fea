@@ -4,7 +4,7 @@
 
 `src/sasto` is the canonical SASTO-V evidence-contract package. It currently
 provides the G0 substrate only: named proxy-target contracts, deterministic
-family-disjoint roles, manifest admission, local digital topology utilities,
+family-disjoint roles, manifest admission, global digital topology utilities,
 and a public smoke artifact. It does **not** establish FEA validity, engineering
 safety, construction readiness, surrogate accuracy, or paper results.
 
@@ -13,12 +13,17 @@ The sole canonical G0 SASTO-PA admission runner is
 before any surrogate proxy gate. The canonical digital topology convention is
 **6-connected foreground and 26-connected background**. Any erosion runner must
 call `is_simple_point_6_26`; reversed 26/6 conventions are noncanonical.
+The G0 predicate is intentionally correctness-first: it compares full-volume
+pre/post 6-foreground and exterior-aware 26-background component counts, so it
+is not a constant-time local stencil check.
 
 ## Target contract
 
 Every constrained response is addressed by its immutable name, with a physical
-unit, inequality direction, threshold, and explicit `normalization`. Lists or
-tensor positions are not a compliance API. Absolute targets must not use unit
+unit, inequality direction, finite numeric threshold, and explicit
+`normalization`. Names and units must be non-empty strings; thresholds and
+runtime responses must be finite non-boolean numbers. Lists or tensor positions
+are not a compliance API. Absolute targets must not use unit
 `1`. A baseline ratio must use unit `1`, an explicit `_ratio` name (for example
 `compliance_ratio`), and a non-empty `base_target` provenance label; the base
 reference is external metadata and need not be another constrained registry
@@ -41,7 +46,10 @@ single seeded family shuffle creates the fixed `fit` (60%), `development`
 functional role receives at least one family; all remaining families are
 allocated deterministically to stay as close as possible to those fractions.
 Every derivative of a family remains in exactly one role; `validate_family_split`
-rejects missing assignments, unknown IDs, duplicate IDs, and family leakage.
+rejects missing assignments, unknown IDs, duplicate IDs, and family leakage. The
+self-describing split artifact also carries a sorted `sample_to_family` mapping;
+artifact verification independently validates its schema, source coverage,
+family allocation, and role isolation rather than trusting its digest alone.
 
 ## Evidence records
 
@@ -49,9 +57,11 @@ rejects missing assignments, unknown IDs, duplicate IDs, and family leakage.
 declared split-artifact logical ID and canonical family-split digest, plus
 SHA-256 digests for every declared input and output. Record paths are portable
 POSIX-relative paths beneath the manifest's artifact root. Build and verification
-reject absolute/traversal paths, symlinks, non-regular files, files outside that
-root, malformed records, and changed hashes. `verify_run_manifest` recomputes
-the canonical digest after parsing the declared split artifact. Zero-failure
+reject absolute/traversal paths, symlinks (including any lexical component of
+the caller-supplied manifest path), non-regular files, files outside that root,
+malformed records, and changed hashes. `verify_run_manifest` recomputes the
+canonical digest after parsing the declared split artifact and then validates
+its semantics. Zero-failure
 binomial helpers are intentionally separate from conformal coverage; do not
 translate one claim into the other.
 
