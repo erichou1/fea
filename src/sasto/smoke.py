@@ -15,7 +15,14 @@ from .topology import is_simple_point_6_26
 
 SMOKE_TARGETS = TargetRegistry(
     (
-        TargetSpec("compliance", "J", "upper", 1.15),
+        TargetSpec(
+            "compliance_ratio",
+            "1",
+            "upper",
+            1.15,
+            normalization="baseline_ratio",
+            base_target="compliance",
+        ),
         TargetSpec("max_von_mises", "Pa", "upper", 5_000_000.0),
         TargetSpec("max_displacement", "m", "upper", 0.028),
     )
@@ -44,7 +51,7 @@ def run_smoke(fixture_path: Path, output_dir: Path) -> Path:
     bridge = [[[False for _ in range(3)] for _ in range(3)] for _ in range(3)]
     bridge[1][1][0] = bridge[1][1][1] = bridge[1][1][2] = True
     response = {
-        "compliance": 1.10,
+        "compliance_ratio": 1.10,
         "max_von_mises": 4_000_000.0,
         "max_displacement": 0.020,
     }

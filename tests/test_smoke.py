@@ -35,6 +35,38 @@ def test_smoke_fixture_is_deterministic_and_verifiable(tmp_path: Path) -> None:
         run_smoke(fixture, relocated)
 
 
+def test_smoke_manifest_encodes_baseline_compliance_ratio(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
+    manifest = json.loads(run_smoke(fixture, tmp_path / "artifact").read_text(encoding="utf-8"))
+
+    assert manifest["targets"] == [
+        {
+            "name": "compliance_ratio",
+            "unit": "1",
+            "direction": "upper",
+            "threshold": 1.15,
+            "normalization": "baseline_ratio",
+            "base_target": "compliance",
+        },
+        {
+            "name": "max_von_mises",
+            "unit": "Pa",
+            "direction": "upper",
+            "threshold": 5_000_000.0,
+            "normalization": "absolute",
+            "base_target": None,
+        },
+        {
+            "name": "max_displacement",
+            "unit": "m",
+            "direction": "upper",
+            "threshold": 0.028,
+            "normalization": "absolute",
+            "base_target": None,
+        },
+    ]
+
+
 def test_verifier_binds_split_digest_to_declared_split_artifact(tmp_path: Path) -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "smoke" / "families.json"
     manifest_path = run_smoke(fixture, tmp_path / "artifact")
@@ -55,6 +87,14 @@ def test_verifier_fails_closed_when_manifest_is_not_complete(tmp_path: Path) -> 
     manifest = tmp_path / "run-manifest.json"
     manifest.write_text('{"schema_version":"1.0.0","status":"running"}', encoding="utf-8")
     with pytest.raises(ManifestVerificationError, match="fail closed"):
+        verify_run_manifest(manifest)
+
+
+def test_verifier_rejects_symlinked_manifest_before_reading_contents(tmp_path: Path) -> None:
+    manifest = tmp_path / "run-manifest.json"
+    manifest.symlink_to(tmp_path / "missing-manifest.json")
+
+    with pytest.raises(ManifestVerificationError, match="manifest must reside in a real artifact root"):
         verify_run_manifest(manifest)
 
 

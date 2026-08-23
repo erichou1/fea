@@ -70,10 +70,6 @@ class TargetRegistry:
         names = [target.name for target in values]
         if len(names) != len(set(names)):
             raise ValueError("target names must be unique")
-        known_names = set(names)
-        for target in values:
-            if target.normalization == "baseline_ratio" and target.base_target not in known_names:
-                raise ValueError("baseline ratio base_target must name a registry target")
         self._targets = values
         self._by_name = {target.name: target for target in values}
 

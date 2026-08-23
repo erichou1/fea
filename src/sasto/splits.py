@@ -50,10 +50,13 @@ def _family_partition_counts(total: int, fractions: Mapping[str, float]) -> Dict
             "split requires at least {} families for positive functional roles".format(len(positive_roles))
         )
     raw = {name: total * fractions[name] for name in PARTITIONS}
-    counts = {name: int(raw[name]) for name in PARTITIONS}
-    remainder = total - sum(counts.values())
-    for name in sorted(PARTITIONS, key=lambda item: (raw[item] - counts[item], item), reverse=True)[:remainder]:
-        counts[name] += 1
+    counts = {name: 1 if name in positive_roles else 0 for name in PARTITIONS}
+    for _ in range(total - sum(counts.values())):
+        role = max(
+            PARTITIONS,
+            key=lambda name: (raw[name] - counts[name], -PARTITIONS.index(name)),
+        )
+        counts[role] += 1
     return counts
 
 

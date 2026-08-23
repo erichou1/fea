@@ -101,9 +101,10 @@ def build_run_manifest(
         raise ManifestVerificationError("split_sha256 must be a lowercase SHA-256 digest")
     if not isinstance(split_artifact, str) or not split_artifact:
         raise ManifestVerificationError("split_artifact must name a declared output")
-    root = Path(artifact_root).resolve()
-    if not root.is_dir() or root.is_symlink():
+    root = Path(artifact_root)
+    if root.is_symlink() or not root.is_dir():
         raise ManifestVerificationError("artifact_root must be a real directory")
+    root = root.resolve()
     output_records = _file_records(outputs, root)
     if split_artifact not in {record["logical_id"] for record in output_records}:
         raise ManifestVerificationError("split_artifact must name a declared output")
@@ -178,6 +179,8 @@ def _verify_targets(targets: object) -> None:
 def verify_run_manifest(manifest_path: Path) -> None:
     """Reject incomplete, nonportable, malformed, or hash-mutated evidence."""
     manifest_path = Path(manifest_path)
+    if manifest_path.is_symlink():
+        raise ManifestVerificationError("manifest must reside in a real artifact root")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:

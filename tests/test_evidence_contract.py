@@ -40,7 +40,7 @@ def test_target_registry_is_semantic_under_order_permutation() -> None:
 
 def test_target_contract_rejects_unitless_compliance_without_ratio_semantics() -> None:
     with pytest.raises(ValueError, match="absolute targets cannot use unit '1'"):
-        TargetSpec("compliance", "1", "upper", 1.15, normalization="absolute")
+        TargetSpec("compliance", "1", "upper", 1.15)
     with pytest.raises(ValueError, match="_ratio"):
         TargetSpec("compliance", "1", "upper", 1.15, normalization="baseline_ratio", base_target="baseline_compliance")
     with pytest.raises(ValueError, match="base_target"):
@@ -55,6 +55,19 @@ def test_target_contract_rejects_unitless_compliance_without_ratio_semantics() -
         base_target="baseline_compliance",
     )
     assert ratio.as_dict()["normalization"] == "baseline_ratio"
+
+
+def test_ratio_base_target_is_external_provenance_not_a_registry_member() -> None:
+    ratio = TargetSpec(
+        "compliance_ratio",
+        "1",
+        "upper",
+        1.15,
+        normalization="baseline_ratio",
+        base_target="compliance",
+    )
+
+    assert TargetRegistry((ratio,)).names == ("compliance_ratio",)
 
 
 def test_family_split_rejects_leakage_and_is_deterministic() -> None:
@@ -83,6 +96,14 @@ def test_family_split_requires_a_family_in_each_functional_role() -> None:
         build_family_split(too_small, seed=42)
 
     samples = [{"sample_id": f"f{index}/base", "family_id": f"f{index}"} for index in range(1, 5)]
+    split = build_family_split(samples, seed=42)
+    assert {role: len(sample_ids) for role, sample_ids in split.items()} == {
+        "fit": 1,
+        "development": 1,
+        "calibration": 1,
+        "confirmation": 1,
+    }
+
     empty_confirmation = {
         "fit": ["f1/base", "f2/base"],
         "development": ["f3/base"],
@@ -91,6 +112,19 @@ def test_family_split_requires_a_family_in_each_functional_role() -> None:
     }
     with pytest.raises(FamilyLeakageError, match="confirmation.*at least one family"):
         validate_family_split(samples, empty_confirmation)
+
+
+def test_default_family_split_allocation_matches_requested_fractions() -> None:
+    samples = [{"sample_id": f"f{index}/base", "family_id": f"f{index}"} for index in range(1, 11)]
+
+    split = build_family_split(samples, seed=42)
+
+    assert {role: len(sample_ids) for role, sample_ids in split.items()} == {
+        "fit": 6,
+        "development": 2,
+        "calibration": 1,
+        "confirmation": 1,
+    }
 
 
 def test_hash_mutation_rejects_complete_manifest(tmp_path: Path) -> None:
@@ -147,6 +181,24 @@ def test_manifest_builder_rejects_external_and_symlinked_artifact_records(tmp_pa
             split_sha256="0" * 64,
             split_artifact="result",
             artifact_root=bundle,
+        )
+
+
+def test_manifest_builder_rejects_symlinked_artifact_root_before_resolving(tmp_path: Path) -> None:
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(real_root, target_is_directory=True)
+
+    with pytest.raises(ManifestVerificationError, match="artifact_root must be a real directory"):
+        build_run_manifest(
+            run_id="linked-root",
+            inputs={"fixture": real_root / "input.json"},
+            outputs={"result": real_root / "result.json"},
+            targets=TargetRegistry((TargetSpec("compliance", "J", "upper", 1.15),)),
+            split_sha256="0" * 64,
+            split_artifact="result",
+            artifact_root=linked_root,
         )
 
 

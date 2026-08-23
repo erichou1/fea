@@ -20,14 +20,15 @@ Every constrained response is addressed by its immutable name, with a physical
 unit, inequality direction, threshold, and explicit `normalization`. Lists or
 tensor positions are not a compliance API. Absolute targets must not use unit
 `1`. A baseline ratio must use unit `1`, an explicit `_ratio` name (for example
-`compliance_ratio`), and a `base_target` that names another registry target.
-The current smoke registry uses only absolute proxy targets:
+`compliance_ratio`), and a non-empty `base_target` provenance label; the base
+reference is external metadata and need not be another constrained registry
+member. The smoke registry uses a compliance ratio plus absolute proxy targets:
 
-| Target | Unit | Direction | Threshold |
-| --- | --- | --- | ---: |
-| `compliance` | J | upper | 1.15 |
-| `max_von_mises` | Pa | upper | 5,000,000 |
-| `max_displacement` | m | upper | 0.028 |
+| Target | Unit | Normalization | Base target | Direction | Threshold |
+| --- | --- | --- | --- | --- | ---: |
+| `compliance_ratio` | 1 | `baseline_ratio` | `compliance` | upper | 1.15 |
+| `max_von_mises` | Pa | `absolute` | — | upper | 5,000,000 |
+| `max_displacement` | m | `absolute` | — | upper | 0.028 |
 
 These are explicitly **linear-elastic simulator proxy constraints**, not
 structural-code or material acceptance limits.
@@ -36,9 +37,11 @@ structural-code or material acceptance limits.
 
 `build_family_split` requires explicit `sample_id` and `family_id` fields. A
 single seeded family shuffle creates the fixed `fit` (60%), `development`
-(20%), `calibration` (10%), and `confirmation` (10%) roles. Every derivative
-of a family remains in exactly one role; `validate_family_split` rejects missing
-assignments, unknown IDs, duplicate IDs, and family leakage.
+(20%), `calibration` (10%), and `confirmation` (10%) roles. Every positive
+functional role receives at least one family; all remaining families are
+allocated deterministically to stay as close as possible to those fractions.
+Every derivative of a family remains in exactly one role; `validate_family_split`
+rejects missing assignments, unknown IDs, duplicate IDs, and family leakage.
 
 ## Evidence records
 
