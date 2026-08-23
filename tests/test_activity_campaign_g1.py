@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import pytest
@@ -394,3 +396,25 @@ def test_campaign_resume_accepts_verified_case_and_rejects_tampering(tmp_path: P
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(CampaignError, match="digest"):
         load_verified_case(root, "fit-a")
+
+
+def test_activity_make_wrapper_never_interpolates_free_form_extra_shell_text(tmp_path: Path) -> None:
+    repository = Path(__file__).parents[1]
+    marker = tmp_path / "unexpected-marker"
+    result = subprocess.run(
+        ["make", "activity-campaign"],
+        cwd=repository,
+        env={
+            **os.environ,
+            "ACTIVITY_ROOT": str(tmp_path / "missing-campaign"),
+            "ACTIVITY_MODE": "summarize",
+            "ACTIVITY_EXTRA": "; touch {}; #".format(marker),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert not marker.exists(), result.stdout + result.stderr
+    assert "ACTIVITY_EXTRA" not in (repository / "Makefile").read_text(encoding="utf-8")

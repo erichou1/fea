@@ -70,11 +70,19 @@ activity-campaign:
 	if [ -z "$${ACTIVITY_ROOT:-}" ] || [ -z "$${ACTIVITY_MODE:-}" ]; then \
 		printf '%s\n' 'ACTIVITY_ROOT and ACTIVITY_MODE are required' >&2; exit 2; \
 	fi; \
+	set -- --root "$$ACTIVITY_ROOT" --mode "$$ACTIVITY_MODE"; \
 	if [ "$$ACTIVITY_MODE" = generate-trajectories ] || [ "$$ACTIVITY_MODE" = run-audit ]; then \
 		if [ -z "$${SPLIT_MANIFEST:-}" ] || [ -z "$${FEA_ARCHIVE:-}" ] || [ -z "$${EXPECTED_SPLIT_MANIFEST_SHA256:-}" ] || [ -z "$${EXPECTED_FEA_ARCHIVE_SHA256:-}" ]; then \
 			printf '%s\n' 'anchored modes require SPLIT_MANIFEST, FEA_ARCHIVE, EXPECTED_SPLIT_MANIFEST_SHA256, and EXPECTED_FEA_ARCHIVE_SHA256' >&2; exit 2; \
 		fi; \
-		uv run --frozen --group fea python -m sasto.activity_campaign --root "$$ACTIVITY_ROOT" --mode "$$ACTIVITY_MODE" --split-manifest "$$SPLIT_MANIFEST" --archive "$$FEA_ARCHIVE" --expected-split-manifest-sha256 "$$EXPECTED_SPLIT_MANIFEST_SHA256" --expected-fea-archive-sha256 "$$EXPECTED_FEA_ARCHIVE_SHA256" $${ACTIVITY_EXTRA:-}; \
-	else \
-		uv run --frozen --group fea python -m sasto.activity_campaign --root "$$ACTIVITY_ROOT" --mode "$$ACTIVITY_MODE"; \
-	fi
+		set -- "$$@" --split-manifest "$$SPLIT_MANIFEST" --archive "$$FEA_ARCHIVE" --expected-split-manifest-sha256 "$$EXPECTED_SPLIT_MANIFEST_SHA256" --expected-fea-archive-sha256 "$$EXPECTED_FEA_ARCHIVE_SHA256"; \
+	fi; \
+	if [ -n "$${ACTIVITY_SMOKE_BATCH_CAP:-}" ]; then \
+		if [ "$$ACTIVITY_MODE" != generate-trajectories ]; then printf '%s\n' 'ACTIVITY_SMOKE_BATCH_CAP is valid only for generate-trajectories' >&2; exit 2; fi; \
+		set -- "$$@" --smoke-batch-cap "$$ACTIVITY_SMOKE_BATCH_CAP"; \
+	fi; \
+	if [ "$$ACTIVITY_MODE" = run-audit ]; then \
+		if [ -z "$${ACTIVITY_THRESHOLD_SELECTION:-}" ]; then printf '%s\n' 'ACTIVITY_THRESHOLD_SELECTION is required for run-audit' >&2; exit 2; fi; \
+		set -- "$$@" --threshold-selection "$$ACTIVITY_THRESHOLD_SELECTION"; \
+	fi; \
+	uv run --frozen --group fea python -m sasto.activity_campaign "$$@"
