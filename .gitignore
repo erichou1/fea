@@ -76,3 +76,6 @@ venv.bak/
 # OS
 .DS_Store
 Thumbs.db
+
+# SASTO-V immutable local evidence artifacts
+artifacts/

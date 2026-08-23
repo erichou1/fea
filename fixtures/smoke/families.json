@@ -1,0 +1,14 @@
+[
+  {"sample_id": "family-001/base", "family_id": "family-001"},
+  {"sample_id": "family-001/variant-a", "family_id": "family-001"},
+  {"sample_id": "family-002/base", "family_id": "family-002"},
+  {"sample_id": "family-002/variant-a", "family_id": "family-002"},
+  {"sample_id": "family-003/base", "family_id": "family-003"},
+  {"sample_id": "family-004/base", "family_id": "family-004"},
+  {"sample_id": "family-005/base", "family_id": "family-005"},
+  {"sample_id": "family-006/base", "family_id": "family-006"},
+  {"sample_id": "family-007/base", "family_id": "family-007"},
+  {"sample_id": "family-008/base", "family_id": "family-008"},
+  {"sample_id": "family-009/base", "family_id": "family-009"},
+  {"sample_id": "family-010/base", "family_id": "family-010"}
+]
