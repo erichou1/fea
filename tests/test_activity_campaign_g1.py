@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
+import zipfile
 
 import numpy as np
 import pytest
@@ -548,6 +550,119 @@ def test_campaign_resume_accepts_verified_case_and_rejects_tampering(tmp_path: P
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(CampaignError, match="digest"):
         load_verified_case(root, "fit-a")
+
+
+def test_generation_writes_disconnected_baseline_failure_and_resumes_remaining_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A raw assembly validation failure must become a durable case, not abort generation."""
+    import sasto.activity_campaign as campaign
+
+    ids = ["disconnected", "remaining"]
+    volumes = {
+        "disconnected": np.zeros((64, 64, 64), dtype=np.uint8),
+        "remaining": np.zeros((64, 64, 64), dtype=np.uint8),
+    }
+    volumes["disconnected"][0, 0, 0] = 1
+    volumes["disconnected"][3, 0, 0] = 1
+    volumes["remaining"][0, 0, 0] = 1
+    volumes["remaining"][1, 0, 0] = 1
+    archive_path = tmp_path / "synthetic.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for sample_id, volume in volumes.items():
+            payload = io.BytesIO(); np.savez_compressed(payload, data=volume)
+            archive.writestr("fea_ml/data/runs_real/{}/occ.npz".format(sample_id), payload.getvalue())
+            archive.writestr("fea_ml/data/runs_real/{}/meta.json".format(sample_id), json.dumps({"voxel_size": 0.01}))
+    archive_bytes = archive_path.read_bytes()
+    monkeypatch.setattr(campaign, "_source_snapshot", lambda *args: (_manifest(["fit-a", "fit-b", "fit-c", "fit-d"]), archive_bytes, "a" * 64, "b" * 64))
+    monkeypatch.setattr(campaign, "ranked_fit_subsets", lambda _: {"threshold_design": ids, "activity_audit": []})
+    real_run = campaign.run_trajectory
+    executed: list[str] = []
+
+    def controlled_run(**kwargs: object) -> dict[str, object]:
+        sample_id = str(kwargs["sample_id"])
+        executed.append(sample_id)
+        if sample_id == "remaining":
+            return {"schema_version": campaign.SCHEMA_VERSION, "sample_id": sample_id, "baseline": _success(compliance=1.0, stress=1.0, displacement=1.0),
+                    "batches": [], "stopping_reason": "candidate_exhaustion", "accepted_material_reduction": 0.0,
+                    "proposed_material_reduction": 0.0, "last_admitted_batch_index": None}
+        return real_run(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(campaign, "run_trajectory", controlled_run)
+    root = tmp_path / "campaign"
+    first = campaign.generate_trajectories(root=root, split_manifest=tmp_path / "split.json", archive=archive_path,
+                                            expected_split_sha256="a" * 64, expected_archive_sha256="b" * 64,
+                                            mode="threshold_design")
+    failed = campaign.load_verified_case(root, "disconnected")
+    assert failed["stopping_reason"] == "solver_failure"
+    assert failed["solver_failure_reason"] == "disconnected_occupancy"
+    assert failed["accepted_material_reduction"] == 0.0
+    assert failed["proposed_material_reduction"] == 0.0
+    assert isinstance(failed["case_digest"], str) and len(failed["case_digest"]) == 64
+    assert campaign.load_verified_case(root, "remaining")["stopping_reason"] == "candidate_exhaustion"
+    assert first["generation"]["case_count"] == 2
+    assert executed == ids
+
+    resumed = campaign.generate_trajectories(root=root, split_manifest=tmp_path / "split.json", archive=archive_path,
+                                              expected_split_sha256="a" * 64, expected_archive_sha256="b" * 64,
+                                              mode="threshold_design")
+    assert resumed["generation"] == first["generation"]
+    assert executed == ids
+
+    case_digests = {sample_id: campaign.load_verified_case(root, sample_id)["case_digest"] for sample_id in ids}
+    (root / "campaign-manifest.json").unlink()
+    rebased = campaign.generate_trajectories(root=root, split_manifest=tmp_path / "split.json", archive=archive_path,
+                                              expected_split_sha256="a" * 64, expected_archive_sha256="b" * 64,
+                                              mode="threshold_design")
+    assert rebased["generation"] == first["generation"]
+    assert {sample_id: campaign.load_verified_case(root, sample_id)["case_digest"] for sample_id in ids} == case_digests
+    assert executed == ids
+
+
+@pytest.mark.parametrize("reason", ("support_free_geometry", "load_free_geometry"))
+def test_baseline_geometry_validation_failures_are_written_as_verified_cases(tmp_path: Path, reason: str) -> None:
+    from sasto.activity_campaign import load_verified_case, run_trajectory, write_case_record
+
+    volume = np.zeros((2, 1, 1), dtype=bool)
+    volume[:, 0, 0] = True
+    case = run_trajectory(sample_id="fit-a", volume=volume, config=object(),
+                          solver=lambda *_: {"status": "failure", "reason": reason})
+    root = tmp_path / reason; root.mkdir(); (root / "cases").mkdir()
+    write_case_record(root, case)
+    written = load_verified_case(root, "fit-a")
+    assert written["stopping_reason"] == "solver_failure"
+    assert written["solver_failure_reason"] == reason
+    assert written["accepted_material_reduction"] == 0.0
+    assert written["proposed_material_reduction"] == 0.0
+
+
+def test_threshold_selection_replays_mixed_completed_cases_and_requires_all_fifty(tmp_path: Path) -> None:
+    from sasto.activity_campaign import CampaignError, _digest, select_thresholds_from_root, write_case_record
+
+    ids = ["fit-{:02d}".format(index) for index in range(50)]
+    protocol = {"schema_version": "1.0.0", "namespace": "sasto-v-benchmark-activity-v1", "role": "fit", "mode": "threshold_design",
+                "threshold_design_ids": ids, "activity_audit_ids": ["audit-{:03d}".format(index) for index in range(200)], "selected_ids": ids,
+                "split_manifest_sha256": "a" * 64, "archive_sha256": "b" * 64,
+                "source_bundle_files": {"src/sasto/activity_campaign.py": "c" * 64}, "source_bundle_sha256": "d" * 64,
+                "verifier": {"fixed_total_benchmark_force_n": [0.0, 0.0, -100.0], "include_self_weight": False,
+                             "support": "minimum_physical_element_x_face", "load": "maximum_physical_element_x_face", "admission_relative_tolerance": 2e-8},
+                "topology_mode": "conservative_local_6_26", "max_batches": 40, "frozen_thresholds": None, "label": "FROZEN_FIT_ONLY_PROTOCOL"}
+    root = tmp_path / "complete"; root.mkdir(); (root / "cases").mkdir()
+    (root / "campaign-manifest.json").write_text(json.dumps({**protocol, "manifest_digest": _digest(protocol)}), encoding="utf-8")
+    for sample_id in ids:
+        failure = sample_id == ids[0]
+        write_case_record(root, {"sample_id": sample_id, "batches": [],
+                                 "stopping_reason": "solver_failure" if failure else "candidate_exhaustion",
+                                 **({"solver_failure_reason": "disconnected_occupancy", "accepted_material_reduction": 0.0,
+                                     "proposed_material_reduction": 0.0} if failure else {})})
+    frozen = select_thresholds_from_root(root)
+    assert len(frozen["threshold_trajectory_hashes"]) == 50
+    assert frozen["selection"]["case_reasons"][ids[0]] == "solver_failure"
+
+    incomplete = tmp_path / "incomplete"; incomplete.mkdir(); (incomplete / "cases").mkdir()
+    (incomplete / "campaign-manifest.json").write_text(json.dumps({**protocol, "manifest_digest": _digest(protocol)}), encoding="utf-8")
+    for sample_id in ids[:-1]:
+        write_case_record(incomplete, {"sample_id": sample_id, "batches": [], "stopping_reason": "candidate_exhaustion"})
+    with pytest.raises(CampaignError, match="activity case"):
+        select_thresholds_from_root(incomplete)
 
 
 def test_activity_make_wrapper_never_interpolates_free_form_extra_shell_text(tmp_path: Path) -> None:

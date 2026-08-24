@@ -24,7 +24,7 @@ from .fit_probe import FitOnlyAccessError, _PayloadAccessLedger, _configuration,
 from .manifest import ManifestVerificationError, open_new_artifact_root, read_regular_path_snapshot, write_new_regular_path
 from .splits import FamilyLeakageError, validate_family_split_manifest
 from .topology import conservative_local_6_26, exact_topology_preflight_6_26
-from .voxel_fea import VoxelFEAConfig, assemble_voxel_system, solve_voxels
+from .voxel_fea import VoxelFEAConfig, solve_voxels
 
 NAMESPACE = "sasto-v-benchmark-activity-v1"
 BETA_GRID = (1.02, 1.05, 1.10, 1.15, 1.20, 1.30, 1.50, 2.00)
@@ -116,17 +116,30 @@ def _scientific_record(record: Mapping[str, object]) -> dict[str, object]:
     return {key: value for key, value in record.items() if key != "timing"}
 
 
-def _load_coordinates(volume: np.ndarray) -> tuple[tuple[int, int, int], ...]:
-    assembled = assemble_voxel_system(volume, VoxelFEAConfig(include_self_weight=False, fixed_total_force_n=(0.0, 0.0, -100.0)))
-    max_x = int(np.argwhere(volume)[:, 0].max()) + 1
-    return tuple(tuple(int(value) for value in point) for point in assembled.node_coordinates if int(point[0]) == max_x)
+def _load_coordinates(volume: object) -> tuple[tuple[int, int, int], ...] | None:
+    """Derive the maximum-x load-face nodes without invoking raw assembly.
+
+    Returning ``None`` leaves validation to ``solve_voxels``, whose failure record
+    is the only generation-path representation for malformed geometries.
+    """
+    if not isinstance(volume, np.ndarray) or volume.dtype != np.bool_ or volume.ndim != 3 or not volume.any():
+        return None
+    occupied = np.argwhere(volume)
+    max_x = int(occupied[:, 0].max())
+    load_x = max_x + 1
+    nodes = {
+        (load_x, int(y) + dy, int(z) + dz)
+        for y, z in np.argwhere(volume[max_x])
+        for dy, dz in ((0, 0), (0, 1), (1, 0), (1, 1))
+    }
+    return tuple(sorted(nodes))
 
 
 def _activity_config(volume: np.ndarray, base: VoxelFEAConfig) -> VoxelFEAConfig:
     coordinates = _load_coordinates(volume)
     return dataclasses.replace(
         base, include_self_weight=False, fixed_total_force_n=(0.0, 0.0, -100.0), relative_tolerance=2e-8,
-        expected_loaded_node_count=len(coordinates), expected_loaded_node_coordinates=coordinates,
+        expected_loaded_node_count=None if coordinates is None else len(coordinates), expected_loaded_node_coordinates=coordinates,
     )
 
 
@@ -607,9 +620,16 @@ def generate_trajectories(*, root: Path, split_manifest: Path, archive: Path, ex
         if mode == "activity_audit":
             protocol["threshold_protocol_hash"] = threshold_protocol_hash
     if root.exists():
-        existing = _campaign_manifest(root)
-        if {key: existing.get(key) for key in protocol} != protocol:
-            raise CampaignError("existing campaign manifest does not match frozen protocol")
+        manifest_path = root / "campaign-manifest.json"
+        if manifest_path.exists():
+            existing = _campaign_manifest(root)
+            if {key: existing.get(key) for key in protocol} != protocol:
+                raise CampaignError("existing campaign manifest does not match frozen protocol")
+        else:
+            try:
+                write_new_regular_path(manifest_path, _canonical_bytes({**protocol, "manifest_digest": _digest(protocol)}) + b"\n", "campaign manifest")
+            except ManifestVerificationError as error:
+                raise CampaignError("cannot restore campaign manifest") from error
     else:
         _new_campaign(root, protocol)
     archive_ledger = _PayloadAccessLedger(ids)
