@@ -5,7 +5,25 @@ GB200 (Grace ARM64 + Blackwell) node, producing a certifiable cohort manifest.
 
 Repo: `https://github.com/erichou1/fea`
 Branch: `modernize/sasto-v`
-Commit: `f46f500c96f7780f81da7f7e4c16814f67ef2af0`
+
+Use the branch tip. Do not pin a commit SHA — documentation commits move it. What
+must match exactly is the **code**, verified by these hashes after checkout:
+
+| Path | SHA-256 |
+|---|---|
+| `src/sasto/g1b_relabel.py` | `1aeaaeaf7902203148d5d98e0ba3904fa558678376d81aca3d2b3374b6365ab8` |
+| `src/sasto/voxel_fea.py` | `d258ed803a1b5be7d8e05d3f1d1176d962f482178057ecefa925d360349daece` |
+| `uv.lock` | `a3e29520c85af76f98ddba591d2a779f6426a1844d282235d0a4465fe831c35d` |
+
+Solver lineage commit (the code these hashes come from):
+`f46f500c96f7780f81da7f7e4c16814f67ef2af0`.
+
+```sh
+shasum -a 256 src/sasto/g1b_relabel.py src/sasto/voxel_fea.py uv.lock
+```
+
+If any of the three differs, stop — the produced labels would not correspond to
+the certified solver.
 
 ---
 
@@ -90,7 +108,8 @@ cd $WORK
 git clone https://github.com/erichou1/fea.git repo
 cd repo
 git checkout modernize/sasto-v
-git rev-parse HEAD    # must print f46f500c96f7780f81da7f7e4c16814f67ef2af0
+# verify the CODE, not the commit
+shasum -a 256 src/sasto/g1b_relabel.py src/sasto/voxel_fea.py uv.lock
 
 # python + deps, locked
 uv python install 3.11.15

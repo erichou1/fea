@@ -5,7 +5,9 @@
 set -euo pipefail
 
 WORK="${WORK:-$HOME/sasto}"
-COMMIT="f46f500c96f7780f81da7f7e4c16814f67ef2af0"
+G1B_SHA="1aeaaeaf7902203148d5d98e0ba3904fa558678376d81aca3d2b3374b6365ab8"
+SOLVER_SHA="d258ed803a1b5be7d8e05d3f1d1176d962f482178057ecefa925d360349daece"
+LOCK_SHA="a3e29520c85af76f98ddba591d2a779f6426a1844d282235d0a4465fe831c35d"
 SPLIT_SHA="ca526a068137308ca4bb05325d62bab5a7ad45c81d54566d5fa8e3ef62a91650"
 ARCHIVE_SHA="79640406e1e0921c0ccfdc1df7ce51e05a8ecfece2ceccb7dec42c981736beda"
 
@@ -31,7 +33,7 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 uv --version
 
-say "repo at frozen commit"
+say "repo at verified code state"
 mkdir -p "$WORK"
 if [ ! -d "$WORK/repo/.git" ]; then
   git clone https://github.com/erichou1/fea.git "$WORK/repo"
@@ -40,9 +42,10 @@ cd "$WORK/repo"
 git fetch origin
 git checkout modernize/sasto-v
 git pull --ff-only origin modernize/sasto-v || true
-HEAD_SHA="$(git rev-parse HEAD)"
-[ "$HEAD_SHA" = "$COMMIT" ] || die "HEAD is $HEAD_SHA, expected $COMMIT"
-echo "HEAD $HEAD_SHA OK"
+echo "${G1B_SHA}  src/sasto/g1b_relabel.py" | sha256sum -c - || die "g1b_relabel.py does not match certified code"
+echo "${SOLVER_SHA}  src/sasto/voxel_fea.py" | sha256sum -c - || die "voxel_fea.py does not match certified solver"
+echo "${LOCK_SHA}  uv.lock" | sha256sum -c - || die "uv.lock does not match certified lock"
+echo "code state verified at $(git rev-parse HEAD)"
 
 say "locked python and dependencies"
 uv python install 3.11.15
