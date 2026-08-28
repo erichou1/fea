@@ -95,6 +95,26 @@ def test_fit_loader_reads_only_eligible_canonical_case_targets_and_packs_occupan
     assert dataset.provenance["archive_sha256"] == inputs["archive_sha"]
 
 
+def test_packed_ingest_cache_is_digest_bound_and_reuses_verified_role_payload(tmp_path: Path) -> None:
+    from sasto.surrogate import build_packed_ingest_cache, open_role_dataset
+
+    inputs = _g2_inputs(tmp_path)
+    fit = open_role_dataset(
+        role="fit", split_manifest=inputs["split"], expected_split_sha256=inputs["split_sha"],
+        archive=inputs["archive"], expected_archive_sha256=inputs["archive_sha"], g1b_root=inputs["root"],
+        expected_cohort_manifest_sha256=inputs["cohort_sha"], expected_cluster_role_manifest_sha256=inputs["cluster_sha"],
+    )
+    cached = build_packed_ingest_cache(cache_root=tmp_path / "cache", datasets=[fit])
+    example = next(iter(cached["fit"]))
+    metadata = json.loads((tmp_path / "cache" / "cache-manifest.json").read_text())
+    assert example.sample_id == fit.sample_ids[0]
+    assert np.array_equal(example.channels[0], next(iter(fit)).channels[0])
+    assert metadata["archive_sha256"] == inputs["archive_sha"]
+    assert metadata["cohort_manifest_sha256"] == inputs["cohort_sha"]
+    assert metadata["roles"]["fit"]["packed_channel_bytes_per_sample"] == 4 * (64 ** 3 // 8)
+    assert metadata["cache_digest"] == _canonical_digest({key: value for key, value in metadata.items() if key != "cache_digest"})
+
+
 def test_normalization_record_is_fit_only_log_transformed_and_self_digesting(tmp_path: Path) -> None:
     from sasto.surrogate import compute_fit_normalization, open_role_dataset
 
@@ -181,6 +201,29 @@ def test_same_campaign_seed_produces_byte_identical_checkpoints(tmp_path: Path) 
     assert first["members"][0]["checkpoint_sha256"] == second["members"][0]["checkpoint_sha256"]
 
 
+def test_certified_ensemble_writes_resume_verifiable_member_ledger(tmp_path: Path) -> None:
+    pytest.importorskip("torch")
+    from sasto.surrogate import build_packed_ingest_cache, compute_fit_normalization, open_role_dataset, train_certified_ensemble
+
+    inputs = _g2_inputs(tmp_path)
+    roles = {}
+    for role in ("fit", "development"):
+        roles[role] = open_role_dataset(role=role, split_manifest=inputs["split"], expected_split_sha256=inputs["split_sha"],
+            archive=inputs["archive"], expected_archive_sha256=inputs["archive_sha"], g1b_root=inputs["root"],
+            expected_cohort_manifest_sha256=inputs["cohort_sha"], expected_cluster_role_manifest_sha256=inputs["cluster_sha"])
+    cached = build_packed_ingest_cache(cache_root=tmp_path / "cache", datasets=[roles["fit"], roles["development"]])
+    normalization = compute_fit_normalization(cached["fit"])
+    result = train_certified_ensemble(output_root=tmp_path / "ensemble", fit=cached["fit"], development=cached["development"], normalization=normalization,
+        source_bundle_sha256="9" * 64, cache_manifest_sha256=hashlib.sha256((tmp_path / "cache" / "cache-manifest.json").read_bytes()).hexdigest(),
+        member_count=1, max_epochs=1, patience=1, base_channels=2, device="cpu", ingest_wall_seconds=1.0)
+    manifest = json.loads((tmp_path / "ensemble" / "members" / "member-00.json").read_text())
+    assert result["member_count"] == 1
+    assert manifest["data_role"] == "fit"
+    assert manifest["compute_ledger"]["input_samples_per_second"] > 0
+    assert manifest["compute_ledger"]["training_samples_per_second"] > 0
+    assert "development_mae_epoch_0" in manifest and "development_mae_final" in manifest
+
+
 def test_anchored_smoke_opens_real_role_datasets_and_records_nonzero_source_digests(tmp_path: Path) -> None:
     pytest.importorskip("torch")
     from sasto.surrogate import run_anchored_smoke
@@ -203,6 +246,8 @@ def test_anchored_smoke_opens_real_role_datasets_and_records_nonzero_source_dige
     assert study["selection_role"] == "development"
     assert study["not_k5_adjudication"] is True
     assert [row["base_channels"] for row in study["rows"]] == [4, 16, 32]
+    assert all("development_selection_metric_epoch_0" in row and "development_selection_metric_final" in row for row in study["rows"])
+    assert study["predeclared_minimum_relative_width_separation"] == 0.02
     assert all(set(row["development_mae"]) == {"compliance", "max_von_mises", "max_displacement"} for row in study["rows"])
 
 

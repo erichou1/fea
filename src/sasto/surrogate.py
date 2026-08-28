@@ -227,17 +227,197 @@ class RoleDataset:
 
 
 
-def compute_fit_normalization(dataset: RoleDataset) -> dict[str, object]:
+class PackedRoleDataset:
+    """Role-scoped view of a verified on-disk packed-bit ingest cache."""
+
+    def __init__(self, *, role: str, sample_ids: list[str], cache_root: Path, data_file: str,
+                 targets: Mapping[str, Mapping[str, object]], provenance: Mapping[str, str]) -> None:
+        self.role = role
+        self.sample_ids = tuple(sample_ids)
+        self._cache_root = Path(cache_root)
+        self._data_file = data_file
+        self._targets = {sample_id: dict(values) for sample_id, values in targets.items()}
+        self.provenance = dict(provenance)
+
+    def __len__(self) -> int:
+        return len(self.sample_ids)
+
+    def _example_from_payload(self, *, sample_id: str, payload: np.ndarray) -> SurrogateExample:
+        occupancy = np.unpackbits(payload[:32768], bitorder="little", count=64 ** 3).reshape(64, 64, 64)
+        parts = np.zeros(64 ** 3, dtype=np.uint8)
+        for bit in range(3):
+            parts |= np.unpackbits(payload[(bit + 1) * 32768:(bit + 2) * 32768], bitorder="little", count=64 ** 3).astype(np.uint8) << bit
+        channels = np.stack((occupancy.astype(np.float32), parts.reshape(64, 64, 64).astype(np.float32)), axis=0)
+        target_values = self._targets.get(sample_id)
+        if not isinstance(target_values, Mapping):
+            raise SurrogateError("packed ingest cache target payload is malformed")
+        try:
+            targets = {name: float(target_values[name]) for name in TARGET_NAMES}
+        except (KeyError, TypeError, ValueError) as error:
+            raise SurrogateError("packed ingest cache target payload is malformed") from error
+        if not all(math.isfinite(value) and value > 0.0 for value in targets.values()):
+            raise SurrogateError("packed ingest cache targets must be finite and positive")
+        return SurrogateExample(sample_id=sample_id, channels=channels, targets=targets, packed_occupancy_nbytes=32768)
+
+    def iter_examples(self, indices: list[int] | None = None) -> Iterator[SurrogateExample]:
+        item_bytes = 4 * (64 ** 3 // 8)
+        ordered = list(range(len(self.sample_ids))) if indices is None else indices
+        if any(not isinstance(index, int) or not 0 <= index < len(self.sample_ids) for index in ordered):
+            raise SurrogateError("packed ingest cache index is outside the role")
+        data_path = self._cache_root / self._data_file
+        try:
+            packed = np.memmap(data_path, dtype=np.uint8, mode="r", shape=(len(self.sample_ids), item_bytes))
+        except (OSError, ValueError) as error:
+            raise SurrogateError("packed ingest cache payload is unavailable") from error
+        try:
+            for index in ordered:
+                yield self._example_from_payload(sample_id=self.sample_ids[index], payload=packed[index])
+        finally:
+            del packed
+
+    def __iter__(self) -> Iterator[SurrogateExample]:
+        return self.iter_examples()
+
+
+class PackedRoleSubset:
+    """Deterministic logical subset of a packed role without copying its payload."""
+
+    def __init__(self, dataset: PackedRoleDataset, sample_count: int) -> None:
+        if not 1 <= sample_count <= len(dataset):
+            raise SurrogateError("packed role subset sample count is outside the admitted role")
+        self._dataset = dataset; self.role = dataset.role; self.sample_ids = dataset.sample_ids[:sample_count]; self.provenance = dataset.provenance
+
+    def __len__(self) -> int:
+        return len(self.sample_ids)
+
+    def iter_examples(self, indices: list[int] | None = None) -> Iterator[SurrogateExample]:
+        selected = list(range(len(self))) if indices is None else indices
+        return self._dataset.iter_examples(selected)
+
+    def __iter__(self) -> Iterator[SurrogateExample]:
+        return self.iter_examples()
+
+
+def packed_role_subset(dataset: PackedRoleDataset, *, sample_count: int) -> PackedRoleSubset:
+    if not isinstance(dataset, PackedRoleDataset):
+        raise SurrogateError("packed role subset requires a packed role dataset")
+    return PackedRoleSubset(dataset, sample_count)
+
+
+def _packed_cache_manifest(path: Path) -> dict[str, object]:
+    try:
+        snapshot = read_regular_path_snapshot(path / "cache-manifest.json", "packed ingest cache manifest")
+        manifest = json.loads(snapshot.bytes.decode("utf-8"))
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SurrogateError("packed ingest cache manifest is unavailable or malformed") from error
+    if not isinstance(manifest, dict) or manifest.get("cache_digest") != _digest({key: value for key, value in manifest.items() if key != "cache_digest"}):
+        raise SurrogateError("packed ingest cache manifest digest mismatch")
+    return manifest
+
+
+def build_packed_ingest_cache(*, cache_root: Path, datasets: list[RoleDataset]) -> dict[str, PackedRoleDataset]:
+    """Decode each admitted archive payload once into a digest-bound packed-bit cache.
+
+    Occupancy uses one packed bit-plane and part labels use three packed bit-planes.
+    The cache is immutable and its identity binds the exact archive and cohort digests.
+    """
+    if not datasets or any(not isinstance(dataset, RoleDataset) for dataset in datasets):
+        raise SurrogateError("packed ingest cache requires admitted role datasets")
+    roles = [dataset.role for dataset in datasets]
+    if len(set(roles)) != len(roles) or any(role not in {"fit", "development"} for role in roles):
+        raise SurrogateRoleError("packed ingest cache may contain fit and development roles only")
+    provenance = datasets[0].provenance
+    if any(dataset.provenance != provenance for dataset in datasets[1:]):
+        raise SurrogateError("packed ingest cache inputs have inconsistent provenance")
+    archive_sha = _lower_digest(provenance.get("archive_sha256"), "packed ingest cache archive")
+    cohort_sha = _lower_digest(provenance.get("cohort_manifest_sha256"), "packed ingest cache cohort")
+    root = Path(cache_root)
+
+    def instantiate(manifest: Mapping[str, object]) -> dict[str, PackedRoleDataset]:
+        if manifest.get("archive_sha256") != archive_sha or manifest.get("cohort_manifest_sha256") != cohort_sha:
+            raise SurrogateError("packed ingest cache digest binding does not match admitted inputs")
+        rows = manifest.get("roles")
+        if not isinstance(rows, Mapping):
+            raise SurrogateError("packed ingest cache roles are malformed")
+        result: dict[str, PackedRoleDataset] = {}
+        for dataset in datasets:
+            row = rows.get(dataset.role)
+            if not isinstance(row, Mapping) or row.get("sample_ids") != list(dataset.sample_ids):
+                raise SurrogateError("packed ingest cache role membership does not match admitted inputs")
+            data_file = row.get("data_file"); targets = row.get("targets")
+            if not isinstance(data_file, str) or not isinstance(targets, Mapping):
+                raise SurrogateError("packed ingest cache role payload is malformed")
+            data_path = root / data_file
+            if sha256_file(data_path) != row.get("data_sha256") or data_path.stat().st_size != len(dataset) * 4 * (64 ** 3 // 8):
+                raise SurrogateError("packed ingest cache role payload digest mismatch")
+            result[dataset.role] = PackedRoleDataset(role=dataset.role, sample_ids=list(dataset.sample_ids), cache_root=root,
+                data_file=data_file, targets=targets, provenance=provenance)
+        return result
+
+    if root.exists():
+        return instantiate(_packed_cache_manifest(root))
+    try:
+        with open_new_artifact_root(root):
+            pass
+    except (ManifestVerificationError, OSError) as error:
+        raise SurrogateError("packed ingest cache root must be new or verified") from error
+    role_rows: dict[str, object] = {}
+    ingest_started = time.perf_counter()
+    try:
+        with zipfile.ZipFile(datasets[0]._archive, "r") as archive:
+            for dataset in datasets:
+                filename = "{}-channels-packed.bin".format(dataset.role)
+                targets: dict[str, dict[str, float]] = {}
+                with open(root / filename, "xb") as output:
+                    for sample_id in dataset.sample_ids:
+                        occupancy = _read_npz_member(archive, sample_id, ("occ.npz",), "occupancy")
+                        parts = _read_npz_member(archive, sample_id, ("part.npz", "parts.npz"), "part labels")
+                        if occupancy.shape != (64, 64, 64) or occupancy.dtype not in (np.dtype(np.uint8), np.dtype(np.bool_)) or not np.all((occupancy == 0) | (occupancy == 1)):
+                            raise SurrogateError("occupancy has an invalid 64-cubed binary schema")
+                        if parts.shape != (64, 64, 64) or parts.dtype not in (np.dtype(np.uint8), np.dtype(np.int8)) or not np.all((parts >= 0) & (parts <= 5)):
+                            raise SurrogateError("part labels have an invalid 64-cubed integer schema")
+                        output.write(np.packbits(occupancy.reshape(-1), bitorder="little").tobytes())
+                        flat_parts = parts.reshape(-1).astype(np.uint8, copy=False)
+                        for bit in range(3):
+                            output.write(np.packbits((flat_parts >> bit) & 1, bitorder="little").tobytes())
+                        case = _load_verified_case(dataset._g1b_root, sample_id)
+                        if case.get("role") != dataset.role or case.get("exclusion_reasons") != []:
+                            raise SurrogateError("G1b case is outside this eligible role")
+                        targets[sample_id] = _targets_from_case(case)
+                role_rows[dataset.role] = {"sample_ids": list(dataset.sample_ids), "data_file": filename,
+                    "data_sha256": sha256_file(root / filename), "packed_channel_bytes_per_sample": 4 * (64 ** 3 // 8), "targets": targets}
+    except (OSError, zipfile.BadZipFile) as error:
+        raise SurrogateError("anchored archive cannot be decoded into packed ingest cache") from error
+    ingest_wall_seconds = time.perf_counter() - ingest_started
+    ingest_sample_count = sum(len(dataset) for dataset in datasets)
+    manifest: dict[str, object] = {"schema_version": "1.0.0", "cache_format": "packed-bit-occupancy-and-3bit-parts-v1",
+        "archive_sha256": archive_sha, "cohort_manifest_sha256": cohort_sha,
+        "split_manifest_sha256": provenance["split_manifest_sha256"], "cluster_role_manifest_sha256": provenance["cluster_role_manifest_sha256"],
+        "input_sample_count": ingest_sample_count, "input_wall_seconds": ingest_wall_seconds,
+        "input_samples_per_second": ingest_sample_count / ingest_wall_seconds if ingest_wall_seconds else 0.0, "roles": role_rows}
+    manifest["cache_digest"] = _digest(manifest)
+    _write_new_json(root / "cache-manifest.json", manifest, "packed ingest cache manifest")
+    return instantiate(manifest)
+
+
+def compute_fit_normalization(dataset: RoleDataset | PackedRoleDataset) -> dict[str, object]:
     """Compute the sole permitted target normalization record from fit examples."""
-    if not isinstance(dataset, RoleDataset) or dataset.role != "fit":
+    if not isinstance(dataset, (RoleDataset, PackedRoleDataset)) or dataset.role != "fit":
         raise SurrogateRoleError("normalization statistics may be computed from fit only")
-    examples = list(dataset)
-    if not examples:
+    if isinstance(dataset, PackedRoleDataset):
+        source_ids = list(dataset.sample_ids)
+        transformed = {name: np.array([math.log(float(dataset._targets[sample_id][name])) for sample_id in source_ids], dtype=np.float64) for name in TARGET_NAMES}
+    else:
+        examples = list(dataset)
+        if not examples:
+            raise SurrogateError("fit role has no examples for normalization")
+        source_ids = [example.sample_id for example in examples]
+        transformed = {name: np.array([math.log(example.targets[name]) for example in examples], dtype=np.float64) for name in TARGET_NAMES}
+    if not source_ids:
         raise SurrogateError("fit role has no examples for normalization")
-    transformed = {name: np.array([math.log(example.targets[name]) for example in examples], dtype=np.float64) for name in TARGET_NAMES}
     record: dict[str, object] = {
-        "schema_version": "1.0.0", "role": "fit", "source_sample_ids": [example.sample_id for example in examples],
-        "source_sample_count": len(examples), "split_manifest_sha256": dataset.provenance["split_manifest_sha256"],
+        "schema_version": "1.0.0", "role": "fit", "source_sample_ids": source_ids,
+        "source_sample_count": len(source_ids), "split_manifest_sha256": dataset.provenance["split_manifest_sha256"],
         "archive_sha256": dataset.provenance["archive_sha256"], "cohort_manifest_sha256": dataset.provenance["cohort_manifest_sha256"],
         "cluster_role_manifest_sha256": dataset.provenance["cluster_role_manifest_sha256"], "target_names": list(TARGET_NAMES),
         "transform": {"name": "natural_log", "domain": "strictly_positive", "clipping": "none"},
@@ -463,73 +643,230 @@ def train_smoke_ensemble(
     return {"label": SMOKE_LABEL, "members": members, "summary_sha256": summary_sha, "output_root": str(root)}
 
 
+def _normalized_batches(data, normalization: Mapping[str, object], *, batch_size: int, indices: list[int] | None = None):
+    """Yield normalized tensors lazily; packed caches never materialize a role in RAM."""
+    torch, _ = _require_torch()
+    means = normalization["means"]; scales = normalization["scales"]
+    if not isinstance(means, Mapping) or not isinstance(scales, Mapping):
+        raise SurrogateError("normalization record is malformed")
+    if isinstance(data, (PackedRoleDataset, PackedRoleSubset)):
+        iterator = data.iter_examples(indices)
+        raw_targets = True
+    else:
+        if indices is not None:
+            iterator = (data[index] for index in indices)
+        else:
+            iterator = iter(data)
+        raw_targets = False
+    batch = []
+    for item in iterator:
+        if raw_targets:
+            target = torch.tensor([(math.log(item.targets[name]) - float(means[name])) / float(scales[name]) for name in TARGET_NAMES], dtype=torch.float32)
+            row = (item.sample_id, torch.from_numpy(item.channels.copy()).to(dtype=torch.float32), target)
+        else:
+            row = item
+        batch.append(row)
+        if len(batch) == batch_size:
+            yield batch; batch = []
+    if batch:
+        yield batch
+
+
+def _development_metrics(model, data, normalization: Mapping[str, object], *, device: str, batch_size: int = 4) -> dict[str, object]:
+    torch, _ = _require_torch()
+    means = np.array([float(normalization["means"][name]) for name in TARGET_NAMES])
+    scales = np.array([float(normalization["scales"][name]) for name in TARGET_NAMES])
+    absolute = np.zeros(len(TARGET_NAMES), dtype=np.float64); normalized = np.zeros(len(TARGET_NAMES), dtype=np.float64); count = 0
+    model.eval()
+    with torch.no_grad():
+        for batch in _normalized_batches(data, normalization, batch_size=batch_size):
+            channels = torch.stack([row[1] for row in batch]).to(device)
+            expected = torch.stack([row[2] for row in batch]).cpu().numpy()
+            predicted = model(channels)["mean"].detach().cpu().numpy()
+            absolute += np.abs(np.exp(predicted * scales + means) - np.exp(expected * scales + means)).sum(axis=0)
+            normalized += np.abs(predicted - expected).sum(axis=0); count += len(batch)
+    if count == 0:
+        raise SurrogateError("development metrics require examples")
+    raw = {name: float(absolute[index] / count) for index, name in enumerate(TARGET_NAMES)}
+    log = {name: float(normalized[index] / count) for index, name in enumerate(TARGET_NAMES)}
+    return {"development_mae": raw, "development_normalized_log_mae": log,
+            "development_selection_metric": float(np.mean(normalized / count))}
+
+
 def capacity_study(
     *, fit_examples, development_examples, normalization: Mapping[str, object], widths: tuple[int, ...] = (4, 16, 32),
     epochs: int = 1, device: str = "cpu", campaign_seed: int = 20260828, provenance: Mapping[str, str] | None = None,
+    minimum_relative_width_separation: float = 0.02,
 ) -> dict[str, object]:
-    """Compare real candidate widths using fit training and development-only selection."""
+    """At-scale capacity comparison with a predeclared no-noise selection rule."""
     torch, _ = _require_torch()
     if len(widths) < 3 or len(set(widths)) != len(widths) or any(not isinstance(width, int) or width < 2 for width in widths):
         raise SurrogateError("capacity study requires at least three distinct valid widths")
-    if not fit_examples or not development_examples or not isinstance(epochs, int) or not 1 <= epochs <= 3:
-        raise SurrogateError("capacity study requires bounded fit and development examples")
+    if len(fit_examples) < 1 or len(development_examples) < 1 or not isinstance(epochs, int) or not 1 <= epochs <= 50:
+        raise SurrogateError("capacity study requires nonempty examples and 1..50 epochs")
+    if not math.isfinite(minimum_relative_width_separation) or not 0.0 < minimum_relative_width_separation < 1.0:
+        raise SurrogateError("capacity-study width separation must be between zero and one")
     if device not in {"cpu", "mps"} or (device == "mps" and not torch.backends.mps.is_available()):
         raise SurrogateError("requested capacity-study device is unavailable")
-    means = normalization.get("means"); scales = normalization.get("scales")
-    if not isinstance(means, Mapping) or not isinstance(scales, Mapping):
-        raise SurrogateError("capacity study normalization is malformed")
-    try:
-        mean_values = [float(means[name]) for name in TARGET_NAMES]
-        scale_values = [float(scales[name]) for name in TARGET_NAMES]
-    except (KeyError, TypeError, ValueError) as error:
-        raise SurrogateError("capacity study normalization values are malformed") from error
     normalization_digest = _lower_digest(normalization.get("stats_digest"), "capacity study normalization stats")
     rows: list[dict[str, object]] = []
     for width in widths:
-        _configure_determinism(torch, deterministic_seed("sasto-v-g2-capacity-study-v1", campaign_seed, width))
-        if device == "mps":
-            torch.mps.empty_cache()
+        seed = deterministic_seed("sasto-v-g2-capacity-study-v1", campaign_seed, width)
+        _configure_determinism(torch, seed)
+        if device == "mps": torch.mps.empty_cache()
         model = DenseSurrogateCNN(base_channels=width).to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-        started = time.perf_counter()
-        model.train()
-        for _epoch in range(epochs):
-            for _sample_id, channels, targets in fit_examples:
+        epoch_zero = _development_metrics(model, development_examples, normalization, device=device)
+        started = time.perf_counter(); steps = 0
+        for epoch in range(epochs):
+            model.train()
+            indices = list(range(len(fit_examples))); random.Random(seed + epoch).shuffle(indices)
+            for batch in _normalized_batches(fit_examples, normalization, batch_size=4, indices=indices):
+                optimizer = getattr(model, "_g2_optimizer", None)
+                if optimizer is None:
+                    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3); model._g2_optimizer = optimizer
                 optimizer.zero_grad(set_to_none=True)
-                prediction = model(channels.unsqueeze(0).to(device))
-                expected = targets.unsqueeze(0).to(device)
+                prediction = model(torch.stack([row[1] for row in batch]).to(device)); expected = torch.stack([row[2] for row in batch]).to(device)
                 dispersion = prediction["dispersion"]
                 loss = (0.5 * ((expected - prediction["mean"]) / dispersion).square() + torch.log(dispersion)).mean()
-                loss.backward(); optimizer.step()
-        model.eval()
-        absolute = np.zeros(len(TARGET_NAMES), dtype=np.float64)
-        normalized_log_absolute = np.zeros(len(TARGET_NAMES), dtype=np.float64)
-        with torch.no_grad():
-            for _sample_id, channels, targets in development_examples:
-                predicted = model(channels.unsqueeze(0).to(device))["mean"].detach().cpu().numpy()[0]
-                expected = targets.detach().cpu().numpy()
-                predicted_raw = np.exp(predicted * np.array(scale_values) + np.array(mean_values))
-                expected_raw = np.exp(expected * np.array(scale_values) + np.array(mean_values))
-                absolute += np.abs(predicted_raw - expected_raw)
-                normalized_log_absolute += np.abs(predicted - expected)
-        wall_seconds = time.perf_counter() - started
-        mae = {name: float(absolute[index] / len(development_examples)) for index, name in enumerate(TARGET_NAMES)}
-        normalized_log_mae = {name: float(normalized_log_absolute[index] / len(development_examples)) for index, name in enumerate(TARGET_NAMES)}
+                loss.backward(); optimizer.step(); steps += len(batch)
+        final = _development_metrics(model, development_examples, normalization, device=device)
         rows.append({"base_channels": width, "parameter_count": model.parameter_count, "epochs": epochs,
-                     "fit_sample_count": len(fit_examples), "development_sample_count": len(development_examples),
-                     "wall_seconds": wall_seconds, "development_mae": mae, "development_normalized_log_mae": normalized_log_mae,
-                     "development_selection_metric": float(np.mean(normalized_log_absolute / len(development_examples))), "device": device})
-    recommended = min(rows, key=lambda row: (float(row["development_selection_metric"]), -int(row["base_channels"])))
-    result: dict[str, object] = {"schema_version": "1.0.0", "label": SMOKE_LABEL, "selection_role": "development",
-        "not_k5_adjudication": True, "seed_namespace": "sasto-v-g2-capacity-study-v1", "campaign_seed": campaign_seed,
-        "widths": list(widths), "rows": rows, "recommended_base_channels": recommended["base_channels"],
-        "recommendation_basis": "minimum development normalized log MAE; ties prefer wider model",
+            "fit_sample_count": len(fit_examples), "development_sample_count": len(development_examples), "training_samples": steps,
+            "wall_seconds": time.perf_counter() - started, "development_mae_epoch_0": epoch_zero["development_mae"],
+            "development_normalized_log_mae_epoch_0": epoch_zero["development_normalized_log_mae"],
+            "development_selection_metric_epoch_0": epoch_zero["development_selection_metric"], "development_mae": final["development_mae"],
+            "development_normalized_log_mae": final["development_normalized_log_mae"], "development_selection_metric": final["development_selection_metric"],
+            "development_selection_metric_final": final["development_selection_metric"], "device": device})
+    cheapest = min(rows, key=lambda row: int(row["base_channels"]))
+    best = min(rows, key=lambda row: float(row["development_selection_metric_final"]))
+    relative_gain = (float(cheapest["development_selection_metric_final"]) - float(best["development_selection_metric_final"])) / float(cheapest["development_selection_metric_final"])
+    separated = int(best["base_channels"]) != int(cheapest["base_channels"]) and relative_gain >= minimum_relative_width_separation
+    recommended = best if separated else cheapest
+    basis = "best final development normalized log MAE exceeds predeclared {:.1%} separation".format(minimum_relative_width_separation) if separated else "widths statistically indistinguishable under predeclared {:.1%} separation; choose cheapest adequate width".format(minimum_relative_width_separation)
+    result: dict[str, object] = {"schema_version": "1.0.0", "label": SMOKE_LABEL, "selection_role": "development", "not_k5_adjudication": True,
+        "seed_namespace": "sasto-v-g2-capacity-study-v1", "campaign_seed": campaign_seed, "widths": list(widths), "rows": rows,
+        "recommended_base_channels": recommended["base_channels"], "recommendation_basis": basis,
+        "predeclared_minimum_relative_width_separation": minimum_relative_width_separation, "observed_best_vs_cheapest_relative_gain": relative_gain,
         "normalization_stats_digest": normalization_digest}
     if provenance is not None:
         for key in ("split_manifest_sha256", "archive_sha256", "cohort_manifest_sha256", "cluster_role_manifest_sha256", "source_bundle_sha256"):
             result[key] = _lower_digest(provenance.get(key), "capacity study " + key)
     result["study_digest"] = _digest(result)
     return result
+
+
+def _read_verified_member(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(read_regular_path_snapshot(path, "G2 member manifest").bytes.decode("utf-8"))
+    except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SurrogateError("G2 member manifest is unavailable or malformed") from error
+    if not isinstance(value, dict) or value.get("manifest_digest") != _digest({key: item for key, item in value.items() if key != "manifest_digest"}):
+        raise SurrogateError("G2 member manifest digest mismatch")
+    checkpoint = value.get("checkpoint")
+    if not isinstance(checkpoint, Mapping) or not isinstance(checkpoint.get("path"), str) or sha256_file(path.parent / checkpoint["path"]) != checkpoint.get("sha256"):
+        raise SurrogateError("G2 member checkpoint digest mismatch")
+    return value
+
+
+def train_certified_ensemble(
+    *, output_root: Path, fit: PackedRoleDataset, development: PackedRoleDataset, normalization: Mapping[str, object],
+    source_bundle_sha256: str, cache_manifest_sha256: str, member_count: int = 5, max_epochs: int = 20, patience: int = 4,
+    base_channels: int = 4, device: str = "cpu", campaign_seed: int = 20260828, ingest_wall_seconds: float = 0.0,
+) -> dict[str, object]:
+    """Train the digest-bound M-member G2 ensemble using fit and development only."""
+    torch, _ = _require_torch()
+    if not isinstance(fit, PackedRoleDataset) or fit.role != "fit" or not isinstance(development, PackedRoleDataset) or development.role != "development":
+        raise SurrogateRoleError("certified ensemble requires packed fit training and development evaluation only")
+    if not 1 <= member_count <= 5 or not 1 <= max_epochs <= 50 or not 1 <= patience <= max_epochs:
+        raise SurrogateError("certified ensemble member, epoch, or patience bounds are invalid")
+    if device not in {"cpu", "mps"} or (device == "mps" and not torch.backends.mps.is_available()):
+        raise SurrogateError("requested certified ensemble device is unavailable")
+    for digest, label in ((source_bundle_sha256, "source bundle"), (cache_manifest_sha256, "cache manifest"),
+                          (str(normalization.get("stats_digest")), "normalization stats")):
+        _lower_digest(digest, label)
+    if fit.provenance != development.provenance:
+        raise SurrogateError("certified ensemble role provenance differs")
+    root = Path(output_root); members_dir = root / "members"
+    campaign = {"schema_version": "1.0.0", "label": "CERTIFIED_G2_ENSEMBLE", "member_count": member_count, "max_epochs": max_epochs,
+        "patience": patience, "base_channels": base_channels, "campaign_seed": campaign_seed, "seed_namespace": SEED_NAMESPACE,
+        "source_bundle_sha256": source_bundle_sha256, "cache_manifest_sha256": cache_manifest_sha256,
+        "normalization_stats_digest": str(normalization["stats_digest"]), **fit.provenance,
+        "fit_sample_ids": list(fit.sample_ids), "development_sample_ids": list(development.sample_ids), "data_roles": ["fit", "development"]}
+    campaign["campaign_digest"] = _digest(campaign)
+    if root.exists():
+        prior = _packed_cache_manifest(root) if False else None
+        try:
+            existing = json.loads(read_regular_path_snapshot(root / "campaign-manifest.json", "G2 campaign manifest").bytes.decode("utf-8"))
+        except (ManifestVerificationError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise SurrogateError("certified ensemble root is incomplete and cannot resume") from error
+        if existing != campaign:
+            raise SurrogateError("certified ensemble root input digest binding does not match resume request")
+    else:
+        try:
+            with open_new_artifact_root(root) as root_fd:
+                os.mkdir("members", dir_fd=root_fd)
+        except (ManifestVerificationError, OSError) as error:
+            raise SurrogateError("certified ensemble root must be new or resume-verifiable") from error
+        _write_new_json(root / "campaign-manifest.json", campaign, "G2 campaign manifest")
+    members: list[dict[str, object]] = []
+    for member_index in range(member_count):
+        manifest_path = members_dir / "member-{:02d}.json".format(member_index)
+        if manifest_path.exists():
+            manifest = _read_verified_member(manifest_path)
+            if manifest.get("campaign_digest") != campaign["campaign_digest"] or manifest.get("member_index") != member_index:
+                raise SurrogateError("existing G2 member does not bind this campaign")
+            members.append({"member_index": member_index, "manifest_sha256": sha256_file(manifest_path), "checkpoint_sha256": manifest["checkpoint"]["sha256"], "final_metrics": manifest["final_metrics"]})
+            continue
+        seed = deterministic_seed(SEED_NAMESPACE, campaign_seed, member_index); _configure_determinism(torch, seed)
+        if device == "mps": torch.mps.empty_cache()
+        model = DenseSurrogateCNN(base_channels=base_channels).to(device); optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        epoch_zero = _development_metrics(model, development, normalization, device=device)
+        losses: list[float] = []; best_metric = float("inf"); best_epoch = 0; stale = 0; best_state = None; steps = 0
+        started = time.perf_counter()
+        for epoch in range(1, max_epochs + 1):
+            model.train(); indices = list(range(len(fit))); random.Random(seed + epoch).shuffle(indices)
+            for batch in _normalized_batches(fit, normalization, batch_size=4, indices=indices):
+                optimizer.zero_grad(set_to_none=True); prediction = model(torch.stack([row[1] for row in batch]).to(device)); expected = torch.stack([row[2] for row in batch]).to(device)
+                dispersion = prediction["dispersion"]; loss = (0.5 * ((expected - prediction["mean"]) / dispersion).square() + torch.log(dispersion)).mean()
+                loss.backward(); optimizer.step(); steps += len(batch)
+            metrics = _development_metrics(model, development, normalization, device=device); current = float(metrics["development_selection_metric"]); losses.append(current)
+            if current < best_metric:
+                best_metric = current; best_epoch = epoch; stale = 0; best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+            else:
+                stale += 1
+                if stale >= patience: break
+        training_wall = time.perf_counter() - started
+        if best_state is None: raise SurrogateError("certified ensemble produced no development metric")
+        model.load_state_dict(best_state); final = _development_metrics(model, development, normalization, device=device)
+        checkpoint_path = members_dir / "member-{:02d}.pt".format(member_index)
+        torch.save({"state_dict": model.state_dict(), "target_names": TARGET_NAMES, "base_channels": base_channels, "seed": seed}, checkpoint_path)
+        checkpoint_sha = sha256_file(checkpoint_path)
+        ledger = {"input_wall_seconds": ingest_wall_seconds, "input_sample_count": len(fit) + len(development),
+            "input_samples_per_second": (len(fit) + len(development)) / ingest_wall_seconds if ingest_wall_seconds else 0.0,
+            "training_wall_seconds": training_wall, "training_samples": steps,
+            "training_samples_per_second": steps / training_wall if training_wall else 0.0, "epochs": len(losses), "device": device}
+        manifest: dict[str, object] = {"schema_version": "1.0.0", "label": "CERTIFIED_G2_ENSEMBLE", "campaign_digest": campaign["campaign_digest"],
+            "member_index": member_index, "campaign_seed": campaign_seed, "seed_namespace": SEED_NAMESPACE, "seed": seed,
+            "source_bundle_sha256": source_bundle_sha256, "cache_manifest_sha256": cache_manifest_sha256, "normalization_stats_digest": normalization["stats_digest"],
+            **fit.provenance, "data_role": "fit", "development_role": "development", "fit_sample_count": len(fit), "development_sample_count": len(development),
+            "epoch_count": len(losses), "selected_epoch": best_epoch, "base_channels": base_channels, "parameter_count": model.parameter_count,
+            "checkpoint": {"path": checkpoint_path.name, "sha256": checkpoint_sha}, "development_mae_epoch_0": epoch_zero["development_mae"],
+            "development_normalized_log_mae_epoch_0": epoch_zero["development_normalized_log_mae"], "development_mae_final": final["development_mae"],
+            "development_normalized_log_mae_final": final["development_normalized_log_mae"], "final_metrics": final, "compute_ledger": ledger}
+        manifest["manifest_digest"] = _digest(manifest); manifest_sha = _write_new_json(manifest_path, manifest, "G2 member manifest")
+        members.append({"member_index": member_index, "manifest_sha256": manifest_sha, "checkpoint_sha256": checkpoint_sha, "final_metrics": final})
+    summary: dict[str, object] = {"schema_version": "1.0.0", "label": "CERTIFIED_G2_ENSEMBLE", "campaign_digest": campaign["campaign_digest"], "member_count": member_count,
+        "members": members, "k5_not_adjudicated": True, "ensemble_mean_final_development_mae": {name: float(np.mean([member["final_metrics"]["development_mae"][name] for member in members])) for name in TARGET_NAMES},
+        "ensemble_member_mae_std": {name: float(np.std([member["final_metrics"]["development_mae"][name] for member in members])) for name in TARGET_NAMES}}
+    summary["summary_digest"] = _digest(summary)
+    summary_path = root / "ensemble-summary.json"
+    if summary_path.exists():
+        existing = json.loads(read_regular_path_snapshot(summary_path, "G2 ensemble summary").bytes.decode("utf-8"))
+        if existing != summary: raise SurrogateError("existing G2 ensemble summary does not match verified members")
+        summary_sha = sha256_file(summary_path)
+    else:
+        summary_sha = _write_new_json(summary_path, summary, "G2 ensemble summary")
+    return {"member_count": member_count, "members": members, "summary_sha256": summary_sha, "output_root": str(root)}
 
 
 def open_role_dataset(
