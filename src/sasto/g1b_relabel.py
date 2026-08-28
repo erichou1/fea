@@ -34,7 +34,7 @@ DUPLICATE_TOLERANCE = "medium"
 SOURCE_BUNDLE_PATHS = (
     ".python-version", "pyproject.toml", "uv.lock", "src/sasto/g1b_relabel.py",
     "src/sasto/fit_probe.py", "src/sasto/manifest.py", "src/sasto/splits.py",
-    "src/sasto/topology.py", "src/sasto/voxel_fea.py",
+    "src/sasto/targets.py", "src/sasto/topology.py", "src/sasto/voxel_fea.py",
 )
 
 
