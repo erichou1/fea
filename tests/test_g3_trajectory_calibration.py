@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import math
+from pathlib import Path
 
 import pytest
 
@@ -78,3 +79,104 @@ def test_confirmation_is_unconditionally_sealed_before_paths_are_inspected() -> 
             expected_cohort_manifest_sha256="0" * 64,
             expected_cluster_role_manifest_sha256="0" * 64,
         )
+
+
+def test_family_map_preserves_eligible_subset_membership() -> None:
+    """G1b exclusions may remove samples without changing their frozen families."""
+    from sasto.g3_trajectory_calibration import _family_map
+
+    sample_to_family = [{"sample_id": "{:02d}".format(index), "family_id": "family-{:02d}".format(index)} for index in range(10)]
+    split = {"schema_version": "1.0.0", "seed": 42, "algorithm": "family-id-v1", "fractions": {"fit": 0.6, "development": 0.2, "calibration": 0.1, "confirmation": 0.1}, "sample_to_family": sample_to_family, "partitions": {
+        "fit": {"sample_ids": ["00", "01", "02", "03", "04", "05"], "family_ids": ["family-00", "family-01", "family-02", "family-03", "family-04", "family-05"]},
+        "development": {"sample_ids": ["06", "07"], "family_ids": ["family-06", "family-07"]},
+        "calibration": {"sample_ids": ["08"], "family_ids": ["family-08"]},
+        "confirmation": {"sample_ids": ["09"], "family_ids": ["family-09"]},
+    }}
+    assert _family_map(split, "development", ["06"]) == {"06": "family-06"}
+
+
+def test_run_shard_loads_verified_baseline_rows_without_recomputation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Shard workers must use initialize's evidence, never perform a baseline pass."""
+    from types import SimpleNamespace
+    import sasto.g3_trajectory_calibration as g3
+
+    from sasto.g3_trajectory_calibration import BASELINE_ROWS_FILENAME
+
+    seen: list[str] = []
+    (tmp_path / BASELINE_ROWS_FILENAME).touch()
+
+    def verified(path: __import__("pathlib").Path, _label: str, _digest_field: str) -> dict[str, object]:
+        seen.append(path.name)
+        return {"roles": {"development": {"sample_count": 0, "rows": []}, "calibration": {"sample_count": 0, "rows": []}}}
+
+    monkeypatch.setattr(g3, "_verified_json", verified)
+    monkeypatch.setattr(g3, "EnsemblePredictor", lambda **_kwargs: object())
+    empty_dataset = type("EmptyDataset", (), {"sample_ids": (), "__len__": lambda self: 0})()
+    monkeypatch.setattr(g3, "open_g3_role", lambda **kwargs: SimpleNamespace(role=kwargs["role"], dataset=empty_dataset, family_by_sample={}))
+    monkeypatch.setattr(g3, "_load_or_generate_trajectories", lambda **kwargs: ([], {"role": kwargs["role"], "generated_count": 0}))
+    monkeypatch.setattr(g3, "_open_or_build_channel_cache", lambda **_kwargs: object())
+    monkeypatch.setattr(g3, "_baseline_rows", lambda *_args: (_ for _ in ()).throw(AssertionError("baseline recomputation")))
+
+    result = g3.run_precoverage_shard(
+        output_root=tmp_path, split_manifest=tmp_path / "split.json", expected_split_sha256="0" * 64,
+        archive=tmp_path / "archive.zip", expected_archive_sha256="1" * 64, g1b_root=tmp_path / "g1b",
+        expected_cohort_manifest_sha256="2" * 64, expected_cluster_role_manifest_sha256="3" * 64,
+        ensemble_root=tmp_path / "ensemble", normalization_path=tmp_path / "normalization.json", shard_index=0,
+        shard_count=4, device="cpu",
+    )
+
+    assert "baseline-rows.json" in seen
+    assert result["development_case_count"] == 0
+    assert result["calibration_case_count"] == 0
+
+
+def test_run_shard_reuses_frozen_quantiles_when_baseline_rows_are_absent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A stopped predecessor may have q_base but no optional baseline-row receipt."""
+    from types import SimpleNamespace
+    import sasto.g3_trajectory_calibration as g3
+
+    monkeypatch.setattr(g3, "_verified_json", lambda *_args: {"roles": {"development": {"sample_count": 0, "rows": []}, "calibration": {"sample_count": 0, "rows": []}}})
+    monkeypatch.setattr(g3, "EnsemblePredictor", lambda **_kwargs: object())
+    empty_dataset = type("EmptyDataset", (), {"sample_ids": (), "__len__": lambda self: 0})()
+    monkeypatch.setattr(g3, "open_g3_role", lambda **kwargs: SimpleNamespace(role=kwargs["role"], dataset=empty_dataset, family_by_sample={}, provenance={}))
+    monkeypatch.setattr(g3, "_open_or_build_channel_cache", lambda **_kwargs: object())
+    monkeypatch.setattr(g3, "_baseline_rows", lambda *_args: (_ for _ in ()).throw(AssertionError("baseline recomputation")))
+    monkeypatch.setattr(g3, "_load_or_generate_trajectories", lambda **kwargs: ([], {"role": kwargs["role"], "generated_count": 0}))
+
+    result = g3.run_precoverage_shard(
+        output_root=tmp_path, split_manifest=tmp_path / "split.json", expected_split_sha256="0" * 64,
+        archive=tmp_path / "archive.zip", expected_archive_sha256="1" * 64, g1b_root=tmp_path / "g1b",
+        expected_cohort_manifest_sha256="2" * 64, expected_cluster_role_manifest_sha256="3" * 64,
+        ensemble_root=tmp_path / "ensemble", normalization_path=tmp_path / "normalization.json", shard_index=0,
+        shard_count=4, device="cpu",
+    )
+    assert result["development_case_count"] == 0
+    assert result["calibration_case_count"] == 0
+
+
+def test_run_shard_passes_verified_channel_cache_to_each_role(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Trajectory workers must use initialize's decoded channels, never payload reads."""
+    from types import SimpleNamespace
+    import sasto.g3_trajectory_calibration as g3
+
+    cache = object()
+    seen: list[object] = []
+    monkeypatch.setattr(g3, "_verified_json", lambda *_args: {"roles": {"development": {"sample_count": 0, "rows": []}, "calibration": {"sample_count": 0, "rows": []}}})
+    monkeypatch.setattr(g3, "EnsemblePredictor", lambda **_kwargs: object())
+    empty_dataset = type("EmptyDataset", (), {"sample_ids": (), "__len__": lambda self: 0})()
+    monkeypatch.setattr(g3, "open_g3_role", lambda **kwargs: SimpleNamespace(role=kwargs["role"], dataset=empty_dataset, family_by_sample={}, provenance={}))
+    monkeypatch.setattr(g3, "_open_or_build_channel_cache", lambda **_kwargs: cache)
+
+    def load_or_generate(**kwargs: object):
+        seen.append(kwargs["channel_cache"])
+        return [], {"role": kwargs["role"], "generated_count": 0}
+
+    monkeypatch.setattr(g3, "_load_or_generate_trajectories", load_or_generate)
+    g3.run_precoverage_shard(
+        output_root=tmp_path, split_manifest=tmp_path / "split.json", expected_split_sha256="0" * 64,
+        archive=tmp_path / "archive.zip", expected_archive_sha256="1" * 64, g1b_root=tmp_path / "g1b",
+        expected_cohort_manifest_sha256="2" * 64, expected_cluster_role_manifest_sha256="3" * 64,
+        ensemble_root=tmp_path / "ensemble", normalization_path=tmp_path / "normalization.json", shard_index=0,
+        shard_count=4, device="cpu",
+    )
+    assert seen == [cache, cache]

@@ -219,6 +219,21 @@ def test_trajectory_records_explicit_cryptographic_ranking_seed() -> None:
     assert result["batches"][0]["ranking_seed"] == 123456
 
 
+def test_geometric_trajectory_uses_the_frozen_move_set_without_solver_calls() -> None:
+    """K6 may materialize a path before solving only selected states."""
+    from sasto.activity_campaign import geometric_trajectory
+
+    volume = np.ones((4, 4, 4), dtype=bool)
+    record, states = geometric_trajectory(sample_id="development-a", volume=volume, batch_cap=2, ranking_seed=123456)
+
+    assert record["topology"]["topology_mode"] == "conservative_local_6_26"
+    assert record["topology"]["sequential_recheck"] is True
+    assert record["solver_call_count"] == 0
+    assert [batch["batch_index"] for batch in record["batches"]] == sorted(states)
+    assert all(state.dtype == np.bool_ for state in states.values())
+    assert all(batch["accepted_count"] > 0 for batch in record["batches"])
+
+
 def test_trajectory_rechecks_sequential_gate_records_ratios_and_stable_load_nodes() -> None:
     from sasto.activity_campaign import run_trajectory
 

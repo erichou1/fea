@@ -167,6 +167,82 @@ def choose_binding_reason(compliance_ratio: float, stress_ratio: float, beta_com
     return "compliance" if compliance_ratio / beta_compliance >= stress_ratio / beta_stress else "stress"
 
 
+def geometric_trajectory(
+    *, sample_id: str, volume: np.ndarray, batch_cap: int = 40, ranking_seed: int | None = None,
+) -> tuple[dict[str, object], dict[int, np.ndarray]]:
+    """Materialize the frozen erosion path without consulting any solver response.
+
+    K6's selected-state sampling rule is deliberately response independent.  This
+    helper therefore uses precisely the activity campaign's immutable move set and
+    conservative sequential topology gate, but never invokes FEA.  Callers receive
+    transient occupied-state snapshots for their identifier-only selection and a
+    compact, serializable geometric record for durable evidence.
+    """
+    if not isinstance(sample_id, str) or not sample_id:
+        raise CampaignError("sample ID must be nonempty")
+    if not isinstance(batch_cap, int) or isinstance(batch_cap, bool) or not 1 <= batch_cap <= 40:
+        raise CampaignError("batch cap must be an integer from one through forty")
+    if not isinstance(volume, np.ndarray) or volume.dtype != np.bool_:
+        raise CampaignError("volume must be boolean")
+    if ranking_seed is not None and (not isinstance(ranking_seed, int) or isinstance(ranking_seed, bool) or ranking_seed < 0):
+        raise CampaignError("ranking seed must be a nonnegative integer when supplied")
+    source = volume.copy()
+    editable, protected = editable_mask(source)
+    topology = exact_topology_preflight_6_26(source).as_dict()
+    current = source.copy()
+    states: dict[int, np.ndarray] = {}
+    batches: list[dict[str, object]] = []
+    per_batch_limit = max(1, math.ceil(0.05 * int(source.sum())))
+    stopping = "candidate_exhaustion"
+    for batch_index in range(1, batch_cap + 1):
+        accepted: list[tuple[int, int, int]] = []
+        rejected = 0
+        for point in rank_candidate_coordinates(current, editable, sample_id=sample_id, batch_index=batch_index, ranking_seed=ranking_seed):
+            if len(accepted) >= per_batch_limit:
+                break
+            if conservative_local_6_26(current, point):
+                current[point] = False
+                accepted.append(point)
+            else:
+                rejected += 1
+        if not accepted:
+            stopping = "candidate_exhaustion"
+            break
+        state = current.copy()
+        states[batch_index] = state
+        batch: dict[str, object] = {
+            "batch_index": batch_index,
+            "accepted_count": len(accepted),
+            "accepted_coordinates_digest": hashlib.sha256(_canonical_bytes([list(point) for point in accepted])).hexdigest(),
+            "rejected_before_limit": rejected,
+            "volume_ratio": float(state.sum() / source.sum()),
+            "proposed_volume_ratio": float(state.sum() / source.sum()),
+            "proposed_material_reduction": 1.0 - (float(state.sum()) / float(source.sum())),
+            "state_occupancy_sha256": hashlib.sha256(state.tobytes()).hexdigest(),
+            "sequential_recheck": True,
+        }
+        if ranking_seed is not None:
+            batch["ranking_seed"] = ranking_seed
+        batches.append(batch)
+    else:
+        stopping = "defensive_cap" if batch_cap == 40 else "smoke_batch_cap"
+    record: dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "sample_id": sample_id,
+        "batches": batches,
+        "stopping_reason": stopping,
+        "proposed_material_reduction": 1.0 - (float(current.sum()) / float(source.sum())),
+        "topology": {"topology_mode": "conservative_local_6_26", "exact_preflight": topology, "sequential_recheck": True,
+                     "protected_minimum_and_maximum_occupied_element_x_layers": True, "protected_voxel_count": int(protected.sum())},
+        "per_batch_acceptance_limit": per_batch_limit,
+        "solver_call_count": 0,
+    }
+    if ranking_seed is not None:
+        record["ranking_seed"] = ranking_seed
+    record["geometry_digest"] = _digest({key: value for key, value in record.items() if key != "geometry_digest"})
+    return record, states
+
+
 def run_trajectory(
     *, sample_id: str, volume: np.ndarray, config: object, solver: Callable[[np.ndarray, object], dict[str, object]] = solve_voxels,
     beta_compliance: float | None = None, beta_stress: float | None = None, batch_cap: int = 40, ranking_seed: int | None = None,
