@@ -7,8 +7,21 @@ export EXPECTED_MANIFEST_SHA256
 export EXPECTED_SPLIT_MANIFEST_SHA256
 export EXPECTED_FEA_ARCHIVE_SHA256
 export PYTHON
+export SURROGATE_MODE
+export SURROGATE_OUTPUT
+export SURROGATE_SPLIT_MANIFEST
+export SURROGATE_EXPECTED_SPLIT_SHA256
+export SURROGATE_ARCHIVE
+export SURROGATE_EXPECTED_ARCHIVE_SHA256
+export SURROGATE_G1B_ROOT
+export SURROGATE_EXPECTED_COHORT_SHA256
+export SURROGATE_EXPECTED_CLUSTER_SHA256
+export SURROGATE_MEMBERS
+export SURROGATE_EPOCHS
+export SURROGATE_DEVICE
+export SURROGATE_SMOKE_ONLY_NONPROMOTABLE
 
-.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe activity-campaign
+.PHONY: smoke verify-artifact reproduce-paper test test-locked test-g1-locked test-fea-locked topology-campaign fit-only-probe activity-campaign surrogate
 
 smoke:
 	@set -eu; \
@@ -86,3 +99,22 @@ activity-campaign:
 		set -- "$$@" --threshold-selection "$$ACTIVITY_THRESHOLD_SELECTION"; \
 	fi; \
 	uv run --frozen --group fea python -m sasto.activity_campaign "$$@"
+
+surrogate:
+	@set -eu; \
+	if [ -z "$${SURROGATE_MODE:-}" ] || [ -z "$${SURROGATE_OUTPUT:-}" ]; then \
+		printf '%s\n' 'SURROGATE_MODE and SURROGATE_OUTPUT are required' >&2; exit 2; \
+	fi; \
+	set -- --mode "$$SURROGATE_MODE" --output "$$SURROGATE_OUTPUT"; \
+	if [ "$${SURROGATE_SMOKE_ONLY_NONPROMOTABLE:-}" = "1" ]; then set -- "$$@" --smoke-only-nonpromotable; fi; \
+	if [ -n "$${SURROGATE_MEMBERS:-}" ]; then set -- "$$@" --members "$$SURROGATE_MEMBERS"; fi; \
+	if [ -n "$${SURROGATE_EPOCHS:-}" ]; then set -- "$$@" --epochs "$$SURROGATE_EPOCHS"; fi; \
+	if [ -n "$${SURROGATE_DEVICE:-}" ]; then set -- "$$@" --device "$$SURROGATE_DEVICE"; fi; \
+	if [ -n "$${SURROGATE_SPLIT_MANIFEST:-}" ]; then set -- "$$@" --split-manifest "$$SURROGATE_SPLIT_MANIFEST"; fi; \
+	if [ -n "$${SURROGATE_EXPECTED_SPLIT_SHA256:-}" ]; then set -- "$$@" --expected-split-manifest-sha256 "$$SURROGATE_EXPECTED_SPLIT_SHA256"; fi; \
+	if [ -n "$${SURROGATE_ARCHIVE:-}" ]; then set -- "$$@" --archive "$$SURROGATE_ARCHIVE"; fi; \
+	if [ -n "$${SURROGATE_EXPECTED_ARCHIVE_SHA256:-}" ]; then set -- "$$@" --expected-archive-sha256 "$$SURROGATE_EXPECTED_ARCHIVE_SHA256"; fi; \
+	if [ -n "$${SURROGATE_G1B_ROOT:-}" ]; then set -- "$$@" --g1b-root "$$SURROGATE_G1B_ROOT"; fi; \
+	if [ -n "$${SURROGATE_EXPECTED_COHORT_SHA256:-}" ]; then set -- "$$@" --expected-cohort-manifest-sha256 "$$SURROGATE_EXPECTED_COHORT_SHA256"; fi; \
+	if [ -n "$${SURROGATE_EXPECTED_CLUSTER_SHA256:-}" ]; then set -- "$$@" --expected-cluster-role-manifest-sha256 "$$SURROGATE_EXPECTED_CLUSTER_SHA256"; fi; \
+	uv run --frozen --group ml python -m sasto.surrogate "$$@"
