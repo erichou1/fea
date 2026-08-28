@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run G3's four deterministic shards with auditable resource sampling.
+"""Run G3 deterministic shards with auditable resource sampling.
 
 This dispatcher does not perform K6 coverage or adjudication.  It records the
 number of durable trajectory-case files and macOS memory pressure about every
-five minutes while the four independent G3 shard processes run.
+five minutes while the requested independent G3 shard processes run.
 """
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def _terminate(children: dict[int, subprocess.Popen[str]], *, reason: str, audit
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Four-worker G3 shard dispatcher with resource audit log")
+    parser = argparse.ArgumentParser(description="G3 shard dispatcher with resource audit log")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--split-manifest", required=True)
@@ -96,11 +96,13 @@ def main() -> int:
     parser.add_argument("--expected-preregistration-sha256", required=True)
     parser.add_argument("--audit-file", default="resource-throughput-final.jsonl")
     parser.add_argument("--log-dir", default="shards-final")
+    parser.add_argument("--workers", type=int, default=4, help="deterministic shard count (one worker is the low-memory default)")
     parser.add_argument("--sample-seconds", type=float, default=300.0)
-    parser.add_argument("--free-pages-floor", type=int, default=30000)
+    parser.add_argument("--free-pages-floor", type=int, default=3000)
+    parser.add_argument("--first-trajectory-timeout-seconds", type=float, default=900.0)
     args = parser.parse_args()
-    if args.sample_seconds <= 0.0 or args.free_pages_floor < 1:
-        raise SystemExit("sample-seconds and free-pages-floor must be positive")
+    if args.sample_seconds <= 0.0 or args.free_pages_floor < 1 or args.workers < 1 or args.first_trajectory_timeout_seconds <= 0.0:
+        raise SystemExit("workers, sample-seconds, free-pages-floor, and first-trajectory-timeout-seconds must be positive")
 
     root = args.output.resolve()
     audit_path = root / args.audit_file
@@ -123,8 +125,9 @@ def main() -> int:
     env = dict(os.environ)
     env["PYTHONPATH"] = "src" + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     started = time.monotonic()
-    _append(audit_path, {"event": "run_start", "timestamp_utc": _utc_now(), "workers": 4, "device": "cpu",
+    _append(audit_path, {"event": "run_start", "timestamp_utc": _utc_now(), "workers": args.workers, "device": "cpu",
                          "sample_seconds": args.sample_seconds, "free_pages_floor": args.free_pages_floor,
+                         "first_trajectory_timeout_seconds": args.first_trajectory_timeout_seconds,
                          "command_prefix": [args.python, *common]})
     children: dict[int, subprocess.Popen[str]] = {}
     logs: dict[int, Path] = {}
@@ -132,10 +135,10 @@ def main() -> int:
     if log_root.exists():
         raise SystemExit("requested shard log directory already exists; refuse to mingle run histories")
     log_root.mkdir()
-    for shard in range(1, 5):
+    for shard in range(1, args.workers + 1):
         log = log_root / f"shard-{shard}.log"
         logs[shard] = log
-        command = [args.python, *common, "--shard", f"{shard}/4"]
+        command = [args.python, *common, "--shard", f"{shard}/{args.workers}"]
         handle = log.open("x", encoding="utf-8")
         children[shard] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT, text=True, env=env)
         handle.close()
@@ -143,6 +146,7 @@ def main() -> int:
                              "command": command})
 
     prior_count = _case_counts(root)["completed_total"]
+    initial_count = prior_count
     prior_at = started
     consecutive_low_free = 0
     reported_exits: set[int] = set()
@@ -181,7 +185,10 @@ def main() -> int:
         # result for explicit controller review instead of misclassifying CLI use.
         if all(child.poll() is not None for child in children.values()) and not stopped:
             break
-        if consecutive_low_free >= 2 and not stopped:
+        if now - started >= args.first_trajectory_timeout_seconds and counts["completed_total"] == initial_count and not stopped:
+            stopped = True
+            stop_reason = "no_trajectory_within_first_15_minutes"
+        if consecutive_low_free >= 3 and not stopped:
             stopped = True
             stop_reason = "sustained_pages_free_below_floor"
         if stopped:
