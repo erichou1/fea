@@ -168,11 +168,23 @@ def merge_completed_records(*, root: Path, selected_ids: Sequence[str], total_po
     exclusions = Counter(
         reason for record in records for reason in record.get("exclusion_reasons", []) if isinstance(reason, str)
     )
+    # A single excluded record may carry several reasons: once solve_voxels returns
+    # outputs=None the downstream predicates fail vacuously. So exclusion_reason_incidences
+    # counts reason occurrences and its total exceeds excluded_count, which counts records.
+    # primary_exclusion_reason partitions the excluded records exactly.
+    primary: Counter[str] = Counter()
+    for record in records:
+        reasons = record.get("exclusion_reasons")
+        if isinstance(reasons, list) and reasons and isinstance(reasons[0], str):
+            primary[reasons[0]] += 1
     compact = [{"sample_id": record["sample_id"], "case_digest": record["case_digest"],
                 "role": record.get("role"), "exclusion_reasons": record.get("exclusion_reasons", [])} for record in records]
     result = {"schema_version": SCHEMA_VERSION, "population_count": total_population, "records": compact,
               "records_digest": _digest(compact), "eligible_ids": eligible, "eligible_count": len(eligible),
-              "excluded_count": total_population - len(eligible), "exclusion_counts": dict(sorted(exclusions.items()))}
+              "excluded_count": total_population - len(eligible),
+              "exclusion_counts": dict(sorted(exclusions.items())),
+              "exclusion_counts_semantics": "incidences, not a record partition: a record with several failed predicates contributes to each. Use primary_exclusion_reason_counts for a partition of excluded records.",
+              "primary_exclusion_reason_counts": dict(sorted(primary.items()))}
     return result
 
 
