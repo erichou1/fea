@@ -7,6 +7,7 @@ case targets are accepted only after their G1b case digest verifies.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import io
 import json
@@ -26,6 +27,9 @@ from .splits import PARTITIONS, validate_family_split_manifest
 
 TARGET_NAMES = ("compliance", "max_von_mises", "max_displacement")
 _ARCHIVE_PREFIX = "fea_ml/data/runs_real/"
+SEED_NAMESPACE = "sasto-v-g2-dense-ensemble-v1"
+SMOKE_LABEL = "SMOKE_ONLY_NONPROMOTABLE"
+SOURCE_BUNDLE_CONFIG_PATHS = (".python-version", "pyproject.toml", "uv.lock")
 
 
 class SurrogateError(ValueError):
@@ -244,6 +248,38 @@ def compute_fit_normalization(dataset: RoleDataset) -> dict[str, object]:
     return record
 
 
+def role_subset(dataset: RoleDataset, *, sample_count: int) -> RoleDataset:
+    """Return the deterministic leading subset of one already-admitted role."""
+    if not isinstance(dataset, RoleDataset) or not isinstance(sample_count, int) or isinstance(sample_count, bool):
+        raise SurrogateError("role subset requires a dataset and integer sample count")
+    if not 1 <= sample_count <= len(dataset):
+        raise SurrogateError("role subset sample count is outside the admitted role")
+    return RoleDataset(role=dataset.role, sample_ids=list(dataset.sample_ids[:sample_count]), archive=dataset._archive,
+                       g1b_root=dataset._g1b_root, provenance=dataset.provenance)
+
+
+def normalized_tensor_examples(dataset: RoleDataset, normalization: Mapping[str, object]):
+    """Materialize a role-scoped subset using fit-only log normalization."""
+    torch, _ = _require_torch()
+    if not isinstance(dataset, RoleDataset) or not isinstance(normalization, Mapping):
+        raise SurrogateError("normalized examples require a role dataset and normalization record")
+    if normalization.get("role") != "fit" or normalization.get("target_names") != list(TARGET_NAMES):
+        raise SurrogateError("normalization record must be fit-only and target-compatible")
+    means = normalization.get("means"); scales = normalization.get("scales")
+    if not isinstance(means, Mapping) or not isinstance(scales, Mapping):
+        raise SurrogateError("normalization record is malformed")
+    try:
+        mean_values = {name: float(means[name]) for name in TARGET_NAMES}
+        scale_values = {name: float(scales[name]) for name in TARGET_NAMES}
+    except (KeyError, TypeError, ValueError) as error:
+        raise SurrogateError("normalization values are malformed") from error
+    if not all(math.isfinite(value) for value in mean_values.values()) or not all(math.isfinite(value) and value > 0 for value in scale_values.values()):
+        raise SurrogateError("normalization values are not finite")
+    return [(example.sample_id, torch.from_numpy(example.channels.copy()).to(dtype=torch.float32),
+             torch.tensor([(math.log(example.targets[name]) - mean_values[name]) / scale_values[name] for name in TARGET_NAMES], dtype=torch.float32))
+            for example in dataset]
+
+
 
 def _require_torch():
     try:
@@ -333,19 +369,33 @@ def _write_new_json(path: Path, value: Mapping[str, object], role: str) -> str:
         raise SurrogateError("cannot append {}".format(role)) from error
 
 
+def _configure_determinism(torch, seed: int) -> None:
+    """Set all supported process-local RNGs before each independent member."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(True)
+
+
 def train_smoke_ensemble(
     *, output_root: Path, examples, target_names: tuple[str, ...], normalization_stats_digest: str, source_bundle_sha256: str,
     split_sha256: str, archive_sha256: str, cohort_manifest_sha256: str, member_count: int = 5, epochs: int = 1,
-    base_channels: int = 4, device: str = "cpu", campaign_seed: int = 20260828,
+    base_channels: int = 16, device: str = "cpu", campaign_seed: int = 20260828, data_role: str = "development",
+    input_wall_seconds: float = 0.0,
 ) -> dict[str, object]:
-    """Train a bounded synthetic smoke ensemble; it is explicitly nonpromotable.
+    """Train a bounded role-scoped smoke ensemble; it is explicitly nonpromotable.
 
-    This path intentionally accepts in-memory examples only.  It cannot be pointed
-    at the real cohort and therefore cannot bypass the pending G1b PASS gate.
+    Callers must have passed all sources through :func:`open_role_dataset` before
+    materializing ``examples``.  This function remains bounded and cannot become a
+    full-fit route while G1b certification is pending.
     """
     torch, _ = _require_torch()
-    if not 1 <= len(examples) <= 32 or not 1 <= member_count <= 5 or not 1 <= epochs <= 3:
-        raise SurrogateError("SMOKE_ONLY_NONPROMOTABLE requires 1..32 examples, 1..5 members, and 1..3 epochs")
+    if not 1 <= len(examples) <= 64 or not 1 <= member_count <= 5 or not 1 <= epochs <= 3:
+        raise SurrogateError("SMOKE_ONLY_NONPROMOTABLE requires 1..64 examples, 1..5 members, and 1..3 epochs")
+    if data_role != "development":
+        raise SurrogateRoleError("SMOKE_ONLY_NONPROMOTABLE may train only on development examples")
+    if not math.isfinite(input_wall_seconds) or input_wall_seconds < 0.0:
+        raise SurrogateError("smoke input wall clock must be finite and nonnegative")
     for digest, label in ((normalization_stats_digest, "normalization stats"), (source_bundle_sha256, "source bundle"),
                           (split_sha256, "split"), (archive_sha256, "archive"), (cohort_manifest_sha256, "cohort manifest")):
         _lower_digest(digest, label + " digest")
@@ -364,8 +414,8 @@ def train_smoke_ensemble(
         raise SurrogateError("smoke artifact root must be new and append-only") from error
     members: list[dict[str, object]] = []
     for member_index in range(member_count):
-        seed = deterministic_seed("sasto-v-g2-dense-ensemble-v1", campaign_seed, member_index)
-        random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+        seed = deterministic_seed(SEED_NAMESPACE, campaign_seed, member_index)
+        _configure_determinism(torch, seed)
         if device == "mps":
             torch.mps.empty_cache()
         model = DenseSurrogateCNN(target_names=target_names, base_channels=base_channels).to(device)
@@ -381,32 +431,105 @@ def train_smoke_ensemble(
                 loss = (0.5 * ((expected - prediction["mean"]) / dispersion).square() + torch.log(dispersion)).mean()
                 loss.backward(); optimizer.step()
                 total_loss += float(loss.detach().cpu()); steps += 1
-        wall_seconds = time.perf_counter() - started
+        training_wall_seconds = time.perf_counter() - started
+        wall_seconds = input_wall_seconds + training_wall_seconds
         peak_memory = int(torch.mps.current_allocated_memory()) if device == "mps" else 0
         checkpoint_path = root / "members" / "member-{:02d}.pt".format(member_index)
         if checkpoint_path.exists():
             raise SurrogateError("checkpoint path must be append-only")
         torch.save({"state_dict": model.state_dict(), "target_names": target_names, "base_channels": base_channels, "seed": seed}, checkpoint_path)
         checkpoint_sha = sha256_file(checkpoint_path)
-        ledger = {"wall_seconds": wall_seconds, "epochs": epochs, "steps": steps, "peak_memory_bytes": peak_memory,
+        ledger = {"wall_seconds": wall_seconds, "input_wall_seconds": input_wall_seconds,
+                  "training_wall_seconds": training_wall_seconds, "epochs": epochs, "steps": steps, "peak_memory_bytes": peak_memory,
                   "device": device, "samples_per_second": (len(converted) * epochs) / wall_seconds if wall_seconds else 0.0}
-        manifest: dict[str, object] = {"schema_version": "1.0.0", "label": "SMOKE_ONLY_NONPROMOTABLE", "member_index": member_index,
-            "seed_namespace": "sasto-v-g2-dense-ensemble-v1", "seed": seed, "source_bundle_sha256": source_bundle_sha256,
+        manifest: dict[str, object] = {"schema_version": "1.0.0", "label": SMOKE_LABEL, "member_index": member_index,
+            "seed_namespace": SEED_NAMESPACE, "campaign_seed": campaign_seed, "seed": seed, "source_bundle_sha256": source_bundle_sha256,
             "cohort_manifest_sha256": cohort_manifest_sha256, "split_sha256": split_sha256, "archive_sha256": archive_sha256,
             "normalization_stats_digest": normalization_stats_digest, "epoch_count": epochs, "target_names": list(target_names),
+            "data_role": data_role, "sample_ids": [sample_id for sample_id, _channels, _targets in converted],
             "parameter_count": model.parameter_count, "checkpoint": {"path": checkpoint_path.name, "sha256": checkpoint_sha},
             "final_metrics": {"train_heteroscedastic_nll": total_loss / steps}, "compute_ledger": ledger}
         manifest["manifest_digest"] = _digest(manifest)
         manifest_sha = _write_new_json(root / "members" / "member-{:02d}.json".format(member_index), manifest, "member manifest")
         members.append({"member_index": member_index, "seed": seed, "manifest_sha256": manifest_sha, "checkpoint_sha256": checkpoint_sha,
                         "parameter_count": model.parameter_count, "samples_per_second": ledger["samples_per_second"]})
-    summary: dict[str, object] = {"schema_version": "1.0.0", "label": "SMOKE_ONLY_NONPROMOTABLE", "member_count": member_count,
+    summary: dict[str, object] = {"schema_version": "1.0.0", "label": SMOKE_LABEL, "member_count": member_count,
         "sample_count": len(converted), "members": members, "source_bundle_sha256": source_bundle_sha256,
         "split_sha256": split_sha256, "archive_sha256": archive_sha256, "cohort_manifest_sha256": cohort_manifest_sha256,
-        "normalization_stats_digest": normalization_stats_digest}
+        "normalization_stats_digest": normalization_stats_digest, "seed_namespace": SEED_NAMESPACE, "campaign_seed": campaign_seed,
+        "data_role": data_role, "sample_ids": [sample_id for sample_id, _channels, _targets in converted]}
     summary["summary_digest"] = _digest(summary)
     summary_sha = _write_new_json(root / "smoke-summary.json", summary, "smoke summary")
-    return {"label": "SMOKE_ONLY_NONPROMOTABLE", "members": members, "summary_sha256": summary_sha, "output_root": str(root)}
+    return {"label": SMOKE_LABEL, "members": members, "summary_sha256": summary_sha, "output_root": str(root)}
+
+
+def capacity_study(
+    *, fit_examples, development_examples, normalization: Mapping[str, object], widths: tuple[int, ...] = (4, 16, 32),
+    epochs: int = 1, device: str = "cpu", campaign_seed: int = 20260828, provenance: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """Compare real candidate widths using fit training and development-only selection."""
+    torch, _ = _require_torch()
+    if len(widths) < 3 or len(set(widths)) != len(widths) or any(not isinstance(width, int) or width < 2 for width in widths):
+        raise SurrogateError("capacity study requires at least three distinct valid widths")
+    if not fit_examples or not development_examples or not isinstance(epochs, int) or not 1 <= epochs <= 3:
+        raise SurrogateError("capacity study requires bounded fit and development examples")
+    if device not in {"cpu", "mps"} or (device == "mps" and not torch.backends.mps.is_available()):
+        raise SurrogateError("requested capacity-study device is unavailable")
+    means = normalization.get("means"); scales = normalization.get("scales")
+    if not isinstance(means, Mapping) or not isinstance(scales, Mapping):
+        raise SurrogateError("capacity study normalization is malformed")
+    try:
+        mean_values = [float(means[name]) for name in TARGET_NAMES]
+        scale_values = [float(scales[name]) for name in TARGET_NAMES]
+    except (KeyError, TypeError, ValueError) as error:
+        raise SurrogateError("capacity study normalization values are malformed") from error
+    normalization_digest = _lower_digest(normalization.get("stats_digest"), "capacity study normalization stats")
+    rows: list[dict[str, object]] = []
+    for width in widths:
+        _configure_determinism(torch, deterministic_seed("sasto-v-g2-capacity-study-v1", campaign_seed, width))
+        if device == "mps":
+            torch.mps.empty_cache()
+        model = DenseSurrogateCNN(base_channels=width).to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        started = time.perf_counter()
+        model.train()
+        for _epoch in range(epochs):
+            for _sample_id, channels, targets in fit_examples:
+                optimizer.zero_grad(set_to_none=True)
+                prediction = model(channels.unsqueeze(0).to(device))
+                expected = targets.unsqueeze(0).to(device)
+                dispersion = prediction["dispersion"]
+                loss = (0.5 * ((expected - prediction["mean"]) / dispersion).square() + torch.log(dispersion)).mean()
+                loss.backward(); optimizer.step()
+        model.eval()
+        absolute = np.zeros(len(TARGET_NAMES), dtype=np.float64)
+        normalized_log_absolute = np.zeros(len(TARGET_NAMES), dtype=np.float64)
+        with torch.no_grad():
+            for _sample_id, channels, targets in development_examples:
+                predicted = model(channels.unsqueeze(0).to(device))["mean"].detach().cpu().numpy()[0]
+                expected = targets.detach().cpu().numpy()
+                predicted_raw = np.exp(predicted * np.array(scale_values) + np.array(mean_values))
+                expected_raw = np.exp(expected * np.array(scale_values) + np.array(mean_values))
+                absolute += np.abs(predicted_raw - expected_raw)
+                normalized_log_absolute += np.abs(predicted - expected)
+        wall_seconds = time.perf_counter() - started
+        mae = {name: float(absolute[index] / len(development_examples)) for index, name in enumerate(TARGET_NAMES)}
+        normalized_log_mae = {name: float(normalized_log_absolute[index] / len(development_examples)) for index, name in enumerate(TARGET_NAMES)}
+        rows.append({"base_channels": width, "parameter_count": model.parameter_count, "epochs": epochs,
+                     "fit_sample_count": len(fit_examples), "development_sample_count": len(development_examples),
+                     "wall_seconds": wall_seconds, "development_mae": mae, "development_normalized_log_mae": normalized_log_mae,
+                     "development_selection_metric": float(np.mean(normalized_log_absolute / len(development_examples))), "device": device})
+    recommended = min(rows, key=lambda row: (float(row["development_selection_metric"]), -int(row["base_channels"])))
+    result: dict[str, object] = {"schema_version": "1.0.0", "label": SMOKE_LABEL, "selection_role": "development",
+        "not_k5_adjudication": True, "seed_namespace": "sasto-v-g2-capacity-study-v1", "campaign_seed": campaign_seed,
+        "widths": list(widths), "rows": rows, "recommended_base_channels": recommended["base_channels"],
+        "recommendation_basis": "minimum development normalized log MAE; ties prefer wider model",
+        "normalization_stats_digest": normalization_digest}
+    if provenance is not None:
+        for key in ("split_manifest_sha256", "archive_sha256", "cohort_manifest_sha256", "cluster_role_manifest_sha256", "source_bundle_sha256"):
+            result[key] = _lower_digest(provenance.get(key), "capacity study " + key)
+    result["study_digest"] = _digest(result)
+    return result
 
 
 def open_role_dataset(
@@ -450,10 +573,45 @@ def open_role_dataset(
     })
 
 
+def _local_import_closure(source_root: Path, entry: str) -> tuple[str, ...]:
+    """Return the AST-resolved relative-import closure for a local module."""
+    pending = [entry]
+    seen: set[str] = set()
+    while pending:
+        relative = pending.pop()
+        if relative in seen:
+            continue
+        try:
+            source = read_regular_path_snapshot(source_root / relative, "G2 local source").bytes
+            tree = ast.parse(source, filename=relative)
+        except (ManifestVerificationError, SyntaxError) as error:
+            raise SurrogateError("cannot parse G2 local import closure") from error
+        seen.add(relative)
+        module_parts = Path(relative).with_suffix("").parts
+        if module_parts[:2] != ("src", "sasto"):
+            raise SurrogateError("G2 local source is outside the sasto package")
+        package = module_parts[1:-1]
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.level < 1:
+                continue
+            if node.level > len(package):
+                raise SurrogateError("G2 relative import escapes the sasto package")
+            base = package[:len(package) - node.level + 1]
+            module = tuple(node.module.split(".")) if node.module else ()
+            candidates = [base + module]
+            if not module:
+                candidates.extend(base + (alias.name,) for alias in node.names)
+            for candidate in candidates:
+                local = Path("src", *candidate).with_suffix(".py").as_posix()
+                if (source_root / local).is_file():
+                    pending.append(local)
+    return tuple(sorted(seen))
+
+
 def surrogate_source_bundle(root: Path | None = None) -> tuple[dict[str, str], str]:
-    """Hash every load-bearing G2 source/config byte through no-follow reads."""
+    """Hash configuration plus the AST-proven transitive local G2 closure."""
     source_root = Path(root) if root is not None else Path(__file__).parents[2]
-    paths = (".python-version", "pyproject.toml", "uv.lock", "src/sasto/surrogate.py", "src/sasto/manifest.py", "src/sasto/splits.py")
+    paths = SOURCE_BUNDLE_CONFIG_PATHS + _local_import_closure(source_root, "src/sasto/surrogate.py")
     files: dict[str, str] = {}
     try:
         for relative in paths:
@@ -463,14 +621,49 @@ def surrogate_source_bundle(root: Path | None = None) -> tuple[dict[str, str], s
     return files, _digest([{"path": path, "sha256": files[path]} for path in sorted(files)])
 
 
-def _synthetic_smoke_examples():
-    torch, _ = _require_torch()
-    examples = []
-    for index in range(4):
-        channels = torch.zeros((2, 64, 64, 64), dtype=torch.float32)
-        channels[0, index + 1, 1, 1] = 1.0; channels[1, index + 1, 1, 1] = float((index % 5) + 1)
-        examples.append(("synthetic-smoke-{:02d}".format(index), channels, torch.tensor([0.1 * index, 0.2 * index, 0.3 * index], dtype=torch.float32)))
-    return examples
+def run_anchored_smoke(
+    *, output_root: Path, split_manifest: Path, expected_split_sha256: str, archive: Path, expected_archive_sha256: str,
+    g1b_root: Path, expected_cohort_manifest_sha256: str, expected_cluster_role_manifest_sha256: str,
+    sample_count: int = 64, member_count: int = 5, epochs: int = 1, base_channels: int = 16, device: str = "cpu",
+    campaign_seed: int = 20260828,
+) -> dict[str, object]:
+    """Run the only allowed G2 training path: bounded, anchored, development smoke."""
+    if Path(output_root).exists():
+        raise SurrogateError("anchored smoke artifact root must be new")
+    development = role_subset(open_role_dataset(
+        role="development", split_manifest=split_manifest, expected_split_sha256=expected_split_sha256, archive=archive,
+        expected_archive_sha256=expected_archive_sha256, g1b_root=g1b_root,
+        expected_cohort_manifest_sha256=expected_cohort_manifest_sha256,
+        expected_cluster_role_manifest_sha256=expected_cluster_role_manifest_sha256), sample_count=sample_count)
+    fit = role_subset(open_role_dataset(
+        role="fit", split_manifest=split_manifest, expected_split_sha256=expected_split_sha256, archive=archive,
+        expected_archive_sha256=expected_archive_sha256, g1b_root=g1b_root,
+        expected_cohort_manifest_sha256=expected_cohort_manifest_sha256,
+        expected_cluster_role_manifest_sha256=expected_cluster_role_manifest_sha256), sample_count=sample_count)
+    normalization = compute_fit_normalization(fit)
+    input_started = time.perf_counter()
+    development_examples = normalized_tensor_examples(development, normalization)
+    development_input_wall_seconds = time.perf_counter() - input_started
+    fit_examples = normalized_tensor_examples(fit, normalization)
+    files, bundle_sha = surrogate_source_bundle()
+    provenance = dict(development.provenance)
+    provenance["source_bundle_sha256"] = bundle_sha
+    study = capacity_study(fit_examples=fit_examples, development_examples=development_examples, normalization=normalization,
+                           device=device, campaign_seed=campaign_seed, provenance=provenance)
+    result = train_smoke_ensemble(
+        output_root=output_root, examples=development_examples, target_names=TARGET_NAMES,
+        normalization_stats_digest=str(normalization["stats_digest"]), source_bundle_sha256=bundle_sha,
+        split_sha256=development.provenance["split_manifest_sha256"], archive_sha256=development.provenance["archive_sha256"],
+        cohort_manifest_sha256=development.provenance["cohort_manifest_sha256"], member_count=member_count, epochs=epochs,
+        base_channels=base_channels, device=device, campaign_seed=campaign_seed, data_role="development",
+        input_wall_seconds=development_input_wall_seconds,
+    )
+    root = Path(output_root)
+    normalization_sha = _write_new_json(root / "normalization-stats.json", normalization, "smoke normalization statistics")
+    study_sha = _write_new_json(root / "capacity-study.json", study, "capacity study")
+    result.update({"normalization_stats_sha256": normalization_sha, "capacity_study_sha256": study_sha,
+                   "source_bundle_files": files, "capacity_study": study})
+    return result
 
 
 def _read_smoke_summary(path: Path) -> dict[str, object]:
@@ -493,6 +686,9 @@ def main() -> int:
     parser.add_argument("--smoke-only-nonpromotable", action="store_true")
     parser.add_argument("--members", type=int, default=5)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--base-channels", type=int, default=16)
+    parser.add_argument("--campaign-seed", type=int, default=20260828)
+    parser.add_argument("--smoke-sample-count", type=int, default=64)
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
     parser.add_argument("--split-manifest", type=Path)
     parser.add_argument("--expected-split-manifest-sha256")
@@ -516,12 +712,17 @@ def main() -> int:
         elif args.mode == "train":
             if not args.smoke_only_nonpromotable:
                 raise SurrogateError("G1b independent certification is pending: train requires --smoke-only-nonpromotable (SMOKE_ONLY_NONPROMOTABLE); full fitting is blocked")
-            files, bundle_sha = surrogate_source_bundle()
-            del files
-            synthetic_stats = _digest({"label": "SMOKE_ONLY_NONPROMOTABLE", "transform": "natural_log"})
-            result = train_smoke_ensemble(output_root=args.output, examples=_synthetic_smoke_examples(), target_names=TARGET_NAMES,
-                normalization_stats_digest=synthetic_stats, source_bundle_sha256=bundle_sha, split_sha256="0" * 64, archive_sha256="0" * 64,
-                cohort_manifest_sha256="0" * 64, member_count=args.members, epochs=args.epochs, base_channels=2, device=args.device)
+            if not all((args.split_manifest, args.expected_split_manifest_sha256, args.archive, args.expected_archive_sha256, args.g1b_root,
+                        args.expected_cohort_manifest_sha256, args.expected_cluster_role_manifest_sha256)):
+                raise SurrogateError("anchored smoke train requires every split, archive, and G1b manifest input")
+            result = run_anchored_smoke(
+                output_root=args.output, split_manifest=args.split_manifest, expected_split_sha256=args.expected_split_manifest_sha256,
+                archive=args.archive, expected_archive_sha256=args.expected_archive_sha256, g1b_root=args.g1b_root,
+                expected_cohort_manifest_sha256=args.expected_cohort_manifest_sha256,
+                expected_cluster_role_manifest_sha256=args.expected_cluster_role_manifest_sha256,
+                sample_count=args.smoke_sample_count, member_count=args.members, epochs=args.epochs,
+                base_channels=args.base_channels, device=args.device, campaign_seed=args.campaign_seed,
+            )
         else:
             summary = _read_smoke_summary(args.output / "smoke-summary.json")
             result = {"mode": args.mode, "label": summary["label"], "member_count": summary["member_count"],

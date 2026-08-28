@@ -144,6 +144,78 @@ def test_nonpromotable_smoke_writes_digest_bound_member_checkpoint_and_ledger(tm
     assert (tmp_path / "smoke" / "members" / "member-00.pt").is_file()
 
 
+def test_smoke_records_exact_campaign_seed_derivation_for_every_member(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    from sasto.surrogate import deterministic_seed, train_smoke_ensemble
+
+    campaign_seed = 424242
+    namespace = "sasto-v-g2-dense-ensemble-v1"
+    result = train_smoke_ensemble(
+        output_root=tmp_path / "smoke", examples=[("development-000", torch.zeros((2, 64, 64, 64)), torch.zeros(3))],
+        target_names=("compliance", "max_von_mises", "max_displacement"), normalization_stats_digest="2" * 64,
+        source_bundle_sha256="3" * 64, split_sha256="4" * 64, archive_sha256="5" * 64, cohort_manifest_sha256="6" * 64,
+        member_count=3, epochs=1, base_channels=2, device="cpu", campaign_seed=campaign_seed,
+    )
+    summary = json.loads((tmp_path / "smoke" / "smoke-summary.json").read_text())
+    assert summary["campaign_seed"] == campaign_seed
+    for member_index, member in enumerate(result["members"]):
+        manifest = json.loads((tmp_path / "smoke" / "members" / f"member-{member_index:02d}.json").read_text())
+        expected = deterministic_seed(namespace, campaign_seed, member_index)
+        assert manifest["campaign_seed"] == campaign_seed
+        assert manifest["seed"] == member["seed"] == expected
+
+
+def test_same_campaign_seed_produces_byte_identical_checkpoints(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    from sasto.surrogate import train_smoke_ensemble
+
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    kwargs = dict(
+        examples=[("development-000", torch.zeros((2, 64, 64, 64)), torch.zeros(3))],
+        target_names=("compliance", "max_von_mises", "max_displacement"), normalization_stats_digest="2" * 64,
+        source_bundle_sha256="3" * 64, split_sha256="4" * 64, archive_sha256="5" * 64, cohort_manifest_sha256="6" * 64,
+        member_count=1, epochs=1, base_channels=2, device=device, campaign_seed=424242,
+    )
+    first = train_smoke_ensemble(output_root=tmp_path / "first", **kwargs)
+    second = train_smoke_ensemble(output_root=tmp_path / "second", **kwargs)
+    assert first["members"][0]["checkpoint_sha256"] == second["members"][0]["checkpoint_sha256"]
+
+
+def test_anchored_smoke_opens_real_role_datasets_and_records_nonzero_source_digests(tmp_path: Path) -> None:
+    pytest.importorskip("torch")
+    from sasto.surrogate import run_anchored_smoke
+
+    inputs = _g2_inputs(tmp_path)
+    result = run_anchored_smoke(
+        output_root=tmp_path / "anchored-smoke", split_manifest=inputs["split"], expected_split_sha256=inputs["split_sha"],
+        archive=inputs["archive"], expected_archive_sha256=inputs["archive_sha"], g1b_root=inputs["root"],
+        expected_cohort_manifest_sha256=inputs["cohort_sha"], expected_cluster_role_manifest_sha256=inputs["cluster_sha"],
+        sample_count=1, member_count=1, epochs=1, base_channels=2, device="cpu",
+    )
+    summary = json.loads((tmp_path / "anchored-smoke" / "smoke-summary.json").read_text())
+    assert result["label"] == "SMOKE_ONLY_NONPROMOTABLE"
+    assert summary["data_role"] == "development"
+    assert summary["split_sha256"] == inputs["split_sha"]
+    assert summary["archive_sha256"] == inputs["archive_sha"]
+    assert summary["cohort_manifest_sha256"] == inputs["cohort_sha"]
+    assert {summary["split_sha256"], summary["archive_sha256"], summary["cohort_manifest_sha256"]} != {"0" * 64}
+    study = json.loads((tmp_path / "anchored-smoke" / "capacity-study.json").read_text())
+    assert study["selection_role"] == "development"
+    assert study["not_k5_adjudication"] is True
+    assert [row["base_channels"] for row in study["rows"]] == [4, 16, 32]
+    assert all(set(row["development_mae"]) == {"compliance", "max_von_mises", "max_displacement"} for row in study["rows"])
+
+
+def test_source_bundle_matches_ast_transitive_local_import_closure() -> None:
+    from sasto.surrogate import surrogate_source_bundle
+
+    files, bundle_sha = surrogate_source_bundle()
+    assert bundle_sha == _canonical_digest([{"path": path, "sha256": files[path]} for path in sorted(files)])
+    assert {path for path in files if path.startswith("src/sasto/")} == {
+        "src/sasto/surrogate.py", "src/sasto/manifest.py", "src/sasto/splits.py", "src/sasto/targets.py",
+    }
+
+
 def test_cli_refuses_promotable_training_until_g1b_certification() -> None:
     completed = subprocess.run([sys.executable, "-m", "sasto.surrogate", "--mode", "train", "--output", "/tmp/no-g2-train"], text=True, capture_output=True, check=False)
     assert completed.returncode == 2
