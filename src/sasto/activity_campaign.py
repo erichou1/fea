@@ -93,12 +93,18 @@ def editable_mask(volume: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return volume & ~protected, protected
 
 
-def rank_candidate_coordinates(volume: np.ndarray, editable: np.ndarray, *, sample_id: str, batch_index: int) -> list[tuple[int, int, int]]:
+def rank_candidate_coordinates(
+    volume: np.ndarray, editable: np.ndarray, *, sample_id: str, batch_index: int, ranking_seed: int | None = None,
+) -> list[tuple[int, int, int]]:
     """Rank *remaining* editable occupied voxels cryptographically per batch."""
     if not isinstance(batch_index, int) or isinstance(batch_index, bool) or batch_index < 1:
         raise CampaignError("batch index must be a positive integer")
+    if ranking_seed is not None and (not isinstance(ranking_seed, int) or isinstance(ranking_seed, bool) or ranking_seed < 0):
+        raise CampaignError("ranking seed must be a nonnegative integer when supplied")
     points = [tuple(int(value) for value in row) for row in np.argwhere(volume & editable)]
-    return sorted(points, key=lambda point: _sha_text(NAMESPACE, sample_id, batch_index, *point))
+    if ranking_seed is None:
+        return sorted(points, key=lambda point: _sha_text(NAMESPACE, sample_id, batch_index, *point))
+    return sorted(points, key=lambda point: _sha_text(NAMESPACE, "ranking-seed", ranking_seed, batch_index, *point))
 
 
 def _metrics(record: Mapping[str, object]) -> tuple[float, float, float]:
@@ -163,7 +169,7 @@ def choose_binding_reason(compliance_ratio: float, stress_ratio: float, beta_com
 
 def run_trajectory(
     *, sample_id: str, volume: np.ndarray, config: object, solver: Callable[[np.ndarray, object], dict[str, object]] = solve_voxels,
-    beta_compliance: float | None = None, beta_stress: float | None = None, batch_cap: int = 40,
+    beta_compliance: float | None = None, beta_stress: float | None = None, batch_cap: int = 40, ranking_seed: int | None = None,
 ) -> dict[str, object]:
     """Run sequential conservative deletions and canonical V after every accepted batch."""
     if not isinstance(sample_id, str) or not sample_id:
@@ -176,6 +182,8 @@ def run_trajectory(
         raise CampaignError("batch cap must be an integer from one through forty")
     if not isinstance(volume, np.ndarray) or volume.dtype != np.bool_:
         raise CampaignError("volume must be boolean")
+    if ranking_seed is not None and (not isinstance(ranking_seed, int) or isinstance(ranking_seed, bool) or ranking_seed < 0):
+        raise CampaignError("ranking seed must be a nonnegative integer when supplied")
     source = volume.copy()
     editable, protected = editable_mask(source)
     topology = exact_topology_preflight_6_26(source).as_dict()
@@ -200,7 +208,7 @@ def run_trajectory(
     for batch_index in range(1, batch_cap + 1):
         accepted: list[tuple[int, int, int]] = []
         rejected = 0
-        for point in rank_candidate_coordinates(current, editable, sample_id=sample_id, batch_index=batch_index):
+        for point in rank_candidate_coordinates(current, editable, sample_id=sample_id, batch_index=batch_index, ranking_seed=ranking_seed):
             if len(accepted) >= per_batch_limit:
                 break
             if conservative_local_6_26(current, point):
@@ -217,6 +225,8 @@ def run_trajectory(
             "volume_ratio": float(current.sum() / source.sum()), "proposed_volume_ratio": float(current.sum() / source.sum()),
             "proposed_material_reduction": 1.0 - (float(current.sum()) / float(source.sum())),
             "admitted_under_policy": False, "binding_reason": None, "sequential_recheck": True}
+        if ranking_seed is not None:
+            batch["ranking_seed"] = ranking_seed
         if candidate.get("status") != "success":
             batches.append(batch)
             stopping = "solver_failure"; solver_failure_reason = _failure_reason(candidate)
@@ -251,6 +261,8 @@ def run_trajectory(
                      "protected_minimum_and_maximum_occupied_element_x_layers": True, "protected_voxel_count": int(protected.sum())},
         "per_batch_acceptance_limit": per_batch_limit, "solver_call_count": 1 + len(batches),
     }
+    if ranking_seed is not None:
+        result["ranking_seed"] = ranking_seed
     if solver_failure_reason is not None:
         result["solver_failure_reason"] = solver_failure_reason
     identity = {key: value for key, value in result.items() if key != "case_digest"}

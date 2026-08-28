@@ -205,6 +205,20 @@ def test_candidate_ranking_is_deterministic_and_protected_x_layers_are_never_edi
     assert all(point[0] == 1 for point in rank_a)
 
 
+def test_trajectory_records_explicit_cryptographic_ranking_seed() -> None:
+    from sasto.activity_campaign import run_trajectory
+
+    volume = np.zeros((4, 5, 5), dtype=bool)
+    volume[:, 1:4, 1:4] = True
+
+    def solver(current: np.ndarray, _: object) -> dict[str, object]:
+        return _success(compliance=100.0 / current.sum(), stress=10.0 / current.sum(), displacement=1.0 / current.sum())
+
+    result = run_trajectory(sample_id="development-a", volume=volume, config=object(), solver=solver, batch_cap=1, ranking_seed=123456)
+    assert result["ranking_seed"] == 123456
+    assert result["batches"][0]["ranking_seed"] == 123456
+
+
 def test_trajectory_rechecks_sequential_gate_records_ratios_and_stable_load_nodes() -> None:
     from sasto.activity_campaign import run_trajectory
 
