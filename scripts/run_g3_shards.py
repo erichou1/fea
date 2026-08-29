@@ -46,6 +46,21 @@ def _vm_snapshot() -> dict[str, Any]:
         result["swapusage"] = subprocess.check_output(["sysctl", "-n", "vm.swapusage"], text=True, stderr=subprocess.STDOUT).strip()
     except (OSError, subprocess.CalledProcessError) as error:
         result["swapusage_error"] = str(error)
+    if "pages_free" not in result:
+        # Linux fallback: without it the free-pages floor is silently INERT on any
+        # non-macOS host, disabling the memory stop condition. Derive pages_free
+        # from /proc/meminfo MemAvailable using the same 16 KiB page unit macOS
+        # reports, so floor values mean the same amount of memory on both hosts.
+        try:
+            meminfo = Path("/proc/meminfo").read_text()
+            match = re.search(r"^MemAvailable:\s+(\d+)\s+kB", meminfo, flags=re.MULTILINE)
+            if match:
+                mem_available_bytes = int(match.group(1)) * 1024
+                result["pages_free"] = mem_available_bytes // 16384
+                result["mem_available_gb"] = round(mem_available_bytes / 1e9, 2)
+                result["pages_free_source"] = "proc_meminfo_memavailable_16k_units"
+        except OSError as error:
+            result["meminfo_error"] = str(error)
     return result
 
 
