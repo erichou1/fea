@@ -630,6 +630,7 @@ def _trajectory_case(*, role: G3Role, sample_id: str, archive_open: zipfile.ZipF
             per_bin[bin_index].append(index)
         by_index[index] = batch
     selected_states: list[dict[str, object]] = []
+    unsolved_states: list[dict[str, object]] = []
     for bin_index, indices in per_bin.items():
         if not indices:
             continue
@@ -640,7 +641,27 @@ def _trajectory_case(*, role: G3Role, sample_id: str, archive_open: zipfile.ZipF
             raise G3Error("selected geometric state is unavailable")
         solver = solve_voxels(state, config)
         if solver.get("status") != "success":
-            raise G3Error("selected trajectory canonical solver response is unavailable")
+            # A near-singular state is an anticipated outcome, not a defect: as the
+            # trajectory removes material a state can stop being solvable.  G1b
+            # already records exactly this event as data via cohort_reasons rather
+            # than raising, and solve_voxels returns a distinguishing `reason` for
+            # precisely this purpose.  Raising here aborted an entire shard over one
+            # sample and cost 187 collateral cases on the GB200 run (shard 7 of 16,
+            # 2026-08-31).  Record the failure, skip the state, and continue.
+            #
+            # The exception is a missing preconditioner, which is an environment
+            # fault affecting every subsequent solve rather than a property of this
+            # state.  That must still fail closed and loudly.
+            reason = solver.get("reason")
+            if reason == "preconditioner_unavailable":
+                raise G3Error("selected trajectory solver preconditioner is unavailable")
+            unsolved_states.append({
+                "state_index": state_index, "bin_index": bin_index, "bin_label": DEPTH_BINS[bin_index],
+                "fraction_removed": batch["proposed_material_reduction"],
+                "state_occupancy_sha256": batch["state_occupancy_sha256"],
+                "solver_status": solver.get("status"), "solver_reason": reason,
+            })
+            continue
         selected_states.append({
             "state_index": state_index, "bin_index": bin_index, "bin_label": DEPTH_BINS[bin_index],
             "fraction_removed": batch["proposed_material_reduction"],
@@ -653,6 +674,8 @@ def _trajectory_case(*, role: G3Role, sample_id: str, archive_open: zipfile.ZipF
         "role": role.role, "family_seed_namespace": FAMILY_SEED_NAMESPACE, "campaign_seed": CAMPAIGN_SEED,
         "family_seed": family_seed(family_id), "trajectory": trajectory, "selected_states": selected_states,
         "selected_solver_call_count": len(selected_states),
+        "unsolved_states": unsolved_states,
+        "unsolved_state_count": len(unsolved_states),
         "intermediate_solver_call_count": 0}
     result["trajectory_digest"] = _digest(result)
     return result
@@ -704,6 +727,17 @@ def _selected_trajectory_rows(cases: Sequence[Mapping[str, object]]) -> tuple[li
             selected_states = case["selected_states"]
         except (KeyError, TypeError) as error:
             raise G3Error("trajectory case is malformed") from error
+        # Bins whose frozen-rule state failed to solve are recorded rather than
+        # selected.  They are legitimately absent from selected_states and must not
+        # be read as a sampling-rule violation.
+        unsolved = case.get("unsolved_states", [])
+        if not isinstance(unsolved, list):
+            raise G3Error("trajectory unsolved state record is malformed")
+        unsolved_bins: set[int] = set()
+        for entry in unsolved:
+            if not isinstance(entry, Mapping) or not isinstance(entry.get("bin_index"), int):
+                raise G3Error("trajectory unsolved state entry is malformed")
+            unsolved_bins.add(int(entry["bin_index"]))
         per_bin: dict[int, list[tuple[int, Mapping[str, object]]]] = {index: [] for index in range(len(DEPTH_BINS))}
         if not isinstance(batches, list) or not isinstance(selected_states, list):
             raise G3Error("trajectory batches are malformed")
@@ -733,6 +767,11 @@ def _selected_trajectory_rows(cases: Sequence[Mapping[str, object]]) -> tuple[li
                     raise G3Error("trajectory selected an unoccupied depth bin")
                 continue
             chosen_index = select_state_index(family_id, bin_index, [state_index for state_index, _ in candidates])
+            if bin_index in unsolved_bins and bin_index not in selected_by_bin:
+                # The frozen rule chose this state; the solver could not evaluate it.
+                # Skipping is correct and the sampling rule is still satisfied,
+                # because selection happened before and independently of the solve.
+                continue
             chosen = selected_by_bin.get(bin_index)
             if not isinstance(chosen, Mapping) or chosen.get("state_index") != chosen_index:
                 raise G3Error("selected trajectory state violates the frozen sampling rule")
@@ -744,7 +783,7 @@ def _selected_trajectory_rows(cases: Sequence[Mapping[str, object]]) -> tuple[li
                          "fraction_removed": chosen["fraction_removed"], "prediction": prediction,
                          "solver": chosen["solver"]})
             selected[DEPTH_BINS[bin_index]] += 1
-        if set(selected_by_bin) != {index for index, candidates in per_bin.items() if candidates}:
+        if set(selected_by_bin) | unsolved_bins != {index for index, candidates in per_bin.items() if candidates}:
             raise G3Error("selected trajectory state set does not exactly cover occupied bins")
     return rows, dict(occupancy), dict(selected)
 

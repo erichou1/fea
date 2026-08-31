@@ -180,3 +180,108 @@ def test_run_shard_passes_verified_channel_cache_to_each_role(monkeypatch: pytes
         shard_count=4, device="cpu",
     )
     assert seen == [cache, cache]
+
+
+# --------------------------------------------------------------------------
+# Solver non-convergence is data, not an exception.
+#
+# Regression tests for the GB200 shard-7 loss (2026-08-31): one non-converging
+# sample raised G3Error, aborted the shard, and cost 187 collateral cases that
+# were never attempted.  G1b already treats the identical event as data.
+# --------------------------------------------------------------------------
+
+
+def _case_with_bins(bins, *, unsolved=(), family_id="fam-A"):
+    """Build a trajectory case whose selected states match the frozen rule."""
+    import sasto.g3_trajectory_calibration as g3
+
+    batches = []
+    selected_states = []
+    unsolved_states = []
+    fractions = {0: 0.03, 1: 0.07, 2: 0.12, 3: 0.17, 4: 0.22, 5: 0.30}
+    for state_index, bin_index in enumerate(bins, start=1):
+        batches.append({"batch_index": state_index, "proposed_material_reduction": fractions[bin_index],
+                        "state_occupancy_sha256": "a" * 64})
+    for bin_index in set(bins):
+        candidates = [i for i, b in enumerate(bins, start=1) if b == bin_index]
+        chosen = g3.select_state_index(family_id, bin_index, candidates)
+        entry = {"state_index": chosen, "bin_index": bin_index, "bin_label": g3.DEPTH_BINS[bin_index],
+                 "fraction_removed": fractions[bin_index], "state_occupancy_sha256": "a" * 64}
+        if bin_index in unsolved:
+            unsolved_states.append({**entry, "solver_status": "failure",
+                                    "solver_reason": "iterative_nonconvergence"})
+        else:
+            selected_states.append({**entry, "solver": {"status": "success", "compliance_j": 1.0,
+                                                        "max_displacement_m": 1.0, "max_gauss_von_mises_pa": 1.0},
+                                    "prediction": {"mu": {}, "sigma": {}}})
+    case = {"sample_id": "00001", "family_id": family_id, "role": "development",
+            "trajectory": {"batches": batches}, "selected_states": selected_states,
+            "intermediate_solver_call_count": 0}
+    if unsolved_states or unsolved:
+        case["unsolved_states"] = unsolved_states
+    return case
+
+
+def test_unsolved_bin_is_skipped_without_violating_the_sampling_rule() -> None:
+    """A bin whose chosen state failed to solve is absent, and that is legal."""
+    import sasto.g3_trajectory_calibration as g3
+
+    case = _case_with_bins([1, 2, 5], unsolved={5})
+    rows, _, selected = g3._selected_trajectory_rows([case])
+    assert len(rows) == 2
+    assert selected[">25%"] == 0
+    assert selected["(5,10%]"] == 1
+
+
+def test_case_without_unsolved_states_key_still_validates() -> None:
+    """Records written before the fix must keep verifying unchanged."""
+    import sasto.g3_trajectory_calibration as g3
+
+    case = _case_with_bins([1, 2, 5])
+    case.pop("unsolved_states", None)
+    rows, _, _ = g3._selected_trajectory_rows([case])
+    assert len(rows) == 3
+
+
+def test_missing_bin_without_an_unsolved_record_is_still_rejected() -> None:
+    """The relaxation must not become a hole: an unexplained gap must still fail."""
+    import sasto.g3_trajectory_calibration as g3
+
+    case = _case_with_bins([1, 2, 5], unsolved={5})
+    case["unsolved_states"] = []
+    # Caught by the frozen-sampling-rule guard, which fires first.
+    with pytest.raises(g3.G3Error, match="violates the frozen sampling rule"):
+        g3._selected_trajectory_rows([case])
+
+
+def test_malformed_unsolved_record_is_rejected() -> None:
+    import sasto.g3_trajectory_calibration as g3
+
+    case = _case_with_bins([1, 2, 5], unsolved={5})
+    case["unsolved_states"] = [{"bin_index": "five"}]
+    with pytest.raises(g3.G3Error, match="unsolved state entry is malformed"):
+        g3._selected_trajectory_rows([case])
+
+    case2 = _case_with_bins([1, 2, 5], unsolved={5})
+    case2["unsolved_states"] = "not-a-list"
+    with pytest.raises(g3.G3Error, match="unsolved state record is malformed"):
+        g3._selected_trajectory_rows([case2])
+
+
+def test_preconditioner_unavailable_still_fails_closed() -> None:
+    """An environment fault affects every later solve and must not be recorded as data."""
+    import inspect
+    import sasto.g3_trajectory_calibration as g3
+
+    source = inspect.getsource(g3)
+    assert 'if reason == "preconditioner_unavailable":' in source
+    assert 'raise G3Error("selected trajectory solver preconditioner is unavailable")' in source
+
+
+def test_non_convergence_no_longer_raises_in_the_generation_path() -> None:
+    """The exact line that aborted GB200 shard 7 must be gone."""
+    import inspect
+    import sasto.g3_trajectory_calibration as g3
+
+    source = inspect.getsource(g3)
+    assert "selected trajectory canonical solver response is unavailable" not in source
