@@ -82,10 +82,13 @@ SP_HEAD = 0.026   # header baseline below card top
 SP_META = 0.023   # metric line below header
 SP_TOP = 0.020    # panel top below metric line
 SP_ROW = 0.008    # between the two panel rows
-SP_COL = 0.004    # between columns
+SP_COL = -0.055   # NEGATIVE: the isometric projection of a building fills only
+                  # ~70% of its panel box, so overlapping the boxes grows the
+                  # drawn house without letting neighbours touch (measured gap
+                  # stays ~0.15 in). Nudging zoom cannot beat that 70% cap.
 SP_PAD = 0.014    # card inner padding
 
-FW, FH = 7.2, 6.02
+FW, FH = 7.2, 5.15
 
 
 def member(z, sid, leaf):
@@ -155,7 +158,7 @@ def stage(ax, ref, elev=20, azim=-56):
     ax.set_xlim(cx - half, cx + half)
     ax.set_ylim(cy - half, cy + half)
     ax.set_zlim(zs.min() - 1, zs.max() + 1)
-    ax.set_box_aspect((1, 1, 0.66), zoom=1.34)
+    ax.set_box_aspect((1, 1, 0.62), zoom=1.58)
     ax.view_init(elev=elev, azim=azim)
     ax.set_axis_off()
     ax.patch.set_alpha(0.0)
@@ -194,14 +197,14 @@ def main() -> int:
     M = 0.014                      # outer page margin
     RAIL = M + 0.020               # vertical task label
     GUT_X = RAIL + 0.016           # row-title gutter starts
-    GUT_W = 0.098
-    LAT_X = GUT_X + GUT_W + 0.010
-    LAT_R = 1.0 - M - 0.012
+    GUT_W = 0.070
+    LAT_X = GUT_X + GUT_W + 0.008
+    LAT_R = 1.0 - M - 0.008
     LAT_W = LAT_R - LAT_X
 
     # panels sized from the lattice, cards derived from the panels
     PW = (LAT_W - 3 * SP_COL) / 4
-    PH = PW * FW / FH * 1.04
+    PH = PW * FW / FH / 1.42   # panel aspect matched to the projected building
     HDR = SP_HEAD + SP_META + SP_TOP
 
     ay1 = 1.0 - M
