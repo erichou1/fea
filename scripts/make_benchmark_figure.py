@@ -50,7 +50,7 @@ ARCHIVE = Path("/Users/eric/workspace/sasto-modernization-control/archives/fea_m
 INBOUND = Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
 
 TRAJ = "00001"
-ACROSS = ["00005", "00010", "00023"]
+ACROSS = ["00005", "00010", "00023", "00035"]
 DEPTHS = ["(5,10%]", "(15,20%]", ">25%"]
 
 PARTS = {
@@ -71,7 +71,21 @@ plt.rcParams.update({
     "figure.dpi": 200,
 })
 
-FW, FH = 7.0, 5.75
+# One type scale and one spacing scale, used everywhere. Earlier drafts mixed
+# 7.4/7.6/8.2/8.4/9.0 and three different gaps, which is what read as untidy.
+FS_TASK = 8.5     # vertical rail label
+FS_HEAD = 8.0     # column header
+FS_META = 7.5     # metric line and row titles
+FS_KEY = 7.0      # legend
+
+SP_HEAD = 0.026   # header baseline below card top
+SP_META = 0.023   # metric line below header
+SP_TOP = 0.020    # panel top below metric line
+SP_ROW = 0.008    # between the two panel rows
+SP_COL = 0.004    # between columns
+SP_PAD = 0.014    # card inner padding
+
+FW, FH = 7.2, 6.02
 
 
 def member(z, sid, leaf):
@@ -176,60 +190,68 @@ def main() -> int:
     fig = plt.figure(figsize=(FW, FH))
     fig.patch.set_facecolor("white")
 
-    # ---- zones ------------------------------------------------------
-    RAIL = 0.052          # vertical task label
-    GUT_X, GUT_W = 0.085, 0.115   # row-title gutter
-    LAT_X = GUT_X + GUT_W + 0.012
-    LAT_W = 0.965 - LAT_X
+    # ---- zones: one margin everywhere -------------------------------
+    M = 0.014                      # outer page margin
+    RAIL = M + 0.020               # vertical task label
+    GUT_X = RAIL + 0.016           # row-title gutter starts
+    GUT_W = 0.098
+    LAT_X = GUT_X + GUT_W + 0.010
+    LAT_R = 1.0 - M - 0.012
+    LAT_W = LAT_R - LAT_X
 
-    # ---- panel geometry, cards derived from it ----------------------
-    PW = (LAT_W - 3 * 0.008) / 4
-    PH = PW * FW / FH * 1.06
-    HDR = 0.072          # column header + metric line
-    PAD = 0.020          # card inner padding
-    GAP = 0.014          # gap between the two rows in card A
+    # panels sized from the lattice, cards derived from the panels
+    PW = (LAT_W - 3 * SP_COL) / 4
+    PH = PW * FW / FH * 1.04
+    HDR = SP_HEAD + SP_META + SP_TOP
 
-    ay1 = 0.976
+    ay1 = 1.0 - M
     rowA0 = ay1 - HDR - PH
-    rowA1 = rowA0 - GAP - PH
-    ay0 = rowA1 - PAD
+    rowA1 = rowA0 - SP_ROW - PH
+    ay0 = rowA1 - SP_PAD
 
-    by1 = ay0 - 0.024
+    by1 = ay0 - 0.018
     rowB0 = by1 - HDR - PH
-    by0 = rowB0 - PAD
+    LEG_H = 0.030                  # legend strip inside card B
+    by0 = rowB0 - LEG_H - SP_PAD
 
     # ---- Card A -----------------------------------------------------
-    card(fig, 0.030, ay0, 0.968, ay1, CARD_A)
+    card(fig, M, ay0, 1.0 - M, ay1, CARD_A)
     fig.text(RAIL, (ay0 + ay1) / 2, "Erosion trajectory", rotation=90,
-             ha="center", va="center", fontsize=9, fontweight="bold")
+             ha="center", va="center", fontsize=FS_TASK, fontweight="bold")
 
     base, parts, states, c = replay(TRAJ, z)
     sel = {s["bin_label"]: s for s in c["selected_states"]}
     cols = [("baseline", None)] + [(b, sel[b]) for b in DEPTHS]
-
-    pw, ph = PW, PH
     row_y = [rowA0, rowA1]
 
     for ci, (label, s) in enumerate(cols):
-        px = LAT_X + ci * (pw + 0.008)
+        px = LAT_X + ci * (PW + SP_COL)
         frac = 0.0 if s is None else s["fraction_removed"] * 100
-        fig.text(px + pw / 2, ay1 - 0.030, label, ha="center", va="center",
-                 fontsize=8.4, fontweight="bold" if s is None else "normal")
-        fig.text(px + pw / 2, ay1 - 0.054, f"{frac:.1f}% removed", ha="center",
-                 va="center", fontsize=7.4, color=REMOVED)
+        fig.text(px + PW / 2, ay1 - SP_HEAD, label, ha="center", va="center",
+                 fontsize=FS_HEAD, fontweight="bold" if s is None else "normal")
+        fig.text(px + PW / 2, ay1 - SP_HEAD - SP_META,
+                 f"{frac:.1f}% removed", ha="center", va="center",
+                 fontsize=FS_META, color=REMOVED)
 
         v = base if s is None else states[s["state_index"]]
+        gone = base & ~v
 
-        ax = fig.add_axes((px, row_y[0], pw, ph), projection="3d", zorder=3)
-        pieces = [tri(cut((parts == pid) & v), col) for pid, (_, col) in PARTS.items()]
+        ax = fig.add_axes((px, row_y[0], PW, PH), projection="3d", zorder=3)
+        pieces = [tri(cut((parts == pid) & v), col)
+                  for pid, (_, col) in PARTS.items()]
         if s is not None:
-            pieces.append(tri(cut(base & ~v), REMOVED, 0.75))
+            pieces.append(tri(cut(gone), REMOVED, 0.80))
         draw(ax, pieces)
         stage(ax, cut(base))
 
-        ax = fig.add_axes((px, row_y[1], pw, ph), projection="3d", zorder=3)
-        draw(ax, [tri((parts == 2) & v, PARTS[2][1])])
-        stage(ax, (parts == 2) & base, elev=42, azim=-56)
+        # interior row: partitions that survive, plus the ones erosion took,
+        # so removal is visible here too rather than only as absence
+        ax = fig.add_axes((px, row_y[1], PW, PH), projection="3d", zorder=3)
+        ipieces = [tri(cut((parts == 2) & v), PARTS[2][1])]
+        if s is not None:
+            ipieces.append(tri(cut((parts == 2) & gone), REMOVED, 0.80))
+        draw(ax, ipieces)
+        stage(ax, cut((parts == 2) & base), elev=34, azim=-56)
 
         if s is not None:
             prov["verified_states"][label] = {
@@ -237,34 +259,31 @@ def main() -> int:
                 "state_occupancy_sha256": s["state_occupancy_sha256"],
                 "fraction_removed": s["fraction_removed"]}
 
-    fig.text(GUT_X + GUT_W, row_y[0] + ph / 2, "Cutaway", ha="right",
-             va="center", fontsize=8.2, color="#333333")
-    fig.text(GUT_X + GUT_W, row_y[1] + ph / 2, "Interior only", ha="right",
-             va="center", fontsize=8.2, color="#333333")
+    for yy, title in ((row_y[0], "Cutaway"), (row_y[1], "Interior only")):
+        fig.text(GUT_X + GUT_W, yy + PH / 2, title, ha="right", va="center",
+                 fontsize=FS_META, color="#333333")
 
     # ---- Card B -----------------------------------------------------
-    card(fig, 0.030, by0, 0.968, by1, CARD_B)
+    card(fig, M, by0, 1.0 - M, by1, CARD_B)
     fig.text(RAIL, (by0 + by1) / 2, "Other families", rotation=90,
-             ha="center", va="center", fontsize=9, fontweight="bold")
+             ha="center", va="center", fontsize=FS_TASK, fontweight="bold")
 
-    bw, bh = PW, PH
-    b_row_y = rowB0
-    LEG_W = 0.175
-    lat_b_x = GUT_X + LEG_W + 0.020
+    lat_b_x = LAT_X
 
     for ci, sid in enumerate(ACROSS):
         b2, p2, st, cc = replay(sid, z)
         deep = max(cc["selected_states"], key=lambda s: s["fraction_removed"])
         v = st[deep["state_index"]]
-        px = lat_b_x + ci * (bw + 0.008)
-        fig.text(px + bw / 2, by1 - 0.030, f"sample {sid}", ha="center",
-                 va="center", fontsize=8.4)
-        fig.text(px + bw / 2, by1 - 0.054,
-                 f"{deep['fraction_removed'] * 100:.1f}% removed", ha="center",
-                 va="center", fontsize=7.4, color=REMOVED)
-        ax = fig.add_axes((px, b_row_y, bw, bh), projection="3d", zorder=3)
-        pieces = [tri(cut((p2 == pid) & v), col) for pid, (_, col) in PARTS.items()]
-        pieces.append(tri(cut(b2 & ~v), REMOVED, 0.75))
+        px = lat_b_x + ci * (PW + SP_COL)
+        fig.text(px + PW / 2, by1 - SP_HEAD, f"sample {sid}", ha="center",
+                 va="center", fontsize=FS_HEAD)
+        fig.text(px + PW / 2, by1 - SP_HEAD - SP_META,
+                 f"{deep['fraction_removed'] * 100:.1f}% removed",
+                 ha="center", va="center", fontsize=FS_META, color=REMOVED)
+        ax = fig.add_axes((px, rowB0, PW, PH), projection="3d", zorder=3)
+        pieces = [tri(cut((p2 == pid) & v), col)
+                  for pid, (_, col) in PARTS.items()]
+        pieces.append(tri(cut(b2 & ~v), REMOVED, 0.80))
         draw(ax, pieces)
         stage(ax, cut(b2))
         prov["verified_states"][f"deep-{sid}"] = {
@@ -276,10 +295,10 @@ def main() -> int:
                for nm, cl in PARTS.values()]
     handles.append(Patch(facecolor=REMOVED, alpha=0.75, edgecolor="none",
                          label="removed by erosion"))
-    fig.legend(handles=handles, loc="center left",
-               bbox_to_anchor=(GUT_X - 0.002, b_row_y + bh / 2),
-               frameon=False, fontsize=7.4, handlelength=1.0,
-               handleheight=0.95, labelspacing=0.5, borderaxespad=0)
+    fig.legend(handles=handles, loc="center", ncol=5,
+               bbox_to_anchor=(0.5, by0 + (LEG_H + SP_PAD) / 2),
+               frameon=False, fontsize=FS_KEY, handlelength=0.85,
+               handleheight=0.85, columnspacing=1.3, borderaxespad=0)
 
     fig.savefig(FIGS / "benchmark.pdf", facecolor="white")
     plt.close(fig)
