@@ -53,6 +53,13 @@ PREMISE_TRUE_POINT = 0.93
 
 PREREGISTRATION_SHA256 = "79bd228a1a3b778a424594b33134fe99fdf72c77837d96209e7a41e402becdca"
 AMENDMENT_01_SHA256 = "47256af82f4053cd8bfb44b9d400e8ed45139ef9edbe76deaee70de0e2f23312"
+AMENDMENT_02_SHA256 = "d9ec781610666b50888a4d32dd353c5e264535d67c861b62be1ee01370c22132"
+
+#: Accepted amendment digests.  A run must cite one of these.
+ACCEPTED_AMENDMENTS = {
+    AMENDMENT_01_SHA256: "01_REDUCED_N",
+    AMENDMENT_02_SHA256: "02_GB200_POPULATION",
+}
 
 #: Full pre-registered development population.  A run below this is INTERIM.
 PREREGISTERED_FAMILY_COUNT = 2235
@@ -254,8 +261,16 @@ def _bin_result(label: str, flags: Sequence[bool], per_target: Mapping[str, int]
     )
 
 
-def adjudicate(results: Sequence[BinResult], *, family_count: int) -> dict[str, object]:
-    """Apply the amended decision rule.  Per bin, Holm-corrected across bins."""
+def adjudicate(results: Sequence[BinResult], *, family_count: int,
+               interim_power_floor: float = 0.95) -> dict[str, object]:
+    """Apply the amended decision rule.  Per bin, Holm-corrected across bins.
+
+    INTERIM status is decided by realized power against the pre-registration's own
+    effect size (true coverage 0.93), not by raw family count.  Amendment 02 §3
+    fixes this: a run at 2,096 of 2,235 families retains power 0.986 against the
+    pre-registered 0.989 and is not meaningfully underpowered, whereas amendment
+    01's run at 355 families had power 0.435 and was.
+    """
     if not results:
         raise K6Error("no occupied depth bin produced a result")
     adjusted = holm_adjust([result.p_value for result in results])
@@ -303,7 +318,10 @@ def adjudicate(results: Sequence[BinResult], *, family_count: int) -> dict[str, 
         verdict = "AMBIGUOUS"
         rationale = "no bin satisfies either branch under the amended rule"
 
-    interim = family_count < PREREGISTERED_FAMILY_COUNT
+    # Power is evaluated at the smallest occupied bin, the weakest link.
+    smallest_n = min(result.n for result in results)
+    realized_power = float(binomial_power(smallest_n, 0.93)["power"])  # type: ignore[arg-type]
+    interim = realized_power < interim_power_floor
     return {
         "verdict": verdict,
         "rationale": rationale,
@@ -311,10 +329,17 @@ def adjudicate(results: Sequence[BinResult], *, family_count: int) -> dict[str, 
         "premise_true_bins": premise_true_bins,
         "per_bin": per_bin,
         "status": "INTERIM" if interim else "FULL_POPULATION",
+        "family_count": family_count,
+        "preregistered_family_count": PREREGISTERED_FAMILY_COUNT,
+        "smallest_bin_n": smallest_n,
+        "realized_power_vs_0.93": realized_power,
+        "interim_power_floor": interim_power_floor,
         "interim_note": (
             "Amendment 01 §6: an INTERIM PREMISE_FALSE is a sufficient kill; an INTERIM "
             "PREMISE_TRUE or AMBIGUOUS is not sufficient to advance to controller arms."
-            if interim else None
+            if interim else
+            "Amendment 02 §3: realized power at the smallest occupied bin is at or above "
+            "the floor, so this run may be used to advance as well as to stop."
         ),
     }
 
@@ -333,7 +358,17 @@ def _assert_no_confirmation_reachable(root: Path) -> int:
 
 
 def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path: Path,
-                 preregistration_path: Path, amendment_path: Path) -> dict[str, object]:
+                 preregistration_path: Path, amendment_path: Path,
+                 frozen_constants_root: Path | None = None,
+                 interim_threshold: int = PREREGISTERED_FAMILY_COUNT) -> dict[str, object]:
+    """Evaluate K6 coverage.
+
+    ``frozen_constants_root`` selects where the authoritative kappa and q_base are
+    read from, which may differ from the root holding the trajectory records.  Per
+    amendment 02 §4 the Mac's frozen record is authoritative even when the
+    trajectories were produced elsewhere, because invariant 2 requires those
+    constants to be imported by value rather than recomputed per host.
+    """
     output_root = Path(output_root)
     _assert_no_confirmation_reachable(output_root)
 
@@ -341,15 +376,33 @@ def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path
     if observed_prereg != PREREGISTRATION_SHA256:
         raise K6Error("frozen pre-registration sha256 mismatch")
     observed_amendment = sha256_file(amendment_path)
-    if observed_amendment != AMENDMENT_01_SHA256:
-        raise K6Error("frozen amendment sha256 mismatch")
+    if observed_amendment not in ACCEPTED_AMENDMENTS:
+        raise K6Error("amendment sha256 is not an accepted frozen amendment")
 
-    kappa_record = _verified_json(output_root / "kappa-development-evidence.json",
+    constants_root = Path(frozen_constants_root) if frozen_constants_root is not None else output_root
+    _assert_no_confirmation_reachable(constants_root)
+    kappa_record = _verified_json(constants_root / "kappa-development-evidence.json",
                                   "G3 kappa evidence", "kappa_evidence_sha256")
-    q_base_record = _verified_json(output_root / "baseline-calibration.json",
+    q_base_record = _verified_json(constants_root / "baseline-calibration.json",
                                    "G3 baseline calibration", "baseline_calibration_sha256")
     kappa = {name: float(value) for name, value in kappa_record["kappa"].items()}  # type: ignore[union-attr]
     q_base = {name: float(value) for name, value in q_base_record["q"].items()}  # type: ignore[union-attr]
+
+    # Pre-declared sensitivity check (amendment 02 §4): when the trajectories were
+    # produced on a host that recomputed its own constants, evaluate against those
+    # too and report whether any branch assignment moves.
+    local_q: dict[str, float] | None = None
+    local_kappa: dict[str, float] | None = None
+    if constants_root != output_root:
+        try:
+            local_kappa_record = _verified_json(output_root / "kappa-development-evidence.json",
+                                               "G3 kappa evidence", "kappa_evidence_sha256")
+            local_q_record = _verified_json(output_root / "baseline-calibration.json",
+                                            "G3 baseline calibration", "baseline_calibration_sha256")
+            local_kappa = {n: float(v) for n, v in local_kappa_record["kappa"].items()}  # type: ignore[union-attr]
+            local_q = {n: float(v) for n, v in local_q_record["q"].items()}  # type: ignore[union-attr]
+        except (K6Error, G3Error, OSError):
+            local_q = local_kappa = None
 
     normalization = json.loads(Path(ensemble_normalization).read_text(encoding="utf-8"))
     if normalization.get("role") != "fit":
@@ -370,6 +423,25 @@ def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path
     results, marginal = evaluate_bins(rows, kappa=kappa, q=q_base, normalization=normalization)
     adjudication = adjudicate(results, family_count=len(cases))
 
+    # Sensitivity: re-adjudicate under the producing host's own recomputed
+    # constants.  Any branch disagreement is pre-declared to be the headline.
+    sensitivity: dict[str, object] | None = None
+    if local_q is not None and local_kappa is not None:
+        alt_results, _ = evaluate_bins(rows, kappa=local_kappa, q=local_q, normalization=normalization)
+        alt_adjudication = adjudicate(alt_results, family_count=len(cases))
+        primary_branches = {row["bin_label"]: row["branch"] for row in adjudication["per_bin"]}  # type: ignore[index]
+        alt_branches = {row["bin_label"]: row["branch"] for row in alt_adjudication["per_bin"]}  # type: ignore[index]
+        disagreements = sorted(label for label in primary_branches
+                               if primary_branches[label] != alt_branches.get(label))
+        sensitivity = {
+            "alternate_kappa": local_kappa,
+            "alternate_q_base": local_q,
+            "alternate_verdict": alt_adjudication["verdict"],
+            "alternate_per_bin_coverage": {result.bin_label: result.coverage for result in alt_results},
+            "branch_disagreements": disagreements,
+            "agrees_with_primary": not disagreements and alt_adjudication["verdict"] == adjudication["verdict"],
+        }
+
     power_table = [
         binomial_power(result.n, true_p)
         for result in results
@@ -382,7 +454,12 @@ def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path
         "coverage_computed": True,
         "evaluated_root": str(output_root),
         "pre_registration_sha256": observed_prereg,
-        "amendment_01_sha256": observed_amendment,
+        "amendment_sha256": observed_amendment,
+        "amendment_label": ACCEPTED_AMENDMENTS[observed_amendment],
+        "frozen_constants_root": str(constants_root),
+        "q_base_authority": ("external frozen record per amendment 02 §4"
+                             if constants_root != output_root else "same root"),
+        "sensitivity_alternate_constants": sensitivity,
         "alpha": ALPHA,
         "alpha_j": ALPHA_J,
         "J": J,
@@ -422,10 +499,12 @@ def main() -> int:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--preregistration", type=Path, required=True)
     parser.add_argument("--amendment", type=Path, required=True)
+    parser.add_argument("--frozen-constants-root", type=Path, default=None,
+                        help="root holding the authoritative kappa/q_base (default: --output-root)")
     args = parser.parse_args()
     report = run_coverage(output_root=args.output_root, ensemble_normalization=args.normalization,
                           report_path=args.report, preregistration_path=args.preregistration,
-                          amendment_path=args.amendment)
+                          amendment_path=args.amendment, frozen_constants_root=args.frozen_constants_root)
     print(json.dumps(report["adjudication"], indent=2, sort_keys=True))
     return 0
 

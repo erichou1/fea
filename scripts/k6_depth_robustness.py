@@ -38,8 +38,8 @@ ORDER = ["(5,10%]", "(10,15%]", "(15,20%]", "(20,25%]", ">25%"]
 
 def build(root: Path):
     normalization = json.loads(Path("/Users/eric/workspace/fea-sasto-v/artifacts/g2/ensemble-v1/normalization-stats.json").read_text())
-    kappa_record = _verified_json(root / "kappa-development-evidence.json", "G3 kappa evidence", "kappa_evidence_sha256")
-    q_record = _verified_json(root / "baseline-calibration.json", "G3 baseline calibration", "baseline_calibration_sha256")
+    kappa_record = _verified_json(Path(__import__('os').environ.get('K6_CONST', str(root))) / "kappa-development-evidence.json", "G3 kappa evidence", "kappa_evidence_sha256")
+    q_record = _verified_json(Path(__import__('os').environ.get('K6_CONST', str(root))) / "baseline-calibration.json", "G3 baseline calibration", "baseline_calibration_sha256")
     kappa = {k: float(v) for k, v in kappa_record["kappa"].items()}
     q_base = {k: float(v) for k, v in q_record["q"].items()}
     cases = [_verified_json(p, "G3 trajectory case", "trajectory_digest")
@@ -80,7 +80,7 @@ def sign_test(pairs):
 
 
 def main() -> int:
-    root = Path("/Users/eric/workspace/fea-sasto-v/artifacts/g3/trajectory-calibration-v2")
+    root = Path(__import__('os').environ.get('K6_ROOT', '/Users/eric/workspace/fea-sasto-v/artifacts/g3/trajectory-calibration-v2'))
     records = build(root)
     by_family = defaultdict(dict)
     for record in records:

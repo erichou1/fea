@@ -244,7 +244,24 @@ def test_full_population_is_not_marked_interim():
     results = [_bin("(5,10%]", 2235, 2200)]
     verdict = adjudicate(results, family_count=2235)
     assert verdict["status"] == "FULL_POPULATION"
-    assert verdict["interim_note"] is None
+    assert verdict["realized_power_vs_0.93"] > 0.95
+
+
+def test_interim_is_decided_by_power_not_family_count():
+    """Amendment 02 §3: 2,096 of 2,235 families retains power 0.986, not INTERIM."""
+    results = [_bin("(5,10%]", 2096, 2063), _bin("(10,15%]", 1980, 1952)]
+    verdict = adjudicate(results, family_count=2096)
+    assert verdict["status"] == "FULL_POPULATION"
+    assert verdict["smallest_bin_n"] == 1980
+    assert verdict["realized_power_vs_0.93"] == pytest.approx(0.981, abs=0.005)
+
+
+def test_small_n_is_still_interim_under_the_power_rule():
+    """Amendment 01's 355-family run had power 0.435 and stays INTERIM."""
+    results = [_bin("(5,10%]", 355, 351), _bin(">25%", 343, 225)]
+    verdict = adjudicate(results, family_count=355)
+    assert verdict["status"] == "INTERIM"
+    assert verdict["realized_power_vs_0.93"] == pytest.approx(0.447, abs=0.005)
 
 
 def test_adjudicate_rejects_empty_results():
@@ -273,3 +290,7 @@ def test_frozen_digests_match_the_documents_on_disk():
     import hashlib
     assert hashlib.sha256(prereg.read_bytes()).hexdigest() == PREREGISTRATION_SHA256
     assert hashlib.sha256(amendment.read_bytes()).hexdigest() == AMENDMENT_01_SHA256
+    amendment2 = control / "K6_AMENDMENT_02_GB200_POPULATION.md"
+    if amendment2.exists():
+        from sasto.k6_coverage import AMENDMENT_02_SHA256
+        assert hashlib.sha256(amendment2.read_bytes()).hexdigest() == AMENDMENT_02_SHA256
