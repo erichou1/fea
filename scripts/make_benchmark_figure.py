@@ -86,36 +86,50 @@ def replay(sid: str, z: zipfile.ZipFile):
     return base, parts, states, c
 
 
-def surface(ax, mask: np.ndarray, color: str, alpha: float = 1.0) -> None:
-    """Marching-cubes surface for one part, with simple lambertian shading.
+def part_triangles(mask: np.ndarray, color: str, alpha: float = 1.0):
+    """Shaded triangles for one part. Returns (tris, rgba) or None.
 
-    No per-face edge lines: at this triangle count they stack into an opaque
-    black mass. Shading comes from face normals instead.
+    step_size stays at 1. At step_size=2 marching_cubes raises RuntimeError on
+    one-voxel-thick sheets and thins two-voxel ones, and 23% of the roof and 36%
+    of the floor slabs are that thin, so coarser sampling punches holes in
+    exactly the parts a reader looks at.
     """
     if mask.sum() < 8:
-        return
+        return None
     pad = np.pad(mask.astype(np.float32), 1)
-    try:
-        verts, faces, normals, _ = marching_cubes(pad, level=0.5, step_size=2)
-    except (RuntimeError, ValueError):
-        return
+    # deliberately not swallowing errors here: a silent `return` on a failed
+    # extraction is what dropped the thin roof sheets from earlier drafts.
+    verts, faces, _, _ = marching_cubes(pad, level=0.5, step_size=1)
     tris = verts[faces]
-    # lambertian term from the triangle normal against a fixed key light
+
     v0, v1, v2 = tris[:, 0], tris[:, 1], tris[:, 2]
     n = np.cross(v1 - v0, v2 - v0)
     norm = np.linalg.norm(n, axis=1, keepdims=True)
     n = np.divide(n, norm, out=np.zeros_like(n), where=norm > 0)
     light = np.array([0.42, 0.60, 0.68])
     light = light / np.linalg.norm(light)
-    lam = 0.62 + 0.38 * np.clip(n @ light, 0.0, 1.0)
+    lam = 0.60 + 0.40 * np.clip(np.abs(n @ light), 0.0, 1.0)
 
     base = np.array(matplotlib.colors.to_rgb(color))
-    face_rgb = np.clip(base[None, :] * lam[:, None], 0.0, 1.0)
-    face_rgba = np.concatenate(
-        [face_rgb, np.full((face_rgb.shape[0], 1), alpha)], axis=1)
+    rgb = np.clip(base[None, :] * lam[:, None], 0.0, 1.0)
+    rgba = np.concatenate([rgb, np.full((rgb.shape[0], 1), alpha)], axis=1)
+    return tris, rgba
 
-    mesh = Poly3DCollection(tris, linewidths=0)
-    mesh.set_facecolor(face_rgba)
+
+def draw_parts(ax, pieces) -> None:
+    """Draw every part as ONE collection so depth sorting is global.
+
+    Matplotlib depth-sorts faces within a Poly3DCollection but paints separate
+    collections in the order they were added. Drawing each part separately made
+    interior partitions paint over the exterior walls, so the buildings looked
+    transparent.
+    """
+    tris = [t for t, _ in pieces if t is not None and len(t)]
+    cols = [c for t, c in pieces if t is not None and len(t)]
+    if not tris:
+        return
+    mesh = Poly3DCollection(np.concatenate(tris), linewidths=0)
+    mesh.set_facecolor(np.concatenate(cols))
     mesh.set_edgecolor("none")
     ax.add_collection3d(mesh)
 
@@ -163,8 +177,8 @@ def main() -> int:
 
     # row 1: baseline by part, then the same design at three depths
     ax = fig.add_subplot(gs[0, 0], projection="3d")
-    for pid, (_, color) in PARTS.items():
-        surface(ax, cut((parts == pid) & base), color)
+    draw_parts(ax, [part_triangles(cut((parts == pid) & base), color)
+                    for pid, (_, color) in PARTS.items()])
     frame(ax, cut(base), "baseline", "0.0% removed")
     prov["verified_states"]["baseline"] = {"sample": TRAJ, "voxels": int(base.sum())}
 
@@ -172,9 +186,10 @@ def main() -> int:
         s = sel[blabel]
         v = states[s["state_index"]]
         ax = fig.add_subplot(gs[0, col], projection="3d")
-        for pid, (_, color) in PARTS.items():
-            surface(ax, cut((parts == pid) & v), color)
-        surface(ax, cut(base & ~v), REMOVED, alpha=0.62)
+        pieces = [part_triangles(cut((parts == pid) & v), color)
+                  for pid, (_, color) in PARTS.items()]
+        pieces.append(part_triangles(cut(base & ~v), REMOVED, alpha=0.72))
+        draw_parts(ax, pieces)
         frame(ax, cut(base), blabel, f"{s['fraction_removed'] * 100:.1f}% removed")
         prov["verified_states"][blabel] = {
             "sample": TRAJ, "state_index": s["state_index"],
@@ -201,9 +216,10 @@ def main() -> int:
         s = deep[0]
         v = st[s["state_index"]]
         ax = fig.add_subplot(gs[1, col], projection="3d")
-        for pid, (_, color) in PARTS.items():
-            surface(ax, cut((p2 == pid) & v), color)
-        surface(ax, cut(b2 & ~v), REMOVED, alpha=0.62)
+        pieces = [part_triangles(cut((p2 == pid) & v), color)
+                  for pid, (_, color) in PARTS.items()]
+        pieces.append(part_triangles(cut(b2 & ~v), REMOVED, alpha=0.72))
+        draw_parts(ax, pieces)
         frame(ax, cut(b2), f"sample {sid}",
               f"{s['fraction_removed'] * 100:.1f}% removed")
         prov["verified_states"][f"deep-{sid}"] = {
