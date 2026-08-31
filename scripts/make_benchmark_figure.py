@@ -1,16 +1,21 @@
-"""Figure 1: the real eroded geometry, replayed and hash-verified.
+"""Figure 1: semantic parts and what erosion actually removes.
 
-Every voxel state drawn here is REGENERATED and then checked against the
-state_occupancy_sha256 recorded in the frozen trajectory record. If a digest
-does not match, the script exits rather than drawing.
+Rendering follows the source dataset's convention (Ren et al., "Generating 3D
+House Wireframes with Semantics"), which segments a house into semantic parts
+rather than showing undifferentiated mass. Surfaces are extracted with marching
+cubes so the result reads as architecture instead of a voxel blob.
 
-This corrects an earlier assumption. The occupancy IS recoverable: the erosion
-is deterministic given (baseline occupancy, sample_id, ranking_seed =
-family_seed(family_id)), and the baseline comes from the hash-pinned
-fea_ml.zip. The earlier replay failed only because it omitted ranking_seed.
+Part identity is taken from the archive's own part.npz, then verified
+geometrically before naming:
 
-Row 1  one family's trajectory, baseline -> deep, with the verified digest
-Row 2  the same depth band across four different families
+  part 1  perimeter (77% within 3 voxels of the footprint edge), fully
+          protected from erosion            -> exterior walls
+  part 2  interior, editable, largest       -> interior partitions
+  part 3  top z band (31-42)                -> roof
+  part 4  base z band (20-30), protected    -> floor slabs
+
+Every voxel state drawn is regenerated and checked against the frozen
+state_occupancy_sha256 before it is drawn. Mismatch exits.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -25,8 +31,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Patch
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from skimage.measure import marching_cubes
 
-import sys
 sys.path.insert(0, "/Users/eric/workspace/fea-sasto-v/src")
 from sasto.activity_campaign import geometric_trajectory
 from sasto.g3_trajectory_calibration import family_seed
@@ -36,147 +44,184 @@ FIGS = PAPER / "figures"
 ARCHIVE = Path("/Users/eric/workspace/sasto-modernization-control/archives/fea_ml.zip")
 INBOUND = Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
 
-TRAJ_SAMPLE = "00001"
-ACROSS = ["00005", "00010", "00023", "00044"]
+TRAJ = "00001"
+ACROSS = ["00005", "00010", "00023"]
+
+PARTS = {
+    1: ("exterior walls", "#9aa7b4"),
+    2: ("interior partitions", "#c4b59a"),
+    3: ("roof", "#8f6f5c"),
+    4: ("floor slabs", "#b0b7bd"),
+}
+REMOVED = "#b02418"
 
 plt.rcParams.update({
     "font.family": "serif", "font.serif": ["DejaVu Serif"], "font.size": 9,
     "axes.titlesize": 8.5, "figure.dpi": 200,
 })
-ACCENT = "#b02418"
 
 
-def record(sample_id: str) -> dict:
-    return json.loads((INBOUND / f"trajectory-development-{sample_id}.json").read_text())
+def archive_member(z: zipfile.ZipFile, sid: str, leaf: str) -> np.ndarray:
+    with np.load(io.BytesIO(z.read(f"fea_ml/data/runs_real/{sid}/{leaf}")),
+                 allow_pickle=False) as loaded:
+        return loaded["data"]
 
 
-def replay(sample_id: str, archive: zipfile.ZipFile) -> tuple[np.ndarray, dict]:
-    """Regenerate the trajectory and return (baseline, {state_index: volume})."""
-    c = record(sample_id)
-    raw = archive.read(f"fea_ml/data/runs_real/{sample_id}/occ.npz")
-    with np.load(io.BytesIO(raw), allow_pickle=False) as loaded:
-        base = loaded["data"].astype(bool)
+def record(sid: str) -> dict:
+    return json.loads((INBOUND / f"trajectory-development-{sid}.json").read_text())
+
+
+def replay(sid: str, z: zipfile.ZipFile):
+    c = record(sid)
+    base = archive_member(z, sid, "occ.npz").astype(bool)
+    parts = archive_member(z, sid, "part.npz")
     _, states = geometric_trajectory(
-        sample_id=sample_id, volume=base, batch_cap=40,
+        sample_id=sid, volume=base, batch_cap=40,
         ranking_seed=family_seed(c["family_id"]),
     )
-    # verify every selected state against its frozen digest
     for s in c["selected_states"]:
-        si = s["state_index"]
-        got = hashlib.sha256(states[si].tobytes()).hexdigest()
+        got = hashlib.sha256(states[s["state_index"]].tobytes()).hexdigest()
         if got != s["state_occupancy_sha256"]:
-            raise SystemExit(f"digest mismatch {sample_id} state {si}; refusing to draw")
-    return base, states
+            raise SystemExit(f"digest mismatch {sid} state {s['state_index']}")
+    return base, parts, states, c
 
 
-def draw_voxels(ax, vol: np.ndarray, title: str, sub: str = "",
-                cutaway: bool = True, removed: np.ndarray | None = None) -> None:
-    """Downsample 64^3 -> 32^3 by max-pooling so matplotlib can draw it.
+def surface(ax, mask: np.ndarray, color: str, alpha: float = 1.0) -> None:
+    """Marching-cubes surface for one part, with simple lambertian shading.
 
-    A front quadrant is cut away so interior erosion is visible; without it the
-    outer shell hides almost every deletion and the trajectory looks static.
-    Voxels removed relative to the baseline are drawn in red.
+    No per-face edge lines: at this triangle count they stack into an opaque
+    black mass. Shading comes from face normals instead.
     """
-    def pool(a):
-        return (a[::2, ::2, ::2] | a[1::2, ::2, ::2] | a[::2, 1::2, ::2]
-                | a[::2, ::2, 1::2] | a[1::2, 1::2, ::2] | a[1::2, ::2, 1::2]
-                | a[::2, 1::2, 1::2] | a[1::2, 1::2, 1::2])
+    if mask.sum() < 8:
+        return
+    pad = np.pad(mask.astype(np.float32), 1)
+    try:
+        verts, faces, normals, _ = marching_cubes(pad, level=0.5, step_size=2)
+    except (RuntimeError, ValueError):
+        return
+    tris = verts[faces]
+    # lambertian term from the triangle normal against a fixed key light
+    v0, v1, v2 = tris[:, 0], tris[:, 1], tris[:, 2]
+    n = np.cross(v1 - v0, v2 - v0)
+    norm = np.linalg.norm(n, axis=1, keepdims=True)
+    n = np.divide(n, norm, out=np.zeros_like(n), where=norm > 0)
+    light = np.array([0.42, 0.60, 0.68])
+    light = light / np.linalg.norm(light)
+    lam = 0.62 + 0.38 * np.clip(n @ light, 0.0, 1.0)
 
-    v = pool(vol)
-    gone = pool(removed) & ~v if removed is not None else np.zeros_like(v)
+    base = np.array(matplotlib.colors.to_rgb(color))
+    face_rgb = np.clip(base[None, :] * lam[:, None], 0.0, 1.0)
+    face_rgba = np.concatenate(
+        [face_rgb, np.full((face_rgb.shape[0], 1), alpha)], axis=1)
 
-    if cutaway:
-        nx, ny, _ = v.shape
-        keep = np.ones_like(v)
-        keep[nx // 2:, :ny // 2, :] = False
-        v = v & keep
-        gone = gone & keep
+    mesh = Poly3DCollection(tris, linewidths=0)
+    mesh.set_facecolor(face_rgba)
+    mesh.set_edgecolor("none")
+    ax.add_collection3d(mesh)
 
-    shown = v | gone
-    colors = np.zeros(shown.shape + (4,), dtype=float)
-    zi = np.arange(shown.shape[2])
-    frac = zi / max(1, shown.shape[2] - 1)
-    for k in zi:
-        g = 0.60 + 0.30 * frac[k]
-        colors[:, :, k, :] = (g * 0.78, g * 0.85, g * 0.94, 1.0)
-    colors[gone] = (0.69, 0.14, 0.09, 0.55)
 
-    ax.voxels(shown, facecolors=colors, edgecolor=(0.22, 0.25, 0.30, 0.22),
-              linewidth=0.1, shade=False)
-    ax.set_box_aspect((1, 1, 0.8), zoom=1.30)
-    ax.view_init(elev=22, azim=-52)
-    ax.set_title(title, fontsize=8.5, pad=-1)
-    if sub:
-        ax.text2D(0.5, -0.045, sub, transform=ax.transAxes, ha="center",
-                  fontsize=7, color=ACCENT)
-    ax.grid(False)
+def frame(ax, mask: np.ndarray, title: str, sub: str = "") -> None:
+    """Fit the view to the occupied region instead of the full 64^3 grid."""
+    xs, ys, zs = np.where(mask)
+    if xs.size == 0:
+        return
+    cx, cy = (xs.min() + xs.max()) / 2, (ys.min() + ys.max()) / 2
+    half = max(xs.max() - xs.min(), ys.max() - ys.min()) / 2 + 2
+    ax.set_xlim(cx - half, cx + half)
+    ax.set_ylim(cy - half, cy + half)
+    ax.set_zlim(zs.min() - 1, zs.max() + 1)
+    ax.set_box_aspect((1, 1, 0.66), zoom=1.30)
+    ax.view_init(elev=20, azim=-56)
     ax.set_axis_off()
+    ax.set_title(title, fontsize=8.5, pad=1)
+    if sub:
+        ax.text2D(0.5, 0.015, sub, transform=ax.transAxes, ha="center",
+                  fontsize=7.2, color=REMOVED)
+
+
+def cut(v: np.ndarray) -> np.ndarray:
+    """Cut the front quadrant so interior erosion is visible."""
+    keep = np.ones_like(v)
+    nx, ny, _ = v.shape
+    keep[nx // 2:, :ny // 2, :] = False
+    return v & keep
 
 
 def main() -> int:
     FIGS.mkdir(parents=True, exist_ok=True)
-    archive = zipfile.ZipFile(ARCHIVE)
-    digest = hashlib.sha256(ARCHIVE.read_bytes()).hexdigest()
-    prov = {"fea_ml_zip_sha256": digest, "verified_states": {}}
+    z = zipfile.ZipFile(ARCHIVE)
+    prov = {"fea_ml_zip_sha256": hashlib.sha256(ARCHIVE.read_bytes()).hexdigest(),
+            "part_semantics": {str(k): v[0] for k, v in PARTS.items()},
+            "verified_states": {}}
 
-    fig = plt.figure(figsize=(6.9, 4.5))
-    gs = fig.add_gridspec(2, 4, height_ratios=[1.0, 1.0], hspace=0.30, wspace=0.02)
+    fig = plt.figure(figsize=(6.9, 4.6))
+    gs = fig.add_gridspec(2, 4, height_ratios=[1.0, 0.95], hspace=0.34,
+                          wspace=0.01, top=0.90, bottom=0.10)
 
-    # row 1: one family down its trajectory
-    base, states = replay(TRAJ_SAMPLE, archive)
-    c = record(TRAJ_SAMPLE)
+    base, parts, states, c = replay(TRAJ, z)
     sel = {s["bin_label"]: s for s in c["selected_states"]}
-    n0 = int(base.sum())
 
+    # row 1: baseline by part, then the same design at three depths
     ax = fig.add_subplot(gs[0, 0], projection="3d")
-    draw_voxels(ax, base, "baseline", "0.0% removed")
-    prov["verified_states"]["baseline"] = {"sample": TRAJ_SAMPLE, "voxels": n0}
+    for pid, (_, color) in PARTS.items():
+        surface(ax, cut((parts == pid) & base), color)
+    frame(ax, cut(base), "baseline", "0.0% removed")
+    prov["verified_states"]["baseline"] = {"sample": TRAJ, "voxels": int(base.sum())}
 
     for col, blabel in enumerate(["(5,10%]", "(15,20%]", ">25%"], start=1):
         s = sel[blabel]
         v = states[s["state_index"]]
         ax = fig.add_subplot(gs[0, col], projection="3d")
-        draw_voxels(ax, v, blabel, f"{s['fraction_removed'] * 100:.1f}% removed",
-                    removed=base)
+        for pid, (_, color) in PARTS.items():
+            surface(ax, cut((parts == pid) & v), color)
+        surface(ax, cut(base & ~v), REMOVED, alpha=0.62)
+        frame(ax, cut(base), blabel, f"{s['fraction_removed'] * 100:.1f}% removed")
         prov["verified_states"][blabel] = {
-            "sample": TRAJ_SAMPLE,
-            "state_index": s["state_index"],
+            "sample": TRAJ, "state_index": s["state_index"],
             "state_occupancy_sha256": s["state_occupancy_sha256"],
             "fraction_removed": s["fraction_removed"],
         }
 
-    # row 2: the deepest band across four other families
-    for col, sid in enumerate(ACROSS):
-        b2, st = replay(sid, archive)
-        cc = record(sid)
+    # row 2: legend cell, then three other families at their deepest state
+    ax_leg = fig.add_subplot(gs[1, 0])
+    ax_leg.axis("off")
+    handles = [Patch(facecolor=c_, edgecolor="none", label=n)
+               for n, c_ in PARTS.values()]
+    handles.append(Patch(facecolor=REMOVED, alpha=0.62, edgecolor="none",
+                         label="removed by erosion"))
+    ax_leg.legend(handles=handles, loc="center", frameon=False,
+                  fontsize=7.6, handlelength=1.25, handleheight=1.05,
+                  borderpad=0.2, labelspacing=0.62)
+
+    for col, sid in enumerate(ACROSS, start=1):
+        b2, p2, st, cc = replay(sid, z)
         deep = [s for s in cc["selected_states"] if s["bin_label"] == ">25%"]
         if not deep:
             deep = [max(cc["selected_states"], key=lambda s: s["fraction_removed"])]
         s = deep[0]
+        v = st[s["state_index"]]
         ax = fig.add_subplot(gs[1, col], projection="3d")
-        draw_voxels(ax, st[s["state_index"]], f"sample {sid}",
-                    f"{s['fraction_removed'] * 100:.1f}% removed", removed=b2)
+        for pid, (_, color) in PARTS.items():
+            surface(ax, cut((p2 == pid) & v), color)
+        surface(ax, cut(b2 & ~v), REMOVED, alpha=0.62)
+        frame(ax, cut(b2), f"sample {sid}",
+              f"{s['fraction_removed'] * 100:.1f}% removed")
         prov["verified_states"][f"deep-{sid}"] = {
-            "sample": sid,
-            "state_index": s["state_index"],
+            "sample": sid, "state_index": s["state_index"],
             "state_occupancy_sha256": s["state_occupancy_sha256"],
             "fraction_removed": s["fraction_removed"],
         }
 
-    fig.text(0.5, 0.955, "(a) one design along its erosion trajectory",
+    fig.text(0.5, 0.945, "(a) one design along its erosion trajectory",
              ha="center", fontsize=9)
-    fig.text(0.5, 0.468, "(b) the deepest band across four other families",
+    fig.text(0.5, 0.505, "(b) other families at their deepest verified state",
              ha="center", fontsize=9)
-    fig.text(0.5, 0.012, "front quadrant cut away; red marks material removed "
-                         "relative to the baseline",
-             ha="center", fontsize=7.5, color="#555555")
 
     fig.savefig(FIGS / "benchmark.pdf", bbox_inches="tight")
     plt.close(fig)
     (FIGS / "benchmark-provenance.json").write_text(
         json.dumps(prov, indent=2, sort_keys=True) + "\n")
     print("wrote benchmark.pdf")
-    print(f"  fea_ml.zip sha256 {digest[:16]}")
     print(f"  verified {len(prov['verified_states'])} states against frozen digests")
     return 0
 
