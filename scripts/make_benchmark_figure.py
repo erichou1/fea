@@ -1,171 +1,183 @@
-"""Figure 1: the benchmark. Schematic load case + real source envelopes.
+"""Figure 1: the real eroded geometry, replayed and hash-verified.
 
-Two panels, and they make different kinds of claim, so they are drawn
-differently and captioned differently.
+Every voxel state drawn here is REGENERATED and then checked against the
+state_occupancy_sha256 recorded in the frozen trajectory record. If a digest
+does not match, the script exits rather than drawing.
 
-(a) SCHEMATIC. The design domain, supports, load, and the erosion sequence.
-    Drawn, not measured. No data is implied.
+This corrects an earlier assumption. The occupancy IS recoverable: the erosion
+is deterministic given (baseline occupancy, sample_id, ranking_seed =
+family_seed(family_id)), and the baseline comes from the hash-pinned
+fea_ml.zip. The earlier replay failed only because it omitted ranking_seed.
 
-(b) REAL GEOMETRY. Source wireframe envelopes for four development-role
-    families that appear in the measured population. Each file is verified by
-    SHA-256 against v2/legacy-audit/source_lineage.csv before it is drawn, so
-    what is plotted is provably the input geometry for that sample_id.
-
-What panel (b) is NOT: the voxelized 64^3 occupancy the solver saw. That is
-recorded in the trajectory records only as state_occupancy_sha256, and the
-historical thickness sampling used a salted hash with no preserved
-PYTHONHASHSEED, so the exact meshes are not regenerable. The caption says so.
+Row 1  one family's trajectory, baseline -> deep, with the verified digest
+Row 2  the same depth band across four different families
 """
 
 from __future__ import annotations
 
-import csv
 import hashlib
+import io
 import json
+import zipfile
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+import sys
+sys.path.insert(0, "/Users/eric/workspace/fea-sasto-v/src")
+from sasto.activity_campaign import geometric_trajectory
+from sasto.g3_trajectory_calibration import family_seed
 
 PAPER = Path("/Users/eric/workspace/sasto-modernization-control/v2/g4/paper")
 FIGS = PAPER / "figures"
-SRC = Path("/Users/eric/workspace/sasto-data/3dwire-546d66a-source")
-LINEAGE = Path("/Users/eric/workspace/sasto-modernization-control/v2"
-               "/legacy-audit/source_lineage.csv")
+ARCHIVE = Path("/Users/eric/workspace/sasto-modernization-control/archives/fea_ml.zip")
+INBOUND = Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
 
-# development-role families present in the measured population
-SAMPLES = ["00001", "00010", "00023", "00044"]
+TRAJ_SAMPLE = "00001"
+ACROSS = ["00005", "00010", "00023", "00044"]
 
 plt.rcParams.update({
     "font.family": "serif", "font.serif": ["DejaVu Serif"], "font.size": 9,
-    "axes.labelsize": 8.5, "axes.titlesize": 9, "xtick.labelsize": 7.5,
-    "ytick.labelsize": 7.5, "legend.fontsize": 8, "axes.linewidth": 0.7,
-    "figure.dpi": 200,
+    "axes.titlesize": 8.5, "figure.dpi": 200,
 })
-INK, ACCENT, MUTED, FILLED = "#1a1a1a", "#b02418", "#5a7fa6", "#c8d4e0"
+ACCENT = "#b02418"
 
 
-def load_lineage() -> dict[str, dict]:
-    with LINEAGE.open() as f:
-        return {r["sample_id"]: r for r in csv.DictReader(f)}
+def record(sample_id: str) -> dict:
+    return json.loads((INBOUND / f"trajectory-development-{sample_id}.json").read_text())
 
 
-def verified_wireframe(sample_id: str, lineage: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Load a wireframe only after its file hash matches the lineage record."""
-    rec = lineage[sample_id]
-    path = SRC / f"{sample_id}.npz"
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != rec["source_file_sha256"]:
-        raise SystemExit(f"hash mismatch for {sample_id}; refusing to plot")
-    d = np.load(path)
-    return d["vertices"], d["lines"]
+def replay(sample_id: str, archive: zipfile.ZipFile) -> tuple[np.ndarray, dict]:
+    """Regenerate the trajectory and return (baseline, {state_index: volume})."""
+    c = record(sample_id)
+    raw = archive.read(f"fea_ml/data/runs_real/{sample_id}/occ.npz")
+    with np.load(io.BytesIO(raw), allow_pickle=False) as loaded:
+        base = loaded["data"].astype(bool)
+    _, states = geometric_trajectory(
+        sample_id=sample_id, volume=base, batch_cap=40,
+        ranking_seed=family_seed(c["family_id"]),
+    )
+    # verify every selected state against its frozen digest
+    for s in c["selected_states"]:
+        si = s["state_index"]
+        got = hashlib.sha256(states[si].tobytes()).hexdigest()
+        if got != s["state_occupancy_sha256"]:
+            raise SystemExit(f"digest mismatch {sample_id} state {si}; refusing to draw")
+    return base, states
 
 
-def draw_schematic(ax) -> None:
-    """Design domain, supports, load, erosion. Drawn, not measured."""
-    ax.set_xlim(-0.15, 3.25)
-    ax.set_ylim(-0.62, 1.35)
-    ax.axis("off")
+def draw_voxels(ax, vol: np.ndarray, title: str, sub: str = "",
+                cutaway: bool = True, removed: np.ndarray | None = None) -> None:
+    """Downsample 64^3 -> 32^3 by max-pooling so matplotlib can draw it.
 
-    def box(x0, frac_removed, label, sub):
-        w, h = 0.78, 0.78
-        ax.add_patch(plt.Rectangle((x0, 0.18), w, h, facecolor=FILLED,
-                                   edgecolor=INK, lw=0.9, zorder=2))
-        # erosion: punch voids scaled by fraction removed
-        rng = np.random.default_rng(7)
-        n = int(frac_removed * 26)
-        for _ in range(n):
-            cx = x0 + 0.10 + rng.uniform(0, w - 0.20)
-            cy = 0.28 + rng.uniform(0, h - 0.20)
-            r = 0.030 + rng.uniform(0, 0.030)
-            ax.add_patch(plt.Circle((cx, cy), r, facecolor="white",
-                                    edgecolor="none", zorder=3))
-        # support hatching along the base
-        ax.plot([x0, x0 + w], [0.18, 0.18], color=INK, lw=1.6, zorder=4)
-        for k in range(7):
-            xs = x0 + 0.055 + k * (w - 0.11) / 6
-            ax.plot([xs, xs - 0.055], [0.18, 0.10], color=INK, lw=0.7, zorder=4)
-        # load arrow on the top face
-        ax.annotate("", xy=(x0 + w / 2, 0.96), xytext=(x0 + w / 2, 1.24),
-                    arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=1.5),
-                    zorder=5)
-        ax.text(x0 + w / 2, 1.28, label, ha="center", va="bottom",
-                fontsize=8, color=ACCENT if label == "F" else INK)
-        ax.text(x0 + w / 2, 0.02, sub, ha="center", va="top", fontsize=7.5,
-                color=INK)
+    A front quadrant is cut away so interior erosion is visible; without it the
+    outer shell hides almost every deletion and the trajectory looks static.
+    Voxels removed relative to the baseline are drawn in red.
+    """
+    def pool(a):
+        return (a[::2, ::2, ::2] | a[1::2, ::2, ::2] | a[::2, 1::2, ::2]
+                | a[::2, ::2, 1::2] | a[1::2, 1::2, ::2] | a[1::2, ::2, 1::2]
+                | a[::2, 1::2, 1::2] | a[1::2, 1::2, 1::2])
 
-    box(0.00, 0.00, "F", "baseline\n0% removed")
-    box(1.15, 0.45, "F", "mid trajectory\n$\\sim$15% removed")
-    box(2.30, 1.00, "F", "deep\n$>$25% removed")
+    v = pool(vol)
+    gone = pool(removed) & ~v if removed is not None else np.zeros_like(v)
 
-    for x0 in (0.86, 2.01):
-        ax.annotate("", xy=(x0 + 0.24, 0.57), xytext=(x0 - 0.04, 0.57),
-                    arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.6))
-    ax.text(1.60, -0.52, "material removed along the trajectory",
-            ha="center", fontsize=7.5, color=MUTED)
+    if cutaway:
+        nx, ny, _ = v.shape
+        keep = np.ones_like(v)
+        keep[nx // 2:, :ny // 2, :] = False
+        v = v & keep
+        gone = gone & keep
 
+    shown = v | gone
+    colors = np.zeros(shown.shape + (4,), dtype=float)
+    zi = np.arange(shown.shape[2])
+    frac = zi / max(1, shown.shape[2] - 1)
+    for k in zi:
+        g = 0.60 + 0.30 * frac[k]
+        colors[:, :, k, :] = (g * 0.78, g * 0.85, g * 0.94, 1.0)
+    colors[gone] = (0.69, 0.14, 0.09, 0.55)
 
-def draw_wire(ax, verts: np.ndarray, lines: np.ndarray, title: str) -> None:
-    segs = [(verts[a], verts[b]) for a, b in lines]
-    ax.add_collection3d(Line3DCollection(segs, colors=INK, linewidths=0.45,
-                                         alpha=0.8))
-    r = 0.80
-    ax.set_xlim(-r, r); ax.set_ylim(-r, r); ax.set_zlim(-0.55, 0.55)
-    ax.set_box_aspect((1, 1, 0.62), zoom=1.42)
-    ax.view_init(elev=26, azim=38)
-    ax.set_title(title, fontsize=8, pad=-4)
+    ax.voxels(shown, facecolors=colors, edgecolor=(0.22, 0.25, 0.30, 0.22),
+              linewidth=0.1, shade=False)
+    ax.set_box_aspect((1, 1, 0.8), zoom=1.30)
+    ax.view_init(elev=22, azim=-52)
+    ax.set_title(title, fontsize=8.5, pad=-1)
+    if sub:
+        ax.text2D(0.5, -0.045, sub, transform=ax.transAxes, ha="center",
+                  fontsize=7, color=ACCENT)
     ax.grid(False)
-    for pane in (ax.xaxis, ax.yaxis, ax.zaxis):
-        pane.set_pane_color((1, 1, 1, 0))
-        pane.line.set_color((1, 1, 1, 0))
-        pane.set_ticks([])
+    ax.set_axis_off()
 
 
 def main() -> int:
     FIGS.mkdir(parents=True, exist_ok=True)
-    lineage = load_lineage()
+    archive = zipfile.ZipFile(ARCHIVE)
+    digest = hashlib.sha256(ARCHIVE.read_bytes()).hexdigest()
+    prov = {"fea_ml_zip_sha256": digest, "verified_states": {}}
 
-    fig = plt.figure(figsize=(6.6, 4.05))
-    gs = fig.add_gridspec(2, 4, height_ratios=[1.0, 0.92], hspace=0.42,
-                          wspace=0.02)
+    fig = plt.figure(figsize=(6.9, 4.5))
+    gs = fig.add_gridspec(2, 4, height_ratios=[1.0, 1.0], hspace=0.30, wspace=0.02)
 
-    ax_s = fig.add_subplot(gs[0, :])
-    draw_schematic(ax_s)
-    ax_s.set_title("(a) load case and erosion trajectory (schematic)",
-                   fontsize=9, pad=2)
+    # row 1: one family down its trajectory
+    base, states = replay(TRAJ_SAMPLE, archive)
+    c = record(TRAJ_SAMPLE)
+    sel = {s["bin_label"]: s for s in c["selected_states"]}
+    n0 = int(base.sum())
 
-    provenance = {}
-    axes_b = []
-    for i, sid in enumerate(SAMPLES):
-        v, l = verified_wireframe(sid, lineage)
-        ax = fig.add_subplot(gs[1, i], projection="3d")
-        draw_wire(ax, v, l, f"sample {sid}")
-        axes_b.append(ax)
-        provenance[sid] = {
-            "source_file_sha256": lineage[sid]["source_file_sha256"],
-            "vertices": int(v.shape[0]),
-            "lines": int(l.shape[0]),
+    ax = fig.add_subplot(gs[0, 0], projection="3d")
+    draw_voxels(ax, base, "baseline", "0.0% removed")
+    prov["verified_states"]["baseline"] = {"sample": TRAJ_SAMPLE, "voxels": n0}
+
+    for col, blabel in enumerate(["(5,10%]", "(15,20%]", ">25%"], start=1):
+        s = sel[blabel]
+        v = states[s["state_index"]]
+        ax = fig.add_subplot(gs[0, col], projection="3d")
+        draw_voxels(ax, v, blabel, f"{s['fraction_removed'] * 100:.1f}% removed",
+                    removed=base)
+        prov["verified_states"][blabel] = {
+            "sample": TRAJ_SAMPLE,
+            "state_index": s["state_index"],
+            "state_occupancy_sha256": s["state_occupancy_sha256"],
+            "fraction_removed": s["fraction_removed"],
         }
 
-    # place the (b) header just above the top of the wireframe row, measured
-    fig.canvas.draw()
-    top_b = max(a.get_position().y1 for a in axes_b)
-    fig.text(0.5, top_b + 0.055, "(b) source envelopes, four development "
-                                 "families (hash-verified input geometry)",
-             ha="center", va="bottom", fontsize=9)
+    # row 2: the deepest band across four other families
+    for col, sid in enumerate(ACROSS):
+        b2, st = replay(sid, archive)
+        cc = record(sid)
+        deep = [s for s in cc["selected_states"] if s["bin_label"] == ">25%"]
+        if not deep:
+            deep = [max(cc["selected_states"], key=lambda s: s["fraction_removed"])]
+        s = deep[0]
+        ax = fig.add_subplot(gs[1, col], projection="3d")
+        draw_voxels(ax, st[s["state_index"]], f"sample {sid}",
+                    f"{s['fraction_removed'] * 100:.1f}% removed", removed=b2)
+        prov["verified_states"][f"deep-{sid}"] = {
+            "sample": sid,
+            "state_index": s["state_index"],
+            "state_occupancy_sha256": s["state_occupancy_sha256"],
+            "fraction_removed": s["fraction_removed"],
+        }
+
+    fig.text(0.5, 0.955, "(a) one design along its erosion trajectory",
+             ha="center", fontsize=9)
+    fig.text(0.5, 0.468, "(b) the deepest band across four other families",
+             ha="center", fontsize=9)
+    fig.text(0.5, 0.012, "front quadrant cut away; red marks material removed "
+                         "relative to the baseline",
+             ha="center", fontsize=7.5, color="#555555")
 
     fig.savefig(FIGS / "benchmark.pdf", bbox_inches="tight")
     plt.close(fig)
-
     (FIGS / "benchmark-provenance.json").write_text(
-        json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+        json.dumps(prov, indent=2, sort_keys=True) + "\n")
     print("wrote benchmark.pdf")
-    for sid, p in provenance.items():
-        print(f"  {sid}  {p['vertices']:>4d} verts  {p['lines']:>4d} lines  "
-              f"{p['source_file_sha256'][:16]}")
+    print(f"  fea_ml.zip sha256 {digest[:16]}")
+    print(f"  verified {len(prov['verified_states'])} states against frozen digests")
     return 0
 
 
