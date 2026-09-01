@@ -41,11 +41,19 @@ from sasto.surrogate_b import (  # noqa: E402
     ResidualSurrogateCNN,
 )
 
-AMENDMENT_SHA = "b6d27643c6a01fa19f37502d17ee5adf7a96aa19d8f8cbc9472d7baf8f030ce4"
+AMENDMENT_SHA = "91b14bdaaa4bead2861a4afb34247851ef610cdc89ff2fc94b5bfe3b3648cb1c"
+
+# Arm registry, per K6_AMENDMENT_09. Each arm isolates one factor.
+ARMS = {
+    "a4-conv":  {"arch": "A", "width": 4,  "ns": "a4-converged-v1",      "cap": 100},
+    "a16-conv": {"arch": "A", "width": 16, "ns": "a16-converged-v1",     "cap": 100},
+    "b-conv":   {"arch": "B", "width": 12, "ns": "b-converged-v1",       "cap": 100},
+    "a4-rep":   {"arch": "A", "width": 4,  "ns": "a4-converged-rep1",    "cap": 100},
+    "b-rep":    {"arch": "B", "width": 12, "ns": "b-converged-rep1",     "cap": 100},
+}
 CACHE = REPO / "artifacts/g2/ingest-cache-v1/79640406e1e0921c-b7066e14c6713eb6"
 OUT = REPO / "artifacts/g2b/ensemble-v1"
 MEMBERS = 5
-MAX_EPOCHS = 20
 PATIENCE = 4
 BATCH = 4          # matches A
 LR = 1e-3          # matches A
@@ -112,9 +120,55 @@ def development_metric(model, data: Packed, device) -> float:
     return float(np.mean(total / count))
 
 
+def build_model(arch: str, width: int):
+    """Architecture A (dense, from the frozen bundle) or B (residual+SE)."""
+    if arch == "A":
+        from sasto.surrogate import DenseSurrogateCNN
+        model = DenseSurrogateCNN(base_channels=width)
+
+        class _AWrap(torch.nn.Module):
+            """Adapt A's dict output to the (mu, dispersion) tuple used here."""
+
+            def __init__(self, inner):
+                super().__init__()
+                self.inner = inner
+
+            @property
+            def parameter_count(self):
+                return self.inner.parameter_count
+
+            def forward(self, x):
+                out = self.inner(x)
+                return out["mean"], out["dispersion"]
+
+        return _AWrap(model)
+    from sasto.surrogate_b import ResidualSurrogateCNN
+    return ResidualSurrogateCNN(width=width)
+
+
 def main() -> None:
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--arm", required=True, choices=sorted(ARMS))
+    ap.add_argument("--device", default=None)
+    args = ap.parse_args()
+    arm = ARMS[args.arm]
+    global OUT, SEED_NAMESPACE_B, MAX_EPOCHS
+    OUT = REPO / "artifacts/g2b" / args.arm
+    SEED_NAMESPACE_B = arm["ns"]
+    MAX_EPOCHS = arm["cap"]
+
+    if args.device:
+        device = torch.device(args.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     OUT.mkdir(parents=True, exist_ok=True)
+    print(f"arm {args.arm}: arch {arm['arch']} width {arm['width']} "
+          f"ns {arm['ns']} cap {arm['cap']}", flush=True)
 
     norm = json.loads((REPO / "artifacts/g2/ensemble-v1/normalization-stats.json").read_text())
     if norm["role"] != "fit":
@@ -142,7 +196,7 @@ def main() -> None:
         if device.type == "mps":
             torch.mps.empty_cache()
 
-        model = ResidualSurrogateCNN().to(device)
+        model = build_model(arm["arch"], arm["width"]).to(device)
         opt = torch.optim.AdamW(model.parameters(), lr=LR)
         best_metric = float("inf")
         best_epoch = 0
@@ -208,9 +262,9 @@ def main() -> None:
 
     summary = {
         "schema_version": "1.0.0",
-        "label": "sasto-v-g2b-residual-ensemble-v1",
+        "label": args.arm,
         "amendment_sha256": AMENDMENT_SHA,
-        "architecture": "residual-se-3dcnn-strided",
+        "architecture": arm["arch"], "width": arm["width"], "epoch_cap": arm["cap"],
         "member_count": MEMBERS,
         "protocol": {
             "optimizer": "AdamW", "lr": LR, "batch_size": BATCH,
