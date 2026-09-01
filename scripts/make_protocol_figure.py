@@ -42,7 +42,7 @@ FS_META = 7.5
 FS_KEY = 7.0
 
 M = 0.014
-FW, FH = 7.2, 2.95
+FW, FH = 7.2, 1.45
 
 plt.rcParams.update({
     "font.family": "sans-serif",
@@ -76,22 +76,15 @@ def stage_box(ax, x, y, w, h, title, lines, accent=False):
 
 def main() -> int:
     FIGS.mkdir(parents=True, exist_ok=True)
-    shelf = json.loads((CONTROL / "k6-amendment-05-shelf-life.json").read_text())
-    span = shelf["experiment_a"]["shelf_life_bins"]["(5,10%]"] * 5
-
     fig = plt.figure(figsize=(FW, FH))
     fig.patch.set_facecolor("white")
 
-    RAIL = M + 0.020
-    LEFT = RAIL + 0.022
+    LEFT = M + 0.022
     RIGHT = 1.0 - M - 0.012
 
     # ---------------- Card A: the pipeline ---------------------------
-    ay1, ay0 = 1.0 - M, 0.505
+    ay1, ay0 = 1.0 - M, M
     card(fig, M, ay0, 1.0 - M, ay1, CARD_A)
-    fig.text(RAIL, (ay0 + ay1) / 2, "Protocol", rotation=90, ha="center",
-             va="center", fontsize=FS_TASK, fontweight="bold")
-
     ax = fig.add_axes((LEFT, ay0 + 0.030, RIGHT - LEFT, ay1 - ay0 - 0.065))
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
     ax.set_axis_off(); ax.patch.set_alpha(0)
@@ -102,11 +95,11 @@ def main() -> int:
     stage_box(ax, xs[0], by, bw, bh, "Fit",
               ["6,643 baselines", "5-member ensemble", "all at 0% removed"])
     stage_box(ax, xs[1], by, bw, bh, "Calibrate",
-              ["1,108 baselines", r"$q$ at $\alpha/J$", "frozen by value"])
+              ["1,108 baselines", r"$q$ at $\alpha/J$", "all at 0% removed"])
     stage_box(ax, xs[2], by, bw, bh, "Erode",
               ["hash-derived path", "no solver calls", "one state per band"])
     stage_box(ax, xs[3], by, bw, bh, "Verify",
-              ["FEA on selected", "10,305 states", "coverage per band"],
+              ["FEA on selected", "10,305 states", "5-35% removed"],
               accent=True)
     for i in range(3):
         ax.add_patch(FancyArrowPatch(
@@ -116,52 +109,6 @@ def main() -> int:
     ax.text(0.5, 0.075, r"bound  $U_j=\mu_j+\kappa_j\sigma_j+q_j$,   "
                         "fitted once and never refreshed",
             ha="center", va="center", fontsize=FS_META, color=INK)
-
-    # ---------------- Card B: the depth axis -------------------------
-    by1, by0 = ay0 - 0.020, M
-    card(fig, M, by0, 1.0 - M, by1, CARD_B)
-    fig.text(RAIL, (by0 + by1) / 2, "Depth", rotation=90, ha="center",
-             va="center", fontsize=FS_TASK, fontweight="bold")
-
-    ax = fig.add_axes((LEFT, by0 + 0.035, RIGHT - LEFT, by1 - by0 - 0.075))
-    ax.set_xlim(-3.5, 40); ax.set_ylim(0, 1)
-    ax.set_axis_off(); ax.patch.set_alpha(0)
-
-    AXY = 0.40
-    ax.annotate("", xy=(37.5, AXY), xytext=(-2.5, AXY),
-                arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.0))
-    for t in (0, 10, 20, 30):
-        ax.plot([t, t], [AXY - 0.055, AXY + 0.055], color=INK, lw=0.9)
-        ax.text(t, AXY - 0.145, f"{t}%", ha="center", va="top", fontsize=FS_KEY)
-    ax.text(39.5, AXY - 0.145, "Material removed", ha="right", va="top",
-            fontsize=FS_META, color=INK)
-
-    # the calibration population: a single point at zero
-    ax.plot([0], [AXY], marker="o", markersize=7, color=STEEL, zorder=5)
-    ax.annotate("Fit and calibration data\n6,643 + 1,108, all at 0%",
-                xy=(0, AXY + 0.06), xytext=(0.5, AXY + 0.50),
-                ha="left", va="bottom", fontsize=FS_KEY, color=STEEL,
-                linespacing=1.3,
-                arrowprops=dict(arrowstyle="-", color=STEEL, lw=0.8))
-
-    # the queried population: a span
-    ax.add_patch(plt.Rectangle((5, AXY + 0.035), 30, 0.075,
-                               facecolor=ACCENT, alpha=0.28, edgecolor="none",
-                               zorder=3))
-    ax.annotate("Bound queried here\n10,305 verified states, 5-35%",
-                xy=(26, AXY + 0.11), xytext=(20.5, AXY + 0.50),
-                ha="left", va="bottom", fontsize=FS_KEY, color=ACCENT,
-                linespacing=1.3,
-                arrowprops=dict(arrowstyle="-", color=ACCENT, lw=0.8))
-
-    # shelf life, read from the frozen record
-    y = AXY - 0.30
-    ax.plot([7.5, 7.5 + span], [y, y], color=INK, lw=1.1)
-    for xx in (7.5, 7.5 + span):
-        ax.plot([xx, xx], [y - 0.05, y + 0.05], color=INK, lw=1.1)
-    ax.text(7.5 + span / 2, y - 0.085,
-            f"Calibration at 5-10% stays valid for {span} more points",
-            ha="center", va="top", fontsize=FS_KEY)
 
     fig.savefig(FIGS / "protocol.pdf", facecolor="white")
     plt.close(fig)
