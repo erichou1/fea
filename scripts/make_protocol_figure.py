@@ -1,18 +1,18 @@
-"""Figure 2: the measurement protocol, drawn as a schematic.
+"""Figure 1: the measurement protocol.
 
-This is an explanatory diagram, not data. It answers two questions the data
-figures cannot: what the procedure actually is, and why the training support
-sits in the wrong place relative to where the bound gets used.
+An explanatory schematic in the sense the peer papers use one (Wang and Ning,
+NeurIPS 2025, Fig. 1; Stanton et al., AISTATS 2023, Fig. 2): it illustrates the
+METHOD. It deliberately draws no geometry. An earlier version rendered cartoon
+house glyphs with randomly placed red squares standing in for removed material,
+which invented data beside a figure showing real hash-verified occupancy, and
+contradicted the measured erosion pattern. Real geometry appears in Figure 2 and
+the measured spatial pattern in the appendix.
 
-Card A  the pipeline, left to right, from fit corpus to per-depth coverage.
-Card B  the depth axis. Everything the model learned sits at 0% removed;
-        everything it is asked about sits between 5% and 35%. The shelf-life
-        bracket shows how far a calibration carries before it stops being
-        valid, which is the paper's headline number.
+Card A  the pipeline, fit to verify
+Card B  the depth axis: where the calibration population sits, where the bound
+        is queried, and how far a calibration carries
 
-Visual language matches the benchmark plate: same pastel cards, same palette,
-same type and spacing scales, fixed canvas, no bbox_inches='tight'.
-All numbers come from the frozen records, not from prose.
+All numbers are read from the frozen records.
 """
 
 from __future__ import annotations
@@ -30,15 +30,11 @@ PAPER = Path("/Users/eric/workspace/sasto-modernization-control/v2/g4/paper")
 FIGS = PAPER / "figures"
 CONTROL = Path("/Users/eric/workspace/sasto-modernization-control/v2/g3")
 
-# palette shared with the benchmark plate
 CARD_A = "#e4edf6"
 CARD_B = "#fbeadf"
 INK = "#1a1a1a"
-WALL = "#8fa3b8"
-PART = "#cbbb98"
-ROOF = "#8a6a55"
-REMOVED = "#c0392b"
 STEEL = "#41668c"
+ACCENT = "#b02418"
 
 FS_TASK = 8.5
 FS_HEAD = 8.0
@@ -46,7 +42,7 @@ FS_META = 7.5
 FS_KEY = 7.0
 
 M = 0.014
-FW, FH = 7.2, 3.55
+FW, FH = 7.2, 2.95
 
 plt.rcParams.update({
     "font.family": "sans-serif",
@@ -66,53 +62,29 @@ def card(fig, x0, y0, x1, y1, color):
     return bg
 
 
-def house(ax, x, y, w, h, removed=0.0, seed=0):
-    """Small schematic house glyph. Decorative, so it is drawn not replayed."""
-    body_h = h * 0.58
-    ax.add_patch(plt.Rectangle((x, y), w, body_h, facecolor=WALL,
-                               edgecolor="none", zorder=2))
-    ax.add_patch(plt.Polygon([[x - w * 0.08, y + body_h],
-                              [x + w / 2, y + h],
-                              [x + w * 1.08, y + body_h]],
-                             facecolor=ROOF, edgecolor="none", zorder=2))
-    if removed > 0:
-        rng = np.random.default_rng(seed)
-        for _ in range(int(removed * 26)):
-            bx = x + rng.uniform(0.06, 0.88) * w
-            by = y + rng.uniform(0.08, 0.82) * body_h
-            ax.add_patch(plt.Rectangle((bx, by), w * 0.09, body_h * 0.13,
-                                       facecolor=REMOVED, edgecolor="none",
-                                       alpha=0.85, zorder=3))
-
-
 def stage_box(ax, x, y, w, h, title, lines, accent=False):
     ax.add_patch(FancyBboxPatch(
         (x, y), w, h, boxstyle="round,pad=0,rounding_size=0.02",
         facecolor="white", edgecolor=STEEL if accent else "#c3ced9",
         linewidth=1.1 if accent else 0.8, zorder=2))
-    ax.text(x + w / 2, y + h - 0.055, title, ha="center", va="top",
+    ax.text(x + w / 2, y + h - 0.10, title, ha="center", va="top",
             fontsize=FS_HEAD, fontweight="bold", zorder=3)
     for i, ln in enumerate(lines):
-        ax.text(x + w / 2, y + h - 0.135 - i * 0.075, ln, ha="center",
+        ax.text(x + w / 2, y + h - 0.28 - i * 0.155, ln, ha="center",
                 va="top", fontsize=FS_KEY, color="#40505f", zorder=3)
-
-
-def arrow(ax, x0, y0, x1, y1, color="#7b8b9a", lw=1.3):
-    ax.add_patch(FancyArrowPatch((x0, y0), (x1, y1), arrowstyle="-|>",
-                                 mutation_scale=9, color=color, lw=lw,
-                                 shrinkA=0, shrinkB=0, zorder=4))
 
 
 def main() -> int:
     FIGS.mkdir(parents=True, exist_ok=True)
     shelf = json.loads((CONTROL / "k6-amendment-05-shelf-life.json").read_text())
-    life = shelf["experiment_a"]["shelf_life_bins"]
+    span = shelf["experiment_a"]["shelf_life_bins"]["(5,10%]"] * 5
 
     fig = plt.figure(figsize=(FW, FH))
     fig.patch.set_facecolor("white")
 
     RAIL = M + 0.020
-    LEFT = RAIL + 0.020
+    LEFT = RAIL + 0.022
+    RIGHT = 1.0 - M - 0.012
 
     # ---------------- Card A: the pipeline ---------------------------
     ay1, ay0 = 1.0 - M, 0.505
@@ -120,72 +92,75 @@ def main() -> int:
     fig.text(RAIL, (ay0 + ay1) / 2, "Protocol", rotation=90, ha="center",
              va="center", fontsize=FS_TASK, fontweight="bold")
 
-    ax = fig.add_axes((LEFT, ay0 + 0.02, 1.0 - M - 0.012 - LEFT, ay1 - ay0 - 0.05))
+    ax = fig.add_axes((LEFT, ay0 + 0.030, RIGHT - LEFT, ay1 - ay0 - 0.065))
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-    ax.set_axis_off()
-    ax.patch.set_alpha(0)
+    ax.set_axis_off(); ax.patch.set_alpha(0)
 
-    bw, bh, by = 0.185, 0.62, 0.20
+    bw, bh, by = 0.205, 0.70, 0.24
     gap = (1.0 - 4 * bw) / 3
     xs = [i * (bw + gap) for i in range(4)]
-
     stage_box(ax, xs[0], by, bw, bh, "Fit",
               ["6,643 baselines", "5-member ensemble", "all at 0% removed"])
     stage_box(ax, xs[1], by, bw, bh, "Calibrate",
               ["1,108 baselines", r"$q$ at $\alpha/J$", "frozen by value"])
     stage_box(ax, xs[2], by, bw, bh, "Erode",
               ["hash-derived path", "no solver calls", "one state per band"])
-    stage_box(ax, xs[3], by, bw, bh, "Verify", ["FEA on selected", "10,305 states",
-                                                "coverage per band"], accent=True)
+    stage_box(ax, xs[3], by, bw, bh, "Verify",
+              ["FEA on selected", "10,305 states", "coverage per band"],
+              accent=True)
     for i in range(3):
-        arrow(ax, xs[i] + bw + 0.008, by + bh / 2, xs[i + 1] - 0.008, by + bh / 2)
-
-    ax.text(0.5, 0.055, r"bound  $U_j=\mu_j+\kappa_j\sigma_j+q_j$   "
-                        "fitted once, never refreshed",
+        ax.add_patch(FancyArrowPatch(
+            (xs[i] + bw + 0.008, by + bh / 2), (xs[i + 1] - 0.008, by + bh / 2),
+            arrowstyle="-|>", mutation_scale=9, color="#7b8b9a", lw=1.3,
+            shrinkA=0, shrinkB=0, zorder=4))
+    ax.text(0.5, 0.075, r"bound  $U_j=\mu_j+\kappa_j\sigma_j+q_j$,   "
+                        "fitted once and never refreshed",
             ha="center", va="center", fontsize=FS_META, color=INK)
 
     # ---------------- Card B: the depth axis -------------------------
-    by1, by0 = ay0 - 0.018, M
+    by1, by0 = ay0 - 0.020, M
     card(fig, M, by0, 1.0 - M, by1, CARD_B)
     fig.text(RAIL, (by0 + by1) / 2, "Depth", rotation=90, ha="center",
              va="center", fontsize=FS_TASK, fontweight="bold")
 
-    ax = fig.add_axes((LEFT, by0 + 0.03, 1.0 - M - 0.012 - LEFT, by1 - by0 - 0.06))
-    ax.set_xlim(-3, 42); ax.set_ylim(0, 1)
-    ax.set_axis_off()
-    ax.patch.set_alpha(0)
+    ax = fig.add_axes((LEFT, by0 + 0.035, RIGHT - LEFT, by1 - by0 - 0.075))
+    ax.set_xlim(-3.5, 40); ax.set_ylim(0, 1)
+    ax.set_axis_off(); ax.patch.set_alpha(0)
 
-    AXY = 0.34
-    ax.annotate("", xy=(35.5, AXY), xytext=(-2, AXY),
+    AXY = 0.40
+    ax.annotate("", xy=(37.5, AXY), xytext=(-2.5, AXY),
                 arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.0))
     for t in (0, 10, 20, 30):
-        ax.plot([t, t], [AXY - 0.035, AXY + 0.035], color=INK, lw=0.9)
-        ax.text(t, AXY - 0.10, f"{t}%", ha="center", va="top", fontsize=FS_KEY)
-    ax.text(41.5, AXY - 0.10, "Material removed", ha="right", va="top",
+        ax.plot([t, t], [AXY - 0.055, AXY + 0.055], color=INK, lw=0.9)
+        ax.text(t, AXY - 0.145, f"{t}%", ha="center", va="top", fontsize=FS_KEY)
+    ax.text(39.5, AXY - 0.145, "Material removed", ha="right", va="top",
             fontsize=FS_META, color=INK)
 
-    # everything the model saw sits at zero
-    house(ax, -1.6, AXY + 0.10, 3.2, 0.34, removed=0.0)
-    ax.text(0, AXY + 0.52, "All training and\ncalibration data",
-            ha="center", va="bottom", fontsize=FS_KEY, color=STEEL,
-            linespacing=1.25)
+    # the calibration population: a single point at zero
+    ax.plot([0], [AXY], marker="o", markersize=7, color=STEEL, zorder=5)
+    ax.annotate("Fit and calibration data\n6,643 + 1,108, all at 0%",
+                xy=(0, AXY + 0.06), xytext=(0.5, AXY + 0.50),
+                ha="left", va="bottom", fontsize=FS_KEY, color=STEEL,
+                linespacing=1.3,
+                arrowprops=dict(arrowstyle="-", color=STEEL, lw=0.8))
 
-    # where the bound is actually used
-    for i, (d, r) in enumerate([(7.5, 0.10), (17.5, 0.35), (30, 0.75)]):
-        house(ax, d - 1.6, AXY + 0.10, 3.2, 0.34, removed=r, seed=i + 1)
-    ax.annotate("", xy=(34.5, AXY + 0.05), xytext=(5.0, AXY + 0.05),
-                arrowprops=dict(arrowstyle="-|>", color=REMOVED, lw=1.2))
-    ax.text(19.8, AXY + 0.60, "The bound is used here",
-            ha="center", va="bottom", fontsize=FS_KEY, color=REMOVED)
+    # the queried population: a span
+    ax.add_patch(plt.Rectangle((5, AXY + 0.035), 30, 0.075,
+                               facecolor=ACCENT, alpha=0.28, edgecolor="none",
+                               zorder=3))
+    ax.annotate("Bound queried here\n10,305 verified states, 5-35%",
+                xy=(26, AXY + 0.11), xytext=(20.5, AXY + 0.50),
+                ha="left", va="bottom", fontsize=FS_KEY, color=ACCENT,
+                linespacing=1.3,
+                arrowprops=dict(arrowstyle="-", color=ACCENT, lw=0.8))
 
-    # shelf life, read off the frozen record
-    span = life["(5,10%]"] * 5
-    y = AXY - 0.20
+    # shelf life, read from the frozen record
+    y = AXY - 0.30
     ax.plot([7.5, 7.5 + span], [y, y], color=INK, lw=1.1)
     for xx in (7.5, 7.5 + span):
-        ax.plot([xx, xx], [y - 0.045, y + 0.045], color=INK, lw=1.1)
-    ax.text(7.5 + span / 2, y - 0.075,
-            f"Shelf life at 5-10%: {span} more points",
+        ax.plot([xx, xx], [y - 0.05, y + 0.05], color=INK, lw=1.1)
+    ax.text(7.5 + span / 2, y - 0.085,
+            f"Calibration at 5-10% stays valid for {span} more points",
             ha="center", va="top", fontsize=FS_KEY)
 
     fig.savefig(FIGS / "protocol.pdf", facecolor="white")
