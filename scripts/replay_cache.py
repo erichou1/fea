@@ -58,6 +58,8 @@ def replay_family(record_path: str) -> dict:
     )
 
     states, mismatched = [], 0
+    baseline_sha = hashlib.sha256(np.ascontiguousarray(occupancy).tobytes()).hexdigest()
+    seed = family_seed(family_id)
     for state in selected:
         volume = volumes.get(state["state_index"])
         if volume is None:
@@ -70,6 +72,8 @@ def replay_family(record_path: str) -> dict:
             continue
         states.append({
             "family_id": family_id, "sample_id": sample_id,
+            "ranking_seed": seed, "baseline_occupancy_sha256": baseline_sha,
+            "batch_cap": 40,
             "state_index": state["state_index"], "bin_label": state["bin_label"],
             "fraction_removed": state["fraction_removed"],
             "state_occupancy_sha256": digest,
@@ -86,6 +90,20 @@ def main() -> None:
         raise SystemExit("source archive digest does not match the frozen pin")
     OUT.mkdir(parents=True, exist_ok=True)
     out_path = OUT / "replay-cache.jsonl"
+    # Cache identity: refuse to resume a cache built by different code or params.
+    replayer_sha = hashlib.sha256(
+        (REPO / "src/sasto/activity_campaign.py").read_bytes()).hexdigest()
+    header = {"replayer_sha256": replayer_sha, "batch_cap": 40,
+              "archive_sha256": ARCHIVE_SHA, "format": "packed-bits-uint8-C-order"}
+    header_path = OUT / "cache-identity.json"
+    if header_path.exists():
+        prior = json.loads(header_path.read_text())
+        if prior != header:
+            raise SystemExit(
+                f"cache identity mismatch; refusing to resume\n  on disk: {prior}\n  now:     {header}")
+    else:
+        header_path.write_text(json.dumps(header, indent=1, sort_keys=True))
+
     done_ids = set()
     if out_path.exists():
         with open(out_path) as f:
