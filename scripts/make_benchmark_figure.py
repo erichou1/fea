@@ -262,7 +262,7 @@ def main() -> int:
                 "state_occupancy_sha256": s["state_occupancy_sha256"],
                 "fraction_removed": s["fraction_removed"]}
 
-    for yy, title in ((row_y[0], "Cutaway"), (row_y[1], "Interior only")):
+    for yy, title in ((row_y[0], "cutaway"), (row_y[1], "interior only")):
         fig.text(GUT_X + GUT_W, yy + PH / 2, title, ha="right", va="center",
                  fontsize=FS_META, color="#333333")
 

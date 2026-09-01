@@ -129,13 +129,13 @@ def main() -> int:
     gap = (1.0 - 4 * bw) / 3
     xs = [i * (bw + gap) for i in range(4)]
 
-    stage_box(ax, xs[0], by, bw, bh, "Fit",
+    stage_box(ax, xs[0], by, bw, bh, "fit",
               ["6,643 baselines", "5-member ensemble", "all at 0% removed"])
-    stage_box(ax, xs[1], by, bw, bh, "Calibrate",
+    stage_box(ax, xs[1], by, bw, bh, "calibrate",
               ["1,108 baselines", r"$q$ at $\alpha/J$", "frozen by value"])
-    stage_box(ax, xs[2], by, bw, bh, "Erode",
+    stage_box(ax, xs[2], by, bw, bh, "erode",
               ["hash-derived path", "no solver calls", "one state per band"])
-    stage_box(ax, xs[3], by, bw, bh, "Verify", ["FEA on selected", "10,305 states",
+    stage_box(ax, xs[3], by, bw, bh, "verify", ["FEA on selected", "10,305 states",
                                                 "coverage per band"], accent=True)
     for i in range(3):
         arrow(ax, xs[i] + bw + 0.008, by + bh / 2, xs[i + 1] - 0.008, by + bh / 2)

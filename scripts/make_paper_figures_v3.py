@@ -107,53 +107,43 @@ def fig_coverage(rep) -> None:
 
 
 def fig_shelf(shelf) -> None:
+    """Transfer matrix only.
+
+    The bar panel that used to sit beside this was a second reading of the
+    matrix's own upper triangle, so it was removed.
+    """
     m = shelf["experiment_a"]["matrix"]
     life = shelf["experiment_a"]["shelf_life_bins"]
     grid = np.array([[m[bi][bj]["coverage"] for bj in BINS] for bi in BINS])
     lower = np.array([[m[bi][bj]["wilson_lower"] for bj in BINS] for bi in BINS])
 
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.85),
-                             gridspec_kw={"width_ratios": [1.30, 1]})
-
-    ax = axes[0]
+    fig, ax = plt.subplots(figsize=(4.3, 3.1))
     im = ax.imshow(grid, cmap="RdYlGn", vmin=0.60, vmax=1.0, aspect="auto")
     for i in range(len(BINS)):
         for j in range(len(BINS)):
             valid = lower[i, j] >= 0.95
             ax.text(j, i, f"{grid[i, j]:.3f}", ha="center", va="center",
-                    fontsize=6.9, color="black",
+                    fontsize=7.0, color="black",
                     fontweight="bold" if valid else "normal")
             if valid:
                 ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
                                            edgecolor="black", lw=1.3))
+    # shelf life annotated on the matrix itself
+    for i, b in enumerate(BINS[:-1]):
+        ax.text(len(BINS) - 0.35, i, f"{life[b] * 5}", ha="left", va="center",
+                fontsize=7.2, color=MUTED)
+    ax.text(len(BINS) - 0.35, -0.72, "shelf\nlife", ha="left", va="center",
+            fontsize=7.0, color=MUTED, linespacing=1.15)
+
     ax.set_xticks(range(len(BINS))); ax.set_xticklabels(SHORT)
     ax.set_yticks(range(len(BINS))); ax.set_yticklabels(SHORT)
     ax.set_xlabel("evaluated at (percent removed)")
-    ax.set_ylabel("calibrated at")
-    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
+    ax.set_ylabel("calibrated at (percent removed)")
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.10)
     cb.ax.tick_params(labelsize=7)
     cb.outline.set_linewidth(0.6)
-    panel_label(ax, "(a)")
-
-    ax = axes[1]
-    origins = BINS[:-1]
-    vals = [life[b] * 5 for b in origins]
-    y = np.arange(len(origins))
-    ax.barh(y, vals, color=MUTED, height=0.58)
-    for yi, v in enumerate(vals):
-        ax.text(v + 0.45, yi, f"{v}", va="center", fontsize=8,
-                color=INK if v else ACCENT)
-    ax.set_yticks(y); ax.set_yticklabels(SHORT[:-1])
-    ax.invert_yaxis()
-    ax.set_xlabel("further removal before failure (points)")
-    ax.set_ylabel("calibrated at")
-    ax.set_xlim(0, 17.5)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="x", lw=0.4, alpha=0.30)
-    ax.set_axisbelow(True)
-    panel_label(ax, "(b)")
-
-    fig.tight_layout(pad=0.4, w_pad=2.0)
+    cb.set_label("coverage", fontsize=8)
+    fig.tight_layout(pad=0.4)
     fig.savefig(FIGS / "shelf-life.pdf", bbox_inches="tight")
     plt.close(fig)
     print("wrote shelf-life.pdf")
@@ -243,45 +233,49 @@ def fig_width(arms) -> None:
     print("wrote width.pdf")
 
 
-def fig_mechanism(mech) -> None:
-    """Bias inversion, and sigma growth against error growth."""
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.75))
-    x = np.arange(len(BINS))
+def fig_spatial(sp) -> None:
+    """Where the optimizer removes material. Descriptive, amendment 06."""
+    h = [x for x in sp["removal_by_height"] if x is not None]
+    pr = [x for x in sp["removal_by_perimeter_distance"] if x is not None]
+    nb = sp["removal_by_neighbour_count"]
+    cnt = sp["voxels_by_neighbour_count"]
+
+    fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.35))
 
     ax = axes[0]
-    ax.axhspan(-0.35, 0.0, color="#dde6ee", zorder=0)
-    ax.axhline(0.0, color=INK, lw=0.9, zorder=2)
-    ax.text(0.05, -0.335, "over-predicts (conservative)", fontsize=7.2,
-            color="#456", va="bottom", transform=ax.get_yaxis_transform())
-    for t in TARGETS:
-        vals = [mech["mean_error"][t][b] for b in BINS]
-        ax.plot(x, vals, "o-", color=TCOLOR[t], lw=1.6, markersize=4.2,
-                label=TARGET_LABEL[t])
-    tidy(ax, "mean residual (normalized log)")
-    ax.set_xlim(-0.35, len(BINS) - 0.65)
-    ax.legend(frameon=False, loc="upper left", handlelength=1.7,
-              borderaxespad=0.3)
+    y = np.linspace(0, 1, len(h))
+    ax.plot(h, y, "o-", color=ACCENT, lw=1.6, markersize=3.8)
+    ax.set_xlabel("fraction removed")
+    ax.set_ylabel("normalized height")
+    ax.set_xlim(0, max(h) * 1.15)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(lw=0.4, alpha=0.30); ax.set_axisbelow(True)
     panel_label(ax, "(a)")
 
     ax = axes[1]
-    for t in TARGETS:
-        e = [mech["median_abs_error"][t][b] for b in BINS]
-        s = [mech["median_sigma"][t][b] for b in BINS]
-        ax.plot(x, np.array(e) / e[0], "o-", color=TCOLOR[t], lw=1.6,
-                markersize=4.2, label=f"{TARGET_LABEL[t]}, error")
-        ax.plot(x, np.array(s) / s[0], "s:", color=TCOLOR[t], lw=1.4,
-                markersize=3.8, alpha=0.85)
-    ax.axhline(1.0, color=INK, ls="--", lw=0.9)
-    tidy(ax, "growth relative to shallowest bin")
-    ax.set_xlim(-0.35, len(BINS) - 0.65)
-    ax.text(0.03, 0.95, "solid: error    dotted: $\\sigma$",
-            transform=ax.transAxes, fontsize=7.4, va="top")
+    xs = np.arange(len(pr))
+    ax.plot(xs, pr, "o-", color=MUTED, lw=1.6, markersize=3.8)
+    ax.set_xlabel("voxels from footprint edge")
+    ax.set_ylabel("fraction removed")
+    ax.set_xticks(xs)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="y", lw=0.4, alpha=0.30); ax.set_axisbelow(True)
     panel_label(ax, "(b)")
 
-    fig.tight_layout(pad=0.4, w_pad=2.0)
-    fig.savefig(FIGS / "mechanism.pdf", bbox_inches="tight")
+    ax = axes[2]
+    ks = [k for k in range(7) if cnt[k] > 0 and nb[k] is not None]
+    ax.bar(ks, [nb[k] for k in ks], color="#7a8b5a", width=0.66)
+    ax.set_xlabel("baseline 6-neighbour count")
+    ax.set_ylabel("fraction removed")
+    ax.set_xticks(ks)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="y", lw=0.4, alpha=0.30); ax.set_axisbelow(True)
+    panel_label(ax, "(c)")
+
+    fig.tight_layout(pad=0.4, w_pad=1.7)
+    fig.savefig(FIGS / "spatial.pdf", bbox_inches="tight")
     plt.close(fig)
-    print("wrote mechanism.pdf")
+    print("wrote spatial.pdf")
 
 
 def main() -> int:
@@ -296,11 +290,11 @@ def main() -> int:
     fig_per_target(rep)
     fig_width(arms)
 
-    mech_path = CONTROL / "k6-depth-mechanism.json"
-    if mech_path.exists():
-        fig_mechanism(json.loads(mech_path.read_text()))
+    sp_path = CONTROL / "k6-spatial-pattern.json"
+    if sp_path.exists():
+        fig_spatial(json.loads(sp_path.read_text()))
     else:
-        print("skipped mechanism.pdf (no frozen mechanism record)")
+        print("skipped spatial.pdf (amendment 06 record not present yet)")
     return 0
 
 
