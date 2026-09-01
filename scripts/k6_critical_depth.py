@@ -1,4 +1,9 @@
-"""Amendment 12: the critical calibration depth d*.
+"""Amendment 12/13: quantile drift along the trajectory.
+
+NOTE: amendment 13 WITHDREW the "critical depth d*" framing. The quantile
+drifts smoothly (ratios 1.04, 1.26, 1.83, 2.49, 1.17, 1.09); there is no
+changepoint. The tail is now split to 40-45 and 45+ because amendment 12
+repeated the open-ended-bin mistake that amendment 11 retracted.
 
 Re-bins the open-ended >25% tail into 25-30, 30-35, 35+ and recomputes the
 full calibration transfer matrix. Uses only frozen artifacts: no retraining,
@@ -38,8 +43,8 @@ KEY = {"compliance": "compliance_j", "max_von_mises": "max_gauss_von_mises_pa",
 ALPHA = 0.05
 J = 3
 ALPHA_J = ALPHA / J
-EDGES = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 1.01]
-LBL = ["5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35+"]
+EDGES = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 1.01]
+LBL = ["5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45+"]
 MIN_CAL = 30
 
 
