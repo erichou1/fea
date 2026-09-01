@@ -32,9 +32,9 @@ CONTROL = Path("/Users/eric/workspace/sasto-modernization-control/v2/g3")
 SHORT = ["5-10", "10-15", "15-20", "20-25", ">25"]
 BINS = ["(5,10%]", "(10,15%]", "(15,20%]", "(20,25%]", ">25%"]
 TARGETS = ["compliance", "max_displacement", "max_von_mises"]
-TARGET_LABEL = {"compliance": "compliance",
-                "max_displacement": "max displacement",
-                "max_von_mises": "max von Mises"}
+TARGET_LABEL = {"compliance": "Compliance",
+                "max_displacement": "Max displacement",
+                "max_von_mises": "Max von Mises"}
 
 plt.rcParams.update({
     "font.family": "serif", "font.serif": ["DejaVu Serif"], "font.size": 9,
@@ -58,7 +58,7 @@ def wilson(x, n, two_sided=True):
     return float((c - r) / d), float((c + r) / d)
 
 
-def tidy(ax, ylab: str, xlab: str = "material removed (percent)") -> None:
+def tidy(ax, ylab: str, xlab: str = "Material removed (percent)") -> None:
     ax.set_xticks(range(len(BINS)))
     ax.set_xticklabels(SHORT)
     ax.set_xlabel(xlab)
@@ -87,9 +87,9 @@ def fig_coverage(rep) -> None:
     fig, ax = plt.subplots(figsize=(4.7, 2.75))
     ax.axhspan(0.55, 0.95, color=FAIL_BG, zorder=0)
     ax.axhline(0.95, color=INK, ls="--", lw=0.9, zorder=2)
-    ax.text(0.06, 0.9515, "target coverage 0.95", fontsize=7.4, va="bottom",
+    ax.text(0.06, 0.9515, "Target coverage 0.95", fontsize=7.4, va="bottom",
             transform=ax.get_yaxis_transform())
-    ax.text(0.06, 0.573, "below target", fontsize=7.4, color="#8c4038",
+    ax.text(0.06, 0.573, "Below target", fontsize=7.4, color="#8c4038",
             va="bottom", transform=ax.get_yaxis_transform())
 
     ax.fill_between(x, lo, hi, color=BAND, zorder=2, lw=0)
@@ -97,7 +97,7 @@ def fig_coverage(rep) -> None:
     ax.annotate(f"{cov[-1]:.3f}", (x[-1], cov[-1]), textcoords="offset points",
                 xytext=(-10, -14), ha="right", fontsize=8, color=ACCENT)
 
-    tidy(ax, "joint coverage")
+    tidy(ax, "Joint coverage")
     ax.set_ylim(0.55, 1.02)
     ax.set_xlim(-0.35, len(BINS) - 0.65)
     fig.tight_layout(pad=0.4)
@@ -132,17 +132,17 @@ def fig_shelf(shelf) -> None:
     for i, b in enumerate(BINS[:-1]):
         ax.text(len(BINS) - 0.35, i, f"{life[b] * 5}", ha="left", va="center",
                 fontsize=7.2, color=MUTED)
-    ax.text(len(BINS) - 0.35, -0.72, "shelf\nlife", ha="left", va="center",
+    ax.text(len(BINS) - 0.35, -0.72, "Shelf\nlife", ha="left", va="center",
             fontsize=7.0, color=MUTED, linespacing=1.15)
 
     ax.set_xticks(range(len(BINS))); ax.set_xticklabels(SHORT)
     ax.set_yticks(range(len(BINS))); ax.set_yticklabels(SHORT)
-    ax.set_xlabel("evaluated at (percent removed)")
-    ax.set_ylabel("calibrated at (percent removed)")
+    ax.set_xlabel("Evaluated at (percent removed)")
+    ax.set_ylabel("Calibrated at (percent removed)")
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.10)
     cb.ax.tick_params(labelsize=7)
     cb.outline.set_linewidth(0.6)
-    cb.set_label("coverage", fontsize=8)
+    cb.set_label("Coverage", fontsize=8)
     fig.tight_layout(pad=0.4)
     fig.savefig(FIGS / "shelf-life.pdf", bbox_inches="tight")
     plt.close(fig)
@@ -158,15 +158,15 @@ def fig_auc(shelf) -> None:
     fig, ax = plt.subplots(figsize=(4.7, 2.75))
     ax.axhspan(0.28, 0.5, color=FAIL_BG, zorder=0)
     ax.axhline(0.5, color=INK, ls="--", lw=0.9, zorder=2)
-    ax.text(0.05, 0.507, "chance", fontsize=7.4, va="bottom",
+    ax.text(0.05, 0.507, "Chance", fontsize=7.4, va="bottom",
             transform=ax.get_yaxis_transform())
-    ax.text(0.05, 0.293, "worse than chance", fontsize=7.4, color="#8c4038",
+    ax.text(0.05, 0.293, "Worse than chance", fontsize=7.4, color="#8c4038",
             va="bottom", transform=ax.get_yaxis_transform())
 
     ax.plot(x, mu, "o-", color=ACCENT, lw=1.7, markersize=4.6, zorder=4,
-            label=r"predicted mean $\mu$")
+            label=r"Predicted mean $\mu$")
     ax.plot(x, sig, "s--", color=MUTED, lw=1.7, markersize=4.4, zorder=4,
-            label=r"ensemble spread $\sigma$")
+            label=r"Ensemble spread $\sigma$")
     ax.annotate(f"{mu[-1]:.3f}", (x[-1], mu[-1]), textcoords="offset points",
                 xytext=(-7, 7), ha="right", fontsize=8, color=ACCENT)
     ax.annotate(f"{sig[-1]:.3f}", (x[-1], sig[-1]), textcoords="offset points",
@@ -192,13 +192,13 @@ def fig_per_target(rep) -> None:
     x = np.arange(len(BINS))
     ax.axhspan(0.45, 0.95, color=FAIL_BG, zorder=0)
     ax.axhline(0.95, color=INK, ls="--", lw=0.9, zorder=2)
-    ax.text(0.05, 0.9525, "target 0.95", fontsize=7.4, va="bottom",
+    ax.text(0.05, 0.9525, "Target 0.95", fontsize=7.4, va="bottom",
             transform=ax.get_yaxis_transform())
     for t in TARGETS:
         vals = [per[b]["per_target_covered"][t] / per[b]["n"] for b in BINS]
         ax.plot(x, vals, "o-", color=TCOLOR[t], lw=1.6, markersize=4.2,
                 zorder=4, label=TARGET_LABEL[t])
-    tidy(ax, "per-target coverage")
+    tidy(ax, "Per-target coverage")
     ax.set_ylim(0.45, 1.02)
     ax.set_xlim(-0.35, len(BINS) - 0.55)
     ax.legend(frameon=False, loc="lower left", handlelength=1.7,
@@ -223,7 +223,7 @@ def fig_width(arms) -> None:
         vals = [q[b][t] for b in BINS]
         ax.plot(x, vals, "o-", color=TCOLOR[t], lw=1.6, markersize=4.2,
                 label=TARGET_LABEL[t])
-    tidy(ax, "depth-conditional $q$ (normalized log)")
+    tidy(ax, "Depth-conditional $q$ (normalized log)")
     ax.set_xlim(-0.35, len(BINS) - 0.55)
     ax.legend(frameon=False, loc="upper left", handlelength=1.7,
               borderaxespad=0.3)
@@ -245,8 +245,8 @@ def fig_spatial(sp) -> None:
     ax = axes[0]
     y = np.linspace(0, 1, len(h))
     ax.plot(h, y, "o-", color=ACCENT, lw=1.6, markersize=3.8)
-    ax.set_xlabel("fraction removed")
-    ax.set_ylabel("normalized height")
+    ax.set_xlabel("Fraction removed")
+    ax.set_ylabel("Normalized height")
     ax.set_xlim(0, max(h) * 1.15)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(lw=0.4, alpha=0.30); ax.set_axisbelow(True)
@@ -255,8 +255,8 @@ def fig_spatial(sp) -> None:
     ax = axes[1]
     xs = np.arange(len(pr))
     ax.plot(xs, pr, "o-", color=MUTED, lw=1.6, markersize=3.8)
-    ax.set_xlabel("voxels from footprint edge")
-    ax.set_ylabel("fraction removed")
+    ax.set_xlabel("Voxels from footprint edge")
+    ax.set_ylabel("Fraction removed")
     ax.set_xticks(xs)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", lw=0.4, alpha=0.30); ax.set_axisbelow(True)
@@ -265,8 +265,8 @@ def fig_spatial(sp) -> None:
     ax = axes[2]
     ks = [k for k in range(7) if cnt[k] > 0 and nb[k] is not None]
     ax.bar(ks, [nb[k] for k in ks], color="#7a8b5a", width=0.66)
-    ax.set_xlabel("baseline 6-neighbour count")
-    ax.set_ylabel("fraction removed")
+    ax.set_xlabel("Baseline 6-neighbour count")
+    ax.set_ylabel("Fraction removed")
     ax.set_xticks(ks)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", lw=0.4, alpha=0.30); ax.set_axisbelow(True)

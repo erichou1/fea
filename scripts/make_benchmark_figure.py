@@ -54,10 +54,10 @@ ACROSS = ["00005", "00010", "00023", "00035"]
 DEPTHS = ["(5,10%]", "(15,20%]", ">25%"]
 
 PARTS = {
-    1: ("exterior walls", "#8fa3b8"),
-    2: ("interior partitions", "#cbbb98"),
-    3: ("roof", "#8a6a55"),
-    4: ("floor slabs", "#b6bcc2"),
+    1: ("Exterior walls", "#8fa3b8"),
+    2: ("Interior partitions", "#cbbb98"),
+    3: ("Roof", "#8a6a55"),
+    4: ("Floor slabs", "#b6bcc2"),
 }
 REMOVED = "#c0392b"
 
@@ -262,7 +262,7 @@ def main() -> int:
                 "state_occupancy_sha256": s["state_occupancy_sha256"],
                 "fraction_removed": s["fraction_removed"]}
 
-    for yy, title in ((row_y[0], "cutaway"), (row_y[1], "interior only")):
+    for yy, title in ((row_y[0], "Cutaway"), (row_y[1], "Interior only")):
         fig.text(GUT_X + GUT_W, yy + PH / 2, title, ha="right", va="center",
                  fontsize=FS_META, color="#333333")
 
@@ -278,7 +278,7 @@ def main() -> int:
         deep = max(cc["selected_states"], key=lambda s: s["fraction_removed"])
         v = st[deep["state_index"]]
         px = lat_b_x + ci * (PW + SP_COL)
-        fig.text(px + PW / 2, by1 - SP_HEAD, f"sample {sid}", ha="center",
+        fig.text(px + PW / 2, by1 - SP_HEAD, f"Sample {sid}", ha="center",
                  va="center", fontsize=FS_HEAD)
         fig.text(px + PW / 2, by1 - SP_HEAD - SP_META,
                  f"{deep['fraction_removed'] * 100:.1f}% removed",
@@ -297,7 +297,7 @@ def main() -> int:
     handles = [Patch(facecolor=cl, edgecolor="none", label=nm)
                for nm, cl in PARTS.values()]
     handles.append(Patch(facecolor=REMOVED, alpha=0.75, edgecolor="none",
-                         label="removed by erosion"))
+                         label="Removed by erosion"))
     fig.legend(handles=handles, loc="center", ncol=5,
                bbox_to_anchor=(0.5, by0 + (LEG_H + SP_PAD) / 2),
                frameon=False, fontsize=FS_KEY, handlelength=0.85,

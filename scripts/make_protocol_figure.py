@@ -129,13 +129,13 @@ def main() -> int:
     gap = (1.0 - 4 * bw) / 3
     xs = [i * (bw + gap) for i in range(4)]
 
-    stage_box(ax, xs[0], by, bw, bh, "fit",
+    stage_box(ax, xs[0], by, bw, bh, "Fit",
               ["6,643 baselines", "5-member ensemble", "all at 0% removed"])
-    stage_box(ax, xs[1], by, bw, bh, "calibrate",
+    stage_box(ax, xs[1], by, bw, bh, "Calibrate",
               ["1,108 baselines", r"$q$ at $\alpha/J$", "frozen by value"])
-    stage_box(ax, xs[2], by, bw, bh, "erode",
+    stage_box(ax, xs[2], by, bw, bh, "Erode",
               ["hash-derived path", "no solver calls", "one state per band"])
-    stage_box(ax, xs[3], by, bw, bh, "verify", ["FEA on selected", "10,305 states",
+    stage_box(ax, xs[3], by, bw, bh, "Verify", ["FEA on selected", "10,305 states",
                                                 "coverage per band"], accent=True)
     for i in range(3):
         arrow(ax, xs[i] + bw + 0.008, by + bh / 2, xs[i + 1] - 0.008, by + bh / 2)
@@ -161,12 +161,12 @@ def main() -> int:
     for t in (0, 10, 20, 30):
         ax.plot([t, t], [AXY - 0.035, AXY + 0.035], color=INK, lw=0.9)
         ax.text(t, AXY - 0.10, f"{t}%", ha="center", va="top", fontsize=FS_KEY)
-    ax.text(41.5, AXY - 0.10, "material removed", ha="right", va="top",
+    ax.text(41.5, AXY - 0.10, "Material removed", ha="right", va="top",
             fontsize=FS_META, color=INK)
 
     # everything the model saw sits at zero
     house(ax, -1.6, AXY + 0.10, 3.2, 0.34, removed=0.0)
-    ax.text(0, AXY + 0.52, "all training and\ncalibration data",
+    ax.text(0, AXY + 0.52, "All training and\ncalibration data",
             ha="center", va="bottom", fontsize=FS_KEY, color=STEEL,
             linespacing=1.25)
 
@@ -175,7 +175,7 @@ def main() -> int:
         house(ax, d - 1.6, AXY + 0.10, 3.2, 0.34, removed=r, seed=i + 1)
     ax.annotate("", xy=(34.5, AXY + 0.05), xytext=(5.0, AXY + 0.05),
                 arrowprops=dict(arrowstyle="-|>", color=REMOVED, lw=1.2))
-    ax.text(19.8, AXY + 0.60, "the bound is used here",
+    ax.text(19.8, AXY + 0.60, "The bound is used here",
             ha="center", va="bottom", fontsize=FS_KEY, color=REMOVED)
 
     # shelf life, read off the frozen record
@@ -185,7 +185,7 @@ def main() -> int:
     for xx in (7.5, 7.5 + span):
         ax.plot([xx, xx], [y - 0.045, y + 0.045], color=INK, lw=1.1)
     ax.text(7.5 + span / 2, y - 0.075,
-            f"shelf life at 5-10%: {span} more points",
+            f"Shelf life at 5-10%: {span} more points",
             ha="center", va="top", fontsize=FS_KEY)
 
     fig.savefig(FIGS / "protocol.pdf", facecolor="white")
