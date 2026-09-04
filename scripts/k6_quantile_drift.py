@@ -23,10 +23,7 @@ from pathlib import Path
 import numpy as np
 
 CONTROL = Path("/Users/eric/workspace/sasto-modernization-control/v2/g3")
-import os
-_D1 = os.environ.get("SASTO_D1_ROOT")
-_SUFFIX = "-d1" if _D1 else ""
-GB200 = Path(_D1) if _D1 else Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
+GB200 = Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
 REPO = Path(__file__).resolve().parents[1]
 TN = ("compliance", "max_von_mises", "max_displacement")
 KEY = {"compliance": "compliance_j", "max_von_mises": "max_gauss_von_mises_pa",
@@ -46,7 +43,7 @@ def wilson_lower(h: int, n: int, z: float = 1.6448536269514722) -> float:
 
 
 def main() -> None:
-    k6 = json.loads((CONTROL / ("k6-coverage-gb200-2096" + _SUFFIX + ".json")).read_text())
+    k6 = json.loads((CONTROL / "k6-coverage-gb200-2096.json").read_text())
     kappa = {k: float(v) for k, v in k6["kappa"].items()}
     norm = json.loads((REPO / "artifacts/g2/ensemble-v1/normalization-stats.json").read_text())
 
@@ -132,7 +129,7 @@ def main() -> None:
     print(f"\n  best coverage any extrapolation achieved: {best:.3f} against 0.95")
     print("  -> the quantile you will need cannot be predicted from shallow data")
 
-    dest = CONTROL / ("k6-amendment-13-quantile-drift" + _SUFFIX + ".json")
+    dest = CONTROL / "k6-amendment-13-quantile-drift.json"
     dest.write_text(json.dumps(report, indent=1, sort_keys=True))
     print(f"\nwrote {dest}")
 

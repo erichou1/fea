@@ -20,10 +20,7 @@ from pathlib import Path
 import numpy as np
 
 CONTROL = Path("/Users/eric/workspace/sasto-modernization-control/v2/g3")
-import os
-_D1 = os.environ.get("SASTO_D1_ROOT")
-_SUFFIX = "-d1" if _D1 else ""
-GB200 = Path(_D1) if _D1 else Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
+GB200 = Path("/Users/eric/workspace/sasto-g3-gb200-inbound/trajectory-calibration-gb200")
 REPO = Path(__file__).resolve().parents[1]
 TN = ("compliance", "max_von_mises", "max_displacement")
 KEY = {"compliance": "compliance_j", "max_von_mises": "max_gauss_von_mises_pa",
@@ -42,7 +39,7 @@ def auc(score: np.ndarray, label: np.ndarray) -> float:
 
 
 def main() -> None:
-    k6 = json.loads((CONTROL / ("k6-coverage-gb200-2096" + _SUFFIX + ".json")).read_text())
+    k6 = json.loads((CONTROL / "k6-coverage-gb200-2096.json").read_text())
     kappa, q_base = k6["kappa"], k6["q_base"]
     norm = json.loads((REPO / "artifacts/g2/ensemble-v1/normalization-stats.json").read_text())
 
@@ -92,7 +89,7 @@ def main() -> None:
               f"-> sigma-free {r['auc_sigma_vs_sigma_free']:.3f} | "
               f"corr(sigma,|resid|) {r['corr_sigma_abs_residual']:+.3f}")
 
-    dest = CONTROL / ("k6-amendment-10-sigma-artifact" + _SUFFIX + ".json")
+    dest = CONTROL / "k6-amendment-10-sigma-artifact.json"
     dest.write_text(json.dumps(out, indent=1, sort_keys=True))
     print(f"\nwrote {dest}")
 
