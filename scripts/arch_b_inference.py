@@ -121,8 +121,11 @@ def main() -> None:
                     mismatched += 1
                     continue
                 verified += 1
+                # G3-D1: train_arch_b.py (line 96) and surrogate.py train on RAW
+                # part labels. Masking by occupancy here fed an unseen
+                # representation. Parts stay raw; occupancy encodes removal.
                 channels = np.stack((volume.astype(np.float32),
-                                     (parts * volume).astype(np.float32)), axis=0)
+                                     parts.astype(np.float32)), axis=0)
                 batch_channels.append(channels)
                 batch_meta.append(state)
 
