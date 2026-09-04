@@ -285,3 +285,35 @@ def test_non_convergence_no_longer_raises_in_the_generation_path() -> None:
 
     source = inspect.getsource(g3)
     assert "selected trajectory canonical solver response is unavailable" not in source
+
+
+def test_masked_and_raw_part_channels_coincide_on_archive_baselines() -> None:
+    """G3-D1 closure (2026-09-03).
+
+    G3-D1-channel-mismatch.json claimed the archive's part labels are nonzero
+    outside occupancy, so that ``parts * current`` (G3) and ``parts`` (G2
+    training) differ on baseline states. That claim came from a probe that
+    decoded the packed ingest cache with the wrong bit layout (interleaved
+    instead of plane-wise) and manufactured spurious labels. On the archive
+    itself, ``parts > 0`` is exactly ``occupancy`` for all 14,293 samples, so
+    the two representations are identical at depth 0 and G3's masking is the
+    only representation consistent with a partly eroded state. This test pins
+    that on a real sample so the decode error cannot be reintroduced as a fix.
+    """
+    import io
+    import zipfile
+
+    import numpy as np
+
+    from sasto.g3_trajectory_calibration import _channels
+
+    archive = Path("/Users/eric/workspace/sasto-modernization-control/archives/fea_ml.zip")
+    if not archive.exists():
+        pytest.skip("frozen FEA archive not present on this host")
+    with zipfile.ZipFile(archive) as handle:
+        occupancy = np.load(io.BytesIO(handle.read("fea_ml/data/runs_real/00000/occ.npz")), allow_pickle=False)["data"].astype(bool)
+        parts = np.load(io.BytesIO(handle.read("fea_ml/data/runs_real/00000/part.npz")), allow_pickle=False)["data"]
+    assert np.array_equal(parts > 0, occupancy)
+    masked = _channels(occupancy, parts)
+    raw = np.stack((occupancy.astype(np.float32), parts.astype(np.float32)), axis=0)
+    np.testing.assert_array_equal(masked, raw)
