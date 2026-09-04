@@ -48,12 +48,13 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-FROZEN_OPT = Path("/Users/eric/workspace/sasto-modernization-control/frozen-20260822/optimization")
-LEGACY_ROOT = Path("/Users/eric/workspace/sasto-data/legacy-fea-20260217/fea_ml")
+# Host-relocatable: the GB200 setup script exports these. Defaults are Eric's Mac.
+FROZEN_OPT = Path(os.environ.get("SASTO_FROZEN_OPT", "/Users/eric/workspace/sasto-modernization-control/frozen-20260822/optimization"))
+LEGACY_ROOT = Path(os.environ.get("SASTO_LEGACY_ROOT", "/Users/eric/workspace/sasto-data/legacy-fea-20260217/fea_ml"))
 LEGACY_SCRIPTS = LEGACY_ROOT / "fea_ml/scripts"
-WIRE_ARCHIVE = Path("/Users/eric/workspace/sasto-modernization-control/archives/3dwire_npz.zip")
+WIRE_ARCHIVE = Path(os.environ.get("SASTO_WIRE_ARCHIVE", "/Users/eric/workspace/sasto-modernization-control/archives/3dwire_npz.zip"))
 WIRE_ARCHIVE_SHA = "af82d8560a7ef4ed328420fc864a1ef4028a51997f80a6de7a977788a8645f8e"
-ENSEMBLE = REPO / "artifacts/g2/ensemble-v1"
+ENSEMBLE = Path(os.environ.get("SASTO_ENSEMBLE", str(REPO / "artifacts/g2/ensemble-v1")))
 FIRST_UNUSED_ID = 16009
 RESOLUTION = 64
 BATCH_CAP = 40  # frozen ceiling in activity_campaign.geometric_trajectory; identical to G3
@@ -97,6 +98,15 @@ def select_fresh_state(family_id: str, bin_index: int, state_indices: list[int])
     def key(state_index: int) -> str:
         return hashlib.sha256("\0".join(("sasto-fresh-sampling-v1", family_id, str(bin_index), str(state_index))).encode()).hexdigest()
     return min(state_indices, key=key)
+
+
+def ensemble_digest() -> str:
+    """Content hash of every file in the ensemble root, order-independent of host path."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in ENSEMBLE.rglob("*") if p.is_file()):
+        h.update(f.relative_to(ENSEMBLE).as_posix().encode()); h.update(b"\0")
+        h.update(hashlib.sha256(f.read_bytes()).digest())
+    return h.hexdigest()
 
 
 def house_seed(npz_bytes: bytes) -> int:
@@ -315,7 +325,7 @@ def main() -> None:
                 "batch_cap": BATCH_CAP, "bins": list(FRESH_BIN_LABELS), "resolution": RESOLUTION,
                 "generator_sha256": hashlib.sha256((FROZEN_OPT / "wireframe_to_volume.py").read_bytes()).hexdigest(),
                 "voxelizer_sha256": hashlib.sha256((LEGACY_SCRIPTS / "prepare_real_data.py").read_bytes()).hexdigest(),
-                "ensemble_root": str(ENSEMBLE),
+                "ensemble_sha256": ensemble_digest(),
                 "g3_sha256": hashlib.sha256((REPO / "src/sasto/g3_trajectory_calibration.py").read_bytes()).hexdigest(),
                 "activity_sha256": hashlib.sha256((REPO / "src/sasto/activity_campaign.py").read_bytes()).hexdigest(),
                 "voxel_fea_sha256": hashlib.sha256((REPO / "src/sasto/voxel_fea.py").read_bytes()).hexdigest()}

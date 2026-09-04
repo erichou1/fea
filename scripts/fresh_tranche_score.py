@@ -30,8 +30,10 @@ from pathlib import Path
 
 import numpy as np
 
+import os
 REPO = Path(__file__).resolve().parents[1]
-CONTROL = Path("/Users/eric/workspace/sasto-modernization-control/v2/g3")
+CONTROL = Path(os.environ.get("SASTO_CONSTANTS", "/Users/eric/workspace/sasto-modernization-control/v2/g3"))
+NORMALIZATION = Path(os.environ.get("SASTO_ENSEMBLE", str(REPO / "artifacts/g2/ensemble-v1"))) / "normalization-stats.json"
 TN = ("compliance", "max_von_mises", "max_displacement")
 KEY = {"compliance": "compliance_j", "max_von_mises": "max_gauss_von_mises_pa", "max_displacement": "max_displacement_m"}
 ALPHA_J = 0.05 / 3
@@ -75,7 +77,7 @@ def main() -> None:
     assert [tuple(b) for b in a13["bins"]] == OLD_BINS
     old_mids = [(a + b) / 2 for a, b in OLD_BINS]
     shallow_fit = {n: np.polyfit(old_mids[:SHALLOW], q_old[n][:SHALLOW], 1).tolist() for n in TN}
-    norm = json.loads((REPO / "artifacts/g2/ensemble-v1/normalization-stats.json").read_text())
+    norm = json.loads(NORMALIZATION.read_text())
 
     def truth(solver, n):
         raw = solver.get(KEY[n], solver.get("max_von_mises_pa"))
