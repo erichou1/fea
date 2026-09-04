@@ -597,7 +597,12 @@ def _ensure_output_root(root: Path) -> None:
 def _channels(current: np.ndarray, parts: np.ndarray) -> np.ndarray:
     if current.dtype != np.bool_ or parts.shape != current.shape or current.shape != (64, 64, 64):
         raise G3Error("trajectory occupancy or parts shape is invalid")
-    return np.stack((current.astype(np.float32), (parts * current).astype(np.float32)), axis=0)
+    # G3-D1: the G2 ensemble was trained on RAW part labels (surrogate.py:225,
+    # :250), which are nonzero far outside the occupied region. Masking parts by
+    # current occupancy here fed the surrogate a representation it never saw,
+    # shifting mu by ~0.35 sigma on baseline states. Parts must stay raw; the
+    # occupancy channel already encodes what has been removed.
+    return np.stack((current.astype(np.float32), parts.astype(np.float32)), axis=0)
 
 
 def _trajectory_case(*, role: G3Role, sample_id: str, archive_open: zipfile.ZipFile, ledger: _PayloadAccessLedger,
