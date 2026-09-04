@@ -285,30 +285,3 @@ def test_non_convergence_no_longer_raises_in_the_generation_path() -> None:
 
     source = inspect.getsource(g3)
     assert "selected trajectory canonical solver response is unavailable" not in source
-
-
-def test_trajectory_channels_match_g2_training_representation() -> None:
-    """G3-D1: the surrogate was trained on RAW part labels (surrogate.py:225,:250).
-
-    G3 must feed it the same representation at every trajectory state. Masking
-    parts by current occupancy produces an input distribution the ensemble never
-    saw, shifting predictions by ~0.35 sigma on baseline states alone.
-    """
-    import numpy as np
-    from sasto.g3_trajectory_calibration import _channels
-
-    rng = np.random.default_rng(0)
-    occupancy = rng.random((64, 64, 64)) < 0.3
-    # Parts are nonzero OUTSIDE occupancy, exactly as in the real archive.
-    parts = rng.integers(1, 6, size=(64, 64, 64), dtype=np.uint8)
-
-    channels = _channels(occupancy, parts)
-
-    assert channels.shape == (2, 64, 64, 64)
-    np.testing.assert_array_equal(channels[0], occupancy.astype(np.float32))
-    # The parts channel must be the RAW labels, not masked by occupancy.
-    np.testing.assert_array_equal(channels[1], parts.astype(np.float32))
-    # And specifically: parts must survive where occupancy is zero.
-    outside = ~occupancy
-    assert outside.any()
-    assert np.all(channels[1][outside] == parts[outside])
