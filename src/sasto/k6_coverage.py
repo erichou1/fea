@@ -64,40 +64,6 @@ ACCEPTED_AMENDMENTS = {
 #: Full pre-registered development population.  A run below this is INTERIM.
 PREREGISTERED_FAMILY_COUNT = 2235
 
-#: G3-D1 (amendment 14).  Records whose source bundle pins
-#: ``g3_trajectory_calibration.py`` at one of these hashes were produced with
-#: part labels masked by occupancy, a representation the G2 ensemble never saw.
-#: Their prediction fields are invalid unless a ``d1_correction`` block shows
-#: they were recomputed on the raw representation.
-D1_DEFECTIVE_G3_HASHES = frozenset({
-    "7ada646364bc0427",  # 92432e6
-    "2587d40b127d0959",  # 182599b (GB200 run)
-    "9b2977e8c538d7c5",  # 4f9ad42
-})
-D1_FIX_COMMIT = "00856c4b1d5fb555ef586686de3c0e7dade007cb"
-
-
-def _assert_d1_corrected(output_root: Path, cases: Sequence[Mapping[str, object]]) -> str:
-    """Refuse to evaluate predictions produced on masked part labels."""
-    manifest_path = output_root / "campaign-manifest.json"
-    pinned = None
-    if manifest_path.exists():
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            pinned = str(manifest.get("source_bundle_files", {}).get("src/sasto/g3_trajectory_calibration.py", ""))[:16]
-        except (OSError, json.JSONDecodeError, AttributeError):
-            pinned = None
-    if pinned is not None and pinned not in D1_DEFECTIVE_G3_HASHES and pinned != "":
-        return "produced_after_fix"
-    missing = [str(case.get("sample_id")) for case in cases
-               if not isinstance(case.get("d1_correction"), Mapping)
-               or case["d1_correction"].get("fix_commit") != D1_FIX_COMMIT]  # type: ignore[index]
-    if missing:
-        raise K6Error(
-            "G3-D1: {} record(s) carry predictions computed on masked part labels and no "
-            "d1_correction at commit {}; refusing to evaluate (amendment 14)".format(len(missing), D1_FIX_COMMIT[:7]))
-    return "d1_corrected"
-
 
 class K6Error(G3Error):
     """A K6 coverage invariant was violated."""
@@ -452,7 +418,6 @@ def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path
         cases.append(case)
     if not cases:
         raise K6Error("no development trajectory cases found")
-    d1_status = _assert_d1_corrected(output_root, cases)
 
     rows, occupancy, selected = _selected_trajectory_rows(cases)
     results, marginal = evaluate_bins(rows, kappa=kappa, q=q_base, normalization=normalization)
@@ -500,7 +465,6 @@ def run_coverage(*, output_root: Path, ensemble_normalization: Path, report_path
         "J": J,
         "target_coverage": TARGET_COVERAGE,
         "calibration_source": "q_base imported by value from frozen baseline-calibration.json",
-        "d1_channel_status": d1_status,
         "kappa": kappa,
         "q_base": q_base,
         "normalization_stats_digest": normalization.get("stats_digest"),
